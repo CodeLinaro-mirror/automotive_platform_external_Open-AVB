@@ -45,6 +45,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/../../daemons/mrpd \
 					$(LOCAL_PATH)/../../daemons/common \
 					$(LOCAL_PATH)/../libmpeg2ts \
+					$(LOCAL_PATH)/../libh264sink \
 					external/tinyalsa/include/
 
 
@@ -108,6 +109,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					../igb/igb.c  \
 					platform/Linux/intf_mjpeg_file/openavb_intf_mjpeg_file.c \
 					platform/Linux/intf_h264_file/openavb_intf_h264_file.c \
+					platform/Linux/intf_h264_stream/openavb_intf_h264_stream.c \
 					platform/Linux/intf_alsa/openavb_intf_tinyalsa.c \
 					mcr/openavb_reference_clock.c \
 					platform/Linux/intf_mjpeg_opengl/openavb_intf_mjpeg_opengl.c \
@@ -118,7 +120,8 @@ LOCAL_STATIC_LIBRARIES += 	libpcap \
 LOCAL_SHARED_LIBRARIES += 	libtinyalsa \
 				liblog \
 				libmjpegavbsink \
-                                libmpeg2ts
+                                libmpeg2ts\
+				libh264sink
 
 LOCAL_MODULE := openavb_harness
 
