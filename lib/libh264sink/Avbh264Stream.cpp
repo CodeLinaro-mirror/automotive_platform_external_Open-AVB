@@ -1,4 +1,4 @@
-/* Copyrights (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyrights (c) 2016-2017, The Linux Foundation. All rights reserved.
  * "Not a Contribution."
  */
 
@@ -19,344 +19,239 @@
  */
 
 #define LOG_TAG "AVBh264Stream"
-#include <inttypes.h>
 #include <utils/Log.h>
 
-
+#include <inttypes.h>
+#include <sys/types.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <media/ICrypto.h>
-#include <media/IMediaHTTPService.h>
-#include <media/IMediaPlayerService.h>
 #include <media/stagefright/foundation/ABuffer.h>
-#include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
-#include <media/stagefright/foundation/AString.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaCodec.h>
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MediaDefs.h>
-#include <media/stagefright/NuMediaExtractor.h>
 #include <gui/ISurfaceComposer.h>
 #include <gui/SurfaceComposerClient.h>
 #include <gui/Surface.h>
 #include <ui/DisplayInfo.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <semaphore.h>
-#include <poll.h>
-#include <pthread.h>
+
 #include "Avbh264Stream.h"
 
-#define FRAME_BUFFER_SIZE  600000 //600kb
-sem_t threadInitSem;
-int DataSock;
+using namespace android;
 
-#if defined( __cplusplus )
-extern "C"
-{
-#endif /* end of macro __cplusplus */
+/******************************************************************************
+ *                               Defines
+ *****************************************************************************/
+#define OUTPUT_DQ_TIMEOUT          20000ll // Can wait for output buff
+#define INPUT_DQ_TIMEOUT             500ll // Shouldn't wait on input buff
+#define INPUT_DQ_TIMEOUT_INCREMENT   100ll // Incremental wait time on input buff dq
 
-int Avbh264DataReceiveEndpoint(void) {
-    struct sockaddr_un addr;
+#define INITIAL_BUFFER_SIZE   100000
+#define BUFFER_SIZE_INCREMENT 100000
+#define MAX_BUFFER_SIZE      7077888 // Sized to match MediaCodec input buffer
 
-    int sockfd = 0, connfd = 0;
-    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
-       ALOGE("socket error");
-       return -1;
-    }
+class AvbH264Sink;
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path,H264_SOCKET_PATH, sizeof(addr.sun_path)-1);
-    unlink(H264_SOCKET_PATH);
+/******************************************************************************
+ *                        global static variables
+ *****************************************************************************/
+sem_t gThreadInitSem;
+sp<AvbH264Sink> gSink;
 
-    if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-       ALOGE("bind error");
-       return -1;
-    }
+/******************************************************************************
+ *                            CodecOutputInfo
+ *
+ * This class is used to keep statistic on the output from the media codec.
+ *****************************************************************************/
+class CodecOutputInfo : public RefBase {
+public:
+    CodecOutputInfo()
+        : mNumBuffersDecoded(0),
+          mNumBytesDecoded(0),
+          mStartTimeUs(0),
+          mPrintEveryNBufs(-1) { } ;
+    void FrameDecoded(size_t size);
+    void PrintInfo();
+    void PrintInfoEveryNBuffer(int val) { mPrintEveryNBufs = val; };
 
-    if (listen(sockfd, 5) == -1) {
-       ALOGE("listen error");
-       return -1;
-    }
-
-    if (sem_post(&threadInitSem)!=0){
-       ALOGE("failed to post the semaphore");
-       return -1;
-    }
-
-    connfd = accept(sockfd, (struct sockaddr*)NULL, NULL);
-    if (connfd < 0){
-       ALOGE("failed to accept the connection");
-       return -1;
-    }
-    return connfd;
-}
-
-namespace android {
-
-struct CodecState {
-    sp<MediaCodec> mCodec;
-    Vector<sp<ABuffer> > mInBuffers;
-    Vector<sp<ABuffer> > mOutBuffers;
-    bool mSignalledInputEOS;
-    bool mSawOutputEOS;
+private:
     int64_t mNumBuffersDecoded;
     int64_t mNumBytesDecoded;
-    bool mIsAudio;
+    int64_t mStartTimeUs;
+    int mPrintEveryNBufs;
 };
 
-}  // namespace android
-
-static int decode(const android::sp<android::ALooper> &looper,const android::sp<android::Surface> &surface) {
-    using namespace android;
-
-    static int64_t kTimeout = 500ll;
-    status_t err;
-    struct pollfd fds;
-    int nfds = 1 ,timeout ;
-
-
-    KeyedVector<size_t, CodecState> stateByTrack;
-
-    sp<AMessage> format = new AMessage;
-    format->setString("mime",MEDIA_MIMETYPE_VIDEO_AVC);
-    format->setInt32("height",1080);
-    format->setInt32("width",1920);
-    format->setInt32("arbitrary_bytes", 1);
-
-    CodecState *state = &stateByTrack.editValueAt(stateByTrack.add(0, CodecState()));
-
-    state->mNumBytesDecoded = 0;
-    state->mNumBuffersDecoded = 0;
-    state->mCodec = MediaCodec::CreateByType(looper,  MEDIA_MIMETYPE_VIDEO_AVC, false);
-
-    CHECK(state->mCodec != NULL);
-
-    err = state->mCodec->configure(format, surface,NULL , 0);
-
-    CHECK_EQ(err, (status_t)OK);
-
-    state->mSignalledInputEOS = false;
-    state->mSawOutputEOS = false;
-
-    CHECK(!stateByTrack.isEmpty());
-
-    int64_t startTimeUs = ALooper::GetNowUs();
-
-
-    sp<MediaCodec> codec = state->mCodec;
-
-    CHECK_EQ((status_t)OK, codec->start());
-
-    CHECK_EQ((status_t)OK, codec->getInputBuffers(&state->mInBuffers));
-    CHECK_EQ((status_t)OK, codec->getOutputBuffers(&state->mOutBuffers));
-
-    ALOGV("got %zu input and %zu output buffers",
-              state->mInBuffers.size(), state->mOutBuffers.size());
-
-    DataSock = Avbh264DataReceiveEndpoint();
-    if (DataSock <= 0) {
-        ALOGE("Unable to accept the connection from the client\n");
-        return -1;
-    }
-    fds.fd = DataSock;
-    fds.events = POLLIN;
-    timeout = 10 * 1000;
-
-    bool sawInputEOS = false;
-    static int64_t timeUs ;
-
-    for (;;) {
-        if (!sawInputEOS) {
-                size_t trackIndex = 0;
-
-                CodecState *state = &stateByTrack.editValueFor(trackIndex);
-
-                size_t index;
-                err = state->mCodec->dequeueInputBuffer(&index, kTimeout);
-                if (err == OK) {
-                    ALOGV("filling input buffer %zu", index);
-                    int rc = poll(&fds,nfds,timeout);
-                    if(rc <= 0) {
-                       printf("failed to wait on the poll or timedout\n");
-                       close(DataSock);
-                       ALOGE("Reached end of stream\n");
-                       sawInputEOS = true;
-                       continue ;
-                     }
-
-                    const sp<ABuffer> &buffer = state->mInBuffers.itemAt(index);
-                    int n = read(DataSock,buffer->data(),FRAME_BUFFER_SIZE);
-                    printf("data received at this time is %d\n",n);
-                    if (n <= 0) {
-                        close(DataSock);
-                        ALOGE("Reached end of stream\n");
-                        sawInputEOS = true;
-                        continue ;
-                    }
-
-
-                    uint32_t bufferFlags = 0;
-
-                    err = state->mCodec->queueInputBuffer(
-                            index,
-                            0,
-                            n,
-                            timeUs,
-                            bufferFlags);
-                    timeUs += 40000;
-
-                    CHECK_EQ(err, (status_t)OK);
-
-                } else {
-                    CHECK_EQ(err, -EAGAIN);
-                }
-
-
-        } else {
-            for (size_t i = 0; i < stateByTrack.size(); ++i) {
-                CodecState *state = &stateByTrack.editValueAt(i);
-
-                if (!state->mSignalledInputEOS) {
-                    size_t index;
-                    status_t err =
-                        state->mCodec->dequeueInputBuffer(&index, kTimeout);
-
-                    if (err == OK) {
-                        ALOGV("signalling input EOS on track %zu", i);
-
-                        err = state->mCodec->queueInputBuffer(
-                                index,
-                                0 /* offset */,
-                                0 /* size */,
-                                0ll /* timeUs */,
-                                MediaCodec::BUFFER_FLAG_EOS);
-
-                        CHECK_EQ(err, (status_t)OK);
-
-                        state->mSignalledInputEOS = true;
-                    } else {
-                        CHECK_EQ(err, -EAGAIN);
-                    }
-                }
-            }
-        }
-
-        bool sawOutputEOSOnAllTracks = true;
-        for (size_t i = 0; i < stateByTrack.size(); ++i) {
-            CodecState *state = &stateByTrack.editValueAt(i);
-            if (!state->mSawOutputEOS) {
-                sawOutputEOSOnAllTracks = false;
-                break;
-            }
-        }
-
-        if (sawOutputEOSOnAllTracks) {
-            break;
-        }
-
-        for (size_t i = 0; i < stateByTrack.size(); ++i) {
-            CodecState *state = &stateByTrack.editValueAt(i);
-
-            if (state->mSawOutputEOS) {
-                continue;
-            }
-
-            size_t index;
-            size_t offset;
-            size_t size;
-            int64_t presentationTimeUs;
-            uint32_t flags;
-            status_t err = state->mCodec->dequeueOutputBuffer(
-                    &index, &offset, &size, &presentationTimeUs, &flags,
-                    kTimeout);
-
-            if (err == OK) {
-                ALOGV("draining output buffer %zu, time = %lld us",
-                      index, (long long)presentationTimeUs);
-
-                ++state->mNumBuffersDecoded;
-                state->mNumBytesDecoded += size;
-
-                if (surface == NULL ) {
-                    err = state->mCodec->releaseOutputBuffer(index);
-                }
-                else {
-                    err = state->mCodec->renderOutputBufferAndRelease(index);
-                }
-
-                CHECK_EQ(err, (status_t)OK);
-
-                if (flags & MediaCodec::BUFFER_FLAG_EOS) {
-                    ALOGV("reached EOS on output.");
-
-                    state->mSawOutputEOS = true;
-                }
-            } else if (err == INFO_OUTPUT_BUFFERS_CHANGED) {
-                ALOGV("INFO_OUTPUT_BUFFERS_CHANGED");
-                CHECK_EQ((status_t)OK,
-                         state->mCodec->getOutputBuffers(&state->mOutBuffers));
-
-                ALOGV("got %zu output buffers", state->mOutBuffers.size());
-            } else if (err == INFO_FORMAT_CHANGED) {
-                sp<AMessage> format;
-                CHECK_EQ((status_t)OK, state->mCodec->getOutputFormat(&format));
-
-                ALOGV("INFO_FORMAT_CHANGED: %s", format->debugString().c_str());
-            } else {
-                CHECK_EQ(err, -EAGAIN);
-            }
-        }
+/**
+ * This function should be called every time the codec produces a frame.
+ */
+void CodecOutputInfo::FrameDecoded(size_t frameSize) {
+    if (mNumBuffersDecoded == 0) {
+        // For more accurate fps count, start timer on first frame received
+        mStartTimeUs = ALooper::GetNowUs();
     }
 
-    int64_t elapsedTimeUs = ALooper::GetNowUs() - startTimeUs;
+    mNumBuffersDecoded++;
+    mNumBytesDecoded += frameSize;
 
-    for (size_t i = 0; i < stateByTrack.size(); ++i) {
-        CodecState *state = &stateByTrack.editValueAt(i);
-
-        CHECK_EQ((status_t)OK, state->mCodec->release());
-
-        if (state->mIsAudio) {
-            printf("track %zu: %lld bytes received. %.2f KB/sec\n",
-                   i,
-                   (long long)state->mNumBytesDecoded,
-                   state->mNumBytesDecoded * 1E6 / 1024 / elapsedTimeUs);
-        } else {
-            printf("track %zu: %lld frames decoded, %.2f fps. %lld"
-                    " bytes received. %.2f KB/sec\n",
-                   i,
-                   (long long)state->mNumBuffersDecoded,
-                   state->mNumBuffersDecoded * 1E6 / elapsedTimeUs,
-                   (long long)state->mNumBytesDecoded,
-                   state->mNumBytesDecoded * 1E6 / 1024 / elapsedTimeUs);
+    if (mPrintEveryNBufs != -1) {
+        if ((mNumBuffersDecoded % mPrintEveryNBufs) == 0) {
+            PrintInfo();
         }
     }
-
-    return 0;
 }
 
-void* Avbh264sink(void *arg)
-{
-    arg = NULL;
-    using namespace android;
+/**
+ * This function is used to print out the current stats.
+ */
+void CodecOutputInfo::PrintInfo() {
+    int64_t elapsedTimeUs = ALooper::GetNowUs() - mStartTimeUs;
 
-    ProcessState::self()->startThreadPool();
+    ALOGD("track 0: %lld frames decoded, %.2f fps. %lld"
+            " bytes received. %.2f KB/sec\n",
+           (long long)mNumBuffersDecoded,
+           mNumBuffersDecoded * 1E6 / elapsedTimeUs,
+           (long long)mNumBytesDecoded,
+           mNumBytesDecoded * 1E6 / 1024 / elapsedTimeUs);
+}
 
-    DataSource::RegisterDefaultSniffers();
+/******************************************************************************
+ *                               VideoStats
+ *
+ * Simple container to keep track of video's width, height, and framerate.
+ *****************************************************************************/
+class VideoStats {
+public:
+    VideoStats(int w, int h, int fr)
+        : width(w),
+          height(h),
+          frameRate(fr) { };
+    int width;
+    int height;
+    int frameRate;
+};
 
-    sp<ALooper> looper = new ALooper;
-    looper->start();
+/******************************************************************************
+ *                              PacketBuffer
+ *
+ * This class is used to buffer input packets in order to feed data to the
+ * media codec in larger chunks.
+ *****************************************************************************/
+class PacketBuffer : public RefBase {
+public:
+    PacketBuffer()
+        : mBuffer(nullptr),
+          mBufferSize(0),
+          mPos(0),
+          mCount(0) {
+        GrowBuffer(INITIAL_BUFFER_SIZE);
+    };
+    ~PacketBuffer();
+    bool GrowBuffer(size_t size);
+    bool CopyBuf(uint8_t *pBuf, int size);
+    void Reset();
+    size_t GetSize() { return mPos; };
+    uint8_t* GetBuf() { return mBuffer; };
 
-    sp<SurfaceComposerClient> composerClient;
-    sp<SurfaceControl> control;
-    sp<Surface> surface;
+private:
+    uint8_t* mBuffer;
+    size_t mBufferSize;
+    size_t mPos;
+    int mCount;
+};
 
-    composerClient = new SurfaceComposerClient;
-    CHECK_EQ(composerClient->initCheck(), (status_t)OK);
+PacketBuffer::~PacketBuffer() {
+    if (mBuffer) {
+        free(mBuffer);
+        mBuffer = nullptr;
+    }
+}
+
+/**
+ * Call this function to grow the packet buffer by some amount.
+ */
+bool PacketBuffer::GrowBuffer(size_t size) {
+    size_t newSize = mBufferSize + size;
+
+    if (newSize >= MAX_BUFFER_SIZE) {
+        ALOGE("Fatal error: packet buffer growing too large (%zu). "\
+              "Ensure talker and listener use comparable data rates",
+              newSize);
+        // Drop all pending data and start over to try recovering
+        Reset();
+        return false;
+    }
+
+    mBuffer = (uint8_t *) realloc(mBuffer, newSize);
+
+    if (!mBuffer) {
+        ALOGE("Fatal error: failed to realloc packet buffer (%p), "\
+              "currSize=%zu, newSize=%zu", mBuffer, mBufferSize, newSize);
+        return false;
+    }
+
+    mBufferSize = newSize;
+    return true;
+}
+
+/**
+ * Call this function to append a packet's data to the buffer.
+ */
+bool PacketBuffer::CopyBuf(uint8_t *pBuf, int size) {
+    // Check buffer is large enough to contain new data
+    if ((mPos + size) > mBufferSize) {
+        // Try to grow buffer to fit new data. Growth increment should be much
+        // greater than new buffer size to prevent constant reallocation.
+        if (!GrowBuffer(BUFFER_SIZE_INCREMENT)) {
+            return false;
+        }
+    }
+
+    // Copy data
+    memcpy((mBuffer + mPos), pBuf, size);
+    mPos += size;
+    mCount++;
+    return true;
+}
+
+/**
+ * Resets the buffer.
+ * This function should be called after data has been pushed into the media
+ * codec input buffer.
+ */
+void PacketBuffer::Reset() {
+    mCount = 0;
+    mPos = 0;
+}
+
+/******************************************************************************
+ *                              Display
+ *
+ * The Display class is used to connect to a display and acquire a surface
+ * to render our decoded frames.
+ *****************************************************************************/
+class Display : public RefBase {
+public:
+    Display();
+    virtual ~Display();
+    sp<Surface> & GetSurface() { return mSurface; };
+private:
+    sp<SurfaceComposerClient> mComposerClient;
+    sp<SurfaceControl> mControl;
+    sp<Surface> mSurface;
+};
+
+
+/**
+ * Initialize display
+ */
+Display::Display() {
+    mComposerClient = new SurfaceComposerClient;
+    CHECK_EQ(mComposerClient->initCheck(), (status_t)OK);
 
     sp<IBinder> display(SurfaceComposerClient::getBuiltInDisplay(
                          ISurfaceComposer::eDisplayIdMain));
@@ -365,78 +260,306 @@ void* Avbh264sink(void *arg)
     ssize_t displayWidth = info.w;
     ssize_t displayHeight = info.h;
 
-    ALOGV("display is %zd x %zd\n", displayWidth, displayHeight);
+    ALOGI("display is %zd x %zd", displayWidth, displayHeight);
 
-    control = composerClient->createSurface(
-                String8("A Surface"),
+    mControl = mComposerClient->createSurface(
+                String8("AVB H264 sink"),
                 displayWidth,
                 displayHeight,
                 PIXEL_FORMAT_RGB_565,
                 0);
 
-    CHECK(control != NULL);
-    CHECK(control->isValid());
+    CHECK(mControl != NULL);
+    CHECK(mControl->isValid());
 
     SurfaceComposerClient::openGlobalTransaction();
-    CHECK_EQ(control->setLayer(INT_MAX), (status_t)OK);
-    CHECK_EQ(control->show(), (status_t)OK);
+    CHECK_EQ(mControl->setLayer(INT_MAX), (status_t)OK);
+    CHECK_EQ(mControl->show(), (status_t)OK);
     SurfaceComposerClient::closeGlobalTransaction();
 
-    surface = control->getSurface();
-    CHECK(surface != NULL);
+    mSurface = mControl->getSurface();
+    CHECK(mSurface != NULL);
+}
 
-    decode(looper, surface);
+Display::~Display() {
+    mComposerClient->dispose();
+}
 
-    composerClient->dispose();
+
+/******************************************************************************
+ *                                AvbH264Sink
+ *
+ * This class is used to decode h264 data and render frames to a surface.
+ *****************************************************************************/
+class AvbH264Sink : public RefBase {
+public:
+    AvbH264Sink(VideoStats* vs)
+        : mCodec(nullptr),
+          mPacketBuffer(),
+          mVideoStats(vs->width, vs->height, vs->frameRate),
+          mInputTimeout(INPUT_DQ_TIMEOUT),
+          mStopStream(false),
+          mSawOutputEOS(false),
+          mNextDqUsec(0),
+          mFrameDurationUsec(0) {
+       if (vs->frameRate > 0) {
+           mFrameDurationUsec = (s2ns(1) / vs->frameRate) / 1000;
+       }
+    };
+    virtual ~AvbH264Sink() { };
+    int DataSink(uint8_t *pBuf, int size);
+    int Run();
+    int Stop();
+    int InitMediaCodec(const sp<ALooper> &looper, const sp<Surface> &surface);
+
+private:
+    sp<MediaCodec> mCodec;
+    PacketBuffer mPacketBuffer;
+    VideoStats mVideoStats;
+    int64_t mInputTimeout;
+
+    bool mStopStream;
+    bool mSawOutputEOS;
+    int64_t mNextDqUsec;
+    int64_t mFrameDurationUsec;
+};
+
+/**
+ * Initializes the media codec and attaches to the given surface.
+ */
+int AvbH264Sink::InitMediaCodec(const sp<ALooper> &looper,
+        const sp<Surface> &surface) {
+    int err = 0;
+    sp<AMessage> format = new AMessage;
+    format->setString("mime",MEDIA_MIMETYPE_VIDEO_AVC);
+    format->setInt32("height",mVideoStats.height);
+    format->setInt32("width",mVideoStats.width );
+    format->setInt32("arbitrary_bytes", 1);
+
+    mCodec = MediaCodec::CreateByType(looper,
+            MEDIA_MIMETYPE_VIDEO_AVC, false);
+
+    CHECK(mCodec != NULL);
+
+    err = mCodec->configure(format, surface, NULL, 0);
+    CHECK_EQ(err, (status_t)OK);
+
+    err =  mCodec->start();
+    CHECK_EQ(err, (status_t)OK);
+
+    return err;
+}
+
+/**
+ * This is the run loop for the Avbh264SinkThread.
+ * This function pull decoded frames from the media codec at a set interval
+ * based on the video's frame rate.
+ */
+int AvbH264Sink::Run() {
+    CodecOutputInfo outputInfo;
+    size_t index;
+    size_t offset;
+    size_t size;
+    int64_t presentationTimeUs;
+    uint32_t flags;
+
+    outputInfo.PrintInfoEveryNBuffer(60);
+
+    while (!(mSawOutputEOS || mStopStream)) {
+        int64_t frameStartUsec = ALooper::GetNowUs();
+
+        status_t err = mCodec->dequeueOutputBuffer(
+                &index, &offset, &size, &presentationTimeUs, &flags,
+                OUTPUT_DQ_TIMEOUT);
+
+        if (err == OK) {
+            outputInfo.FrameDecoded(size);
+
+            err = mCodec->renderOutputBufferAndRelease(index);
+            CHECK_EQ(err, (status_t)OK);
+
+            if (flags & MediaCodec::BUFFER_FLAG_EOS) {
+                ALOGD("reached EOS on output.");
+                mSawOutputEOS = true;
+            }
+
+            // space out the frames based on the frame rate
+            int64_t displayTimeUsec = ALooper::GetNowUs() - frameStartUsec;
+            if (displayTimeUsec < mFrameDurationUsec) {
+                usleep(mFrameDurationUsec - displayTimeUsec);
+            }
+        } else if (err == INFO_OUTPUT_BUFFERS_CHANGED) {
+            // ignore
+        } else if (err == INFO_FORMAT_CHANGED) {
+            sp<AMessage> format;
+            CHECK_EQ((status_t)OK, mCodec->getOutputFormat(&format));
+            ALOGI("INFO_FORMAT_CHANGED: %s", format->debugString().c_str());
+        } else if (err == -EAGAIN) {
+            // try pulling again, not output buffer was available within timeout
+        } else {
+            ALOGE("Got error %d\n", err);
+        }
+    }
+
+    ALOGD("Reached EOS or stream stopped - stopping codec and exiting\n");
+    outputInfo.PrintInfo();
+    mCodec->stop();
+    mCodec->release();
+
+    return 0;
+}
+
+/**
+ * Calling this function will halt video playback and exit the thread.
+ */
+int AvbH264Sink::Stop() {
+    mStopStream = true;
+    return 0;
+}
+
+/**
+ * Data sink for h264 stream.
+ * This function will be called every time the listener receives a packet.
+ */
+int AvbH264Sink::DataSink(uint8_t *pBuf, int size) {
+    size_t bufferIndex = 0;
+    sp<ABuffer> codecBuffer = nullptr;
+    uint32_t bufferFlags = 0;
+    int err = 0;
+    int64_t currentTimeUsec = ALooper::GetNowUs();
+
+    if (mStopStream) {
+        return -1;
+    }
+
+    if (!mPacketBuffer.CopyBuf(pBuf, size)) {
+        return -1;
+    }
+
+    // Check if we have buffered enough data
+    if (mNextDqUsec == 0) {
+        mNextDqUsec = currentTimeUsec + mFrameDurationUsec;
+        return size;
+    } else if (mNextDqUsec > currentTimeUsec) {
+        return size;
+    }
+
+    // Try to dequeue an input buffer from the codec
+    err = mCodec->dequeueInputBuffer(&bufferIndex, mInputTimeout);
+    if (err != OK) {
+        // Couldn't get an input buffer in time, buffer data for a bit longer
+        mNextDqUsec = currentTimeUsec + mFrameDurationUsec;
+        mInputTimeout += INPUT_DQ_TIMEOUT_INCREMENT;
+        return size;
+    }
+
+    // Grab the input buffer
+    err = mCodec->getInputBuffer(bufferIndex, &codecBuffer);
+    if (err != OK) {
+        return -1;
+    }
+
+    // Push buffered data into the input buffer
+    //ALOGE("Pushing %zu bytes into codec input buffer %zu (maxsize = %zu)\n",
+    //        mPacketBuffer.GetSize(), bufferIndex,  codecBuffer->capacity());
+    memcpy(codecBuffer->data(), mPacketBuffer.GetBuf(), mPacketBuffer.GetSize());
+
+    // Re-queue the filled input buffer
+    err = mCodec->queueInputBuffer(
+            bufferIndex,
+            0,
+            mPacketBuffer.GetSize(),
+            0,
+            bufferFlags);
+
+    // reset packet buffer and timers
+    mPacketBuffer.Reset();
+    mInputTimeout = INPUT_DQ_TIMEOUT;
+    mNextDqUsec = 0;
+
+    CHECK_EQ(err, (status_t)OK);
+    return size;
+}
+
+/**
+ * This function is used to create and initialize everything necessary to
+ * decode and render the video stream.
+ */
+void* Avbh264SinkThread(void *arg) {
+    ProcessState::self()->startThreadPool();
+    DataSource::RegisterDefaultSniffers();
+
+    // Create sink and keep local ref to keep sink alive until thread is done
+    sp<AvbH264Sink> sink = gSink = new AvbH264Sink((VideoStats*) arg);
+    sp<Display> display = new Display();
+    sp<ALooper> looper = new ALooper();
+
+    looper->start();
+
+    // Init
+    sink->InitMediaCodec(looper, display->GetSurface());
+
+    // Unblock Avbh264StreamInitialize call
+    if (sem_post(&gThreadInitSem)!=0){
+       ALOGE("failed to post the semaphore");
+       return NULL;
+    }
+
+    // This function returns once EOS is reached or stream is halted
+    sink->Run();
 
     looper->stop();
-    pthread_exit((void*)0);
-
     return NULL;
 }
 
-int Avbh264streamInitialize()
+/******************************************************************************
+ *                              Exported Symbols
+ *****************************************************************************/
+
+#if defined( __cplusplus )
+extern "C"
 {
-        pthread_t tid;
-        int rc;
+#endif /* end of macro __cplusplus */
 
-        if (sem_init(&threadInitSem,0,0) < 0){
-            ALOGE("semaphore initialization failed");
-            return -1;
-        }
+int Avbh264StreamInitialize(int width, int height, int frameRate) {
+    pthread_t tid;
+    int rc;
 
-        rc = pthread_create(&tid, NULL, Avbh264sink, NULL);
-        if (rc!=0){
-            ALOGE(" Avbh264sinkthread creation failed...\n ");
-            return -1;
-        }
+    if (sem_init(&gThreadInitSem,0,0) < 0){
+        ALOGE("semaphore initialization failed\n");
+        return -1;
+    }
 
-        if (sem_wait(&threadInitSem)!= 0){
-            ALOGE("waiting on semaphore failed");
-            return -1;
-        }
+    VideoStats vs(width, height, frameRate);
 
-        return 0;
-}
-int Avbh264ConnectToStreamSource(void)
-{
-        struct sockaddr_un addr;
-        int sockfd;
-        if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
-                ALOGE("socket error");
-                return -1;
-        }
-        memset(&addr, 0, sizeof(addr));
-        addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, H264_SOCKET_PATH, sizeof(addr.sun_path)-1);
-        if (connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-                ALOGE("connect error");
-                return -1;
-        }
+    rc = pthread_create(&tid, NULL, Avbh264SinkThread, &vs);
+    if (rc!=0){
+        ALOGE(" Avbh264sinkthread creation failed...\n ");
+        return -1;
+    }
 
-       return sockfd;
+    if (sem_wait(&gThreadInitSem)!= 0){
+        ALOGE("waiting on semaphore failed\n");
+        return -1;
+    }
+
+    return 0;
 }
 
+int Avbh264DataSink(char *pBuf, int size) {
+    if (gSink.get()) {
+        return gSink->DataSink((uint8_t *)pBuf, size);
+    }
+    return -1;
+}
+
+int Avbh264StreamClose() {
+    if (gSink.get()) {
+        gSink->Stop();
+    }
+    gSink = nullptr;
+    return 0;
+}
 
 #ifdef __cplusplus
 }

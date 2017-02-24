@@ -51,7 +51,11 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define NBUFS 256
 #define MAX_READ_SIZE 192
-int DataSendSock;
+
+#define DEFAULT_WIDTH 1920
+#define DEFAULT_HEIGHT 1080
+#define DEFAULT_FRAMERATE 30
+
 typedef struct pvt_data_t
 {
 	char *file_name;
@@ -66,10 +70,13 @@ typedef struct pvt_data_t
 	U32 read_size;
 	U32 loc;
 	int fd;
-        struct stat statbuf;
+    struct stat statbuf;
 	bool get_avtp_timestamp;        /*<! this flag indicates whether
                                         an avtp timestamp should be taken */
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
+	U32 width;
+	U32 height;
+	U32 frameRate;
 } pvt_data_t;
 
 // Each configuration name value pair for this mapping will result in this callback being called.
@@ -88,8 +95,6 @@ void openavbIntfH264StreamCfgCB(media_q_t *pMediaQ, const char *name, const char
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
-
-	pPvtData->asyncRx = FALSE;
 
 	if (strcmp(name, "intf_nv_file_name") == 0) {
 		if (pPvtData->file_name) {
@@ -114,6 +119,18 @@ void openavbIntfH264StreamCfgCB(media_q_t *pMediaQ, const char *name, const char
 		if (*pEnd == '\0' && tmp == 1) {
 			pPvtData->ignoreTimestamp = (tmp == 1);
 		}
+	}
+	else if (strcmp(name, "intf_nv_frame_rate") == 0) {
+		pPvtData->frameRate = atoi(value);
+		AVB_LOGF_INFO("Frame rate is %d", pPvtData->frameRate);
+	}
+	else if (strcmp(name, "intf_nv_width") == 0) {
+		pPvtData->width = atoi(value);
+		AVB_LOGF_INFO("Width is %d", pPvtData->width);
+	}
+	else if (strcmp(name, "intf_nv_height") == 0) {
+		pPvtData->height = atoi(value);
+		AVB_LOGF_INFO("Height is %d", pPvtData->height);
 	}
 }
 
@@ -204,20 +221,21 @@ bool openavbIntfH264StreamTxCB(media_q_t *pMediaQ)
 	U32 read_size = 0;
 	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
 	if (pMediaQItem) {
-		if (pPvtData->loc + pPvtData->read_size >= pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc - 1;
-		}
-		else {
+		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
+			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
+		} else {
 			read_size = pPvtData->read_size;
 		}
-	        if (read_size > 0) {
+
+		if (read_size > 0) {
 			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
-		}
-		else {
+		} else {
 			return FALSE;
 		}
+
 		pMediaQItem->dataLen = read_size;
 		pPvtData->loc += read_size ;
+
 		openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
 		openavbMediaQHeadPush(pMediaQ);
 		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
@@ -248,15 +266,10 @@ void openavbIntfH264StreamRxInitCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
-	int status = Avbh264streamInitialize();
-        if (status < 0) {
-		AVB_LOG_ERROR("unable to initialize the h264sink Thread");
-        }
-        DataSendSock = Avbh264ConnectToStreamSource();
-	if (DataSendSock <= 0 ) {
-	       AVB_LOG_ERROR("failed to connect the streaming application");
-        }
-
+	int status = Avbh264StreamInitialize(pPvtData->width, pPvtData->height, pPvtData->frameRate);
+	if (status < 0) {
+	AVB_LOG_ERROR("unable to initialize the h264sink Thread");
+	}
 }
 
 // This callback is called when acting as a listener.
@@ -272,36 +285,24 @@ bool openavbIntfH264StreamRxCB(media_q_t *pMediaQ)
 		return FALSE;
 	}
 
-	bool moreSourcePackets = TRUE;
-        int size = 0;
+	int err = 0;
 
-	while (moreSourcePackets) {
+	while (1) {
 		media_q_item_t *pMediaQItem = openavbMediaQTailLock(pMediaQ, pPvtData->ignoreTimestamp);
 		// there are no packets available or they are from the future
 		if (!pMediaQItem) {
-			moreSourcePackets = FALSE;
-			continue;
+			break;
 		}
+
 		if (!pMediaQItem->dataLen) {
 			AVB_LOG_DEBUG("No dataLen");
 			openavbMediaQTailPull(pMediaQ);
 			continue;
 		}
-		if (pPvtData->asyncRx) {
-			AVB_LOG_INFO("Rx async called...");
-			U32 bufwr = pPvtData->bufwr;
-			U32 bufrd = pPvtData->bufrd;
-			U32 mdif = bufwr - bufrd;
-			if (mdif >= NBUFS) {
-				openavbMediaQTailPull(pMediaQ);
-				AVB_LOGF_INFO("Rx async queue full, dropping (%" PRIu32 " - %" PRIu32 " = %" PRIu32 ")", bufwr, bufrd, mdif);
-				moreSourcePackets = FALSE;
-				continue;
-			}
-		}
-		int rc = write(DataSendSock, pMediaQItem->pPubData,pMediaQItem->dataLen);
-		if (rc != pMediaQItem->dataLen) {
-		    AVB_LOG_ERROR("Failed to send the data from the stack");
+
+		if (-1 == Avbh264DataSink(pMediaQItem->pPubData, pMediaQItem->dataLen)) {
+			AVB_LOG_ERROR("RxCB: Failed to send data to sink");
+			return FALSE;
 		}
 
 		openavbMediaQTailPull(pMediaQ);
@@ -319,7 +320,10 @@ void openavbIntfH264StreamEndCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
-        close(DataSendSock);
+	Avbh264StreamClose();
+	if (pPvtData->fd) {
+		close(pPvtData->fd);
+	}
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
 
@@ -344,6 +348,9 @@ extern DLL_EXPORT bool openavbIntfH264StreamInitialize(media_q_t *pMediaQ, opena
 	pMediaQ->pPvtIntfInfo = calloc(1, sizeof(pvt_data_t));
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
+	pPvtData->width = DEFAULT_WIDTH;
+	pPvtData->height = DEFAULT_HEIGHT;
+	pPvtData->frameRate = DEFAULT_FRAMERATE;
 
 	pIntfCB->intf_cfg_cb = openavbIntfH264StreamCfgCB;
 	pIntfCB->intf_gen_init_cb = openavbIntfH264StreamGenInitCB;

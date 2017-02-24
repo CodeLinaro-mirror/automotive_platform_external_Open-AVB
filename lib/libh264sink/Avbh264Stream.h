@@ -30,20 +30,15 @@
 #define LIBH264STREAM_H
 
 #include <stdint.h>
-#include <sys/types.h>
-#include <pthread.h>
-#include <semaphore.h>
-
-#define  H264_SOCKET_PATH "/data/h264sockstream"
 
 #if defined( __cplusplus )
 extern "C"
 {
 #endif /* end of macro __cplusplus */
 
-extern int Avbh264ConnectToStreamSource(void);
-extern void * Avbh264sink(void *);
-extern int Avbh264streamInitialize();
+extern int Avbh264StreamInitialize(int width, int height, int frameRate);
+extern int Avbh264DataSink(char *pBuf, int size);
+extern int Avbh264StreamClose();
 
 
 #if defined( __cplusplus )
