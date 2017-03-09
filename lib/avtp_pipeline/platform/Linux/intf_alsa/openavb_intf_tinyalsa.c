@@ -384,7 +384,7 @@ bool openavbIntfTinyalsaTxCB(media_q_t *pMediaQ)
 
 			rslt = pcm_read(pPvtData->pcmHandle,
 					(U8*)pMediaQItem->pPubData + pMediaQItem->dataLen,
-					512);
+				pPubMapUncmpAudioInfo->itemSize);
 
 			if (rslt != 0) {
 				AVB_LOGF_ERROR("pcm_read() error: %d, %s", rslt, strerror(rslt));
