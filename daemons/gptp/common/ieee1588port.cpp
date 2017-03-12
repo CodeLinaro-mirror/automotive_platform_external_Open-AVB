@@ -491,10 +491,14 @@ void IEEE1588Port::processEvent(Event e)
 				ClockIdentity clock_identity;
 				unsigned char priority1;
 				unsigned char priority2;
+				PortIdentity portId;
+				uint16_t portNumber = 0;
 				ClockQuality clock_quality;
 
+				getPortIdentity(portId);
+				portId.getPortNumber(&portNumber);
 				clock_identity = getClock()->getClockIdentity();
-				getClock()->setGrandmasterClockIdentity( clock_identity );
+				getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
 				priority1 = getClock()->getPriority1();
 				getClock()->setGrandmasterPriority1( priority1 );
 				priority2 = getClock()->getPriority2();
@@ -522,13 +526,17 @@ void IEEE1588Port::processEvent(Event e)
 						ClockIdentity clock_identity;
 						unsigned char priority1;
 						unsigned char priority2;
+						PortIdentity portId;
+						uint16_t portNumber = 0;
 						ClockQuality *clock_quality;
 
 						ports[j]->recommendState
 							( PTP_SLAVE, changed_external_master );
 
+						ports[j]->getPortIdentity(portId);
+						portId.getPortNumber(&portNumber);
 						clock_identity = EBest->getGrandmasterClockIdentity();
-						getClock()->setGrandmasterClockIdentity(clock_identity);
+						getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
 						priority1 = EBest->getGrandmasterPriority1();
 						getClock()->setGrandmasterPriority1( priority1 );
 						priority2 = EBest->getGrandmasterPriority2();
@@ -581,10 +589,14 @@ void IEEE1588Port::processEvent(Event e)
 				  ClockIdentity clock_identity;
 				  unsigned char priority1;
 				  unsigned char priority2;
+				  PortIdentity portId;
+				  uint16_t portNumber = 0;
 				  ClockQuality clock_quality;
 
+				  getPortIdentity(portId);
+				  portId.getPortNumber(&portNumber);
 				  clock_identity = getClock()->getClockIdentity();
-				  getClock()->setGrandmasterClockIdentity( clock_identity );
+				  getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
 				  priority1 = getClock()->getPriority1();
 				  getClock()->setGrandmasterPriority1( priority1 );
 				  priority2 = getClock()->getPriority2();
