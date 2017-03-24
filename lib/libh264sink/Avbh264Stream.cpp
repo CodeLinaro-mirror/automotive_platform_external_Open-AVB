@@ -35,6 +35,9 @@
 #include <media/stagefright/MediaCodec.h>
 #include <media/stagefright/MediaCodecList.h>
 #include <media/stagefright/MediaDefs.h>
+#ifdef USE_MEDIA_CODEC_BUFFER
+#include <media/MediaCodecBuffer.h>
+#endif
 #include <gui/ISurfaceComposer.h>
 #include <gui/SurfaceComposerClient.h>
 #include <gui/Surface.h>
@@ -423,7 +426,12 @@ int AvbH264Sink::Stop() {
  */
 int AvbH264Sink::DataSink(uint8_t *pBuf, int size) {
     size_t bufferIndex = 0;
+#ifdef USE_MEDIA_CODEC_BUFFER
+    sp<MediaCodecBuffer> codecBuffer = nullptr;
+#else
     sp<ABuffer> codecBuffer = nullptr;
+#endif
+
     uint32_t bufferFlags = 0;
     int err = 0;
     int64_t currentTimeUsec = ALooper::GetNowUs();
@@ -487,7 +495,6 @@ int AvbH264Sink::DataSink(uint8_t *pBuf, int size) {
  */
 void* Avbh264SinkThread(void *arg) {
     ProcessState::self()->startThreadPool();
-    DataSource::RegisterDefaultSniffers();
 
     // Create sink and keep local ref to keep sink alive until thread is done
     sp<AvbH264Sink> sink = gSink = new AvbH264Sink((VideoStats*) arg);

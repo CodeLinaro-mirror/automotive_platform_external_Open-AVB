@@ -159,8 +159,6 @@ void* AvbMpegStreamthread(void *arg)
     if (arg == NULL) {};
     android::ProcessState::self()->startThreadPool();
 
-    DataSource::RegisterDefaultSniffers();
-
     struct sockaddr_un addr;
 
     int sockfd = 0, connfd = 0;
