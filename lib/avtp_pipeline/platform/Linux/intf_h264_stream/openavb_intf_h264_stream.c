@@ -161,94 +161,6 @@ static int openavbMediaQGetItemSize(media_q_t *pMediaQ)
 	return itemSize;
 }
 
-// a talker. Any talker initialization can be done in this function.
-void openavbIntfH264StreamTxInitCB(media_q_t *pMediaQ)
-{
-	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
-
-	if (!pMediaQ) {
-		AVB_LOG_DEBUG("H264-stream txinit: no mediaQ!");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
-
-	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
-	if (!pPvtData) {
-		AVB_LOG_ERROR("Private interface module data not allocated.");
-		return;
-	}
-	//mmap file to read and setup private data
-	pPvtData->fd = open(pPvtData->file_name, O_RDONLY);
-	if (pPvtData->fd == -1) {
-		AVB_LOG_DEBUG("H264-stream txinit: no file not found");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
-	fstat(pPvtData->fd, &pPvtData->statbuf);
-	pPvtData->fp = (U8*)mmap(NULL, pPvtData->statbuf.st_size, PROT_READ, MAP_FILE|MAP_PRIVATE, pPvtData->fd, (off_t) 0);
-	if (pPvtData->fp == (void*)-1) {
-		AVB_LOG_DEBUG("h264-stream txinit: could not mmap file");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-
-	}
-	pPvtData->loc = 0;
-	pPvtData->get_avtp_timestamp = TRUE;
-	pPvtData->read_size = MAX_READ_SIZE;
-
-	AVB_TRACE_EXIT(AVB_TRACE_INTF);
-
-	return;
-}
-
-// This callback will be called for each AVB transmit interval. Commonly this will be
-// 4000 or 8000 times  per second.
-bool openavbIntfH264StreamTxCB(media_q_t *pMediaQ)
-{
-	AVB_TRACE_ENTRY(AVB_TRACE_INTF_DETAIL);
-
-	if (!pMediaQ) {
-		AVB_LOG_DEBUG("No MediaQ in H264StreamTxCB");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return FALSE;
-	}
-
-	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
-	if (!pPvtData) {
-		AVB_LOG_ERROR("Private interface module data not allocated.");
-		return FALSE;
-	}
-	U32 read_size = 0;
-	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
-	if (pMediaQItem) {
-		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
-		} else {
-			read_size = pPvtData->read_size;
-		}
-
-		if (read_size > 0) {
-			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
-		} else {
-			return FALSE;
-		}
-
-		pMediaQItem->dataLen = read_size;
-		pPvtData->loc += read_size ;
-
-		openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
-		openavbMediaQHeadPush(pMediaQ);
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return TRUE;
-
-	}
-	else {
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return FALSE;
-	}
-	AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-	return TRUE;
-}
 
 
 // A call to this callback indicates that this interface module will be
@@ -354,8 +266,6 @@ extern DLL_EXPORT bool openavbIntfH264StreamInitialize(media_q_t *pMediaQ, opena
 
 	pIntfCB->intf_cfg_cb = openavbIntfH264StreamCfgCB;
 	pIntfCB->intf_gen_init_cb = openavbIntfH264StreamGenInitCB;
-	pIntfCB->intf_tx_init_cb = openavbIntfH264StreamTxInitCB;
-	pIntfCB->intf_tx_cb =openavbIntfH264StreamTxCB;
 	pIntfCB->intf_rx_init_cb = openavbIntfH264StreamRxInitCB;
 	pIntfCB->intf_rx_cb = openavbIntfH264StreamRxCB;
 	pIntfCB->intf_end_cb = openavbIntfH264StreamEndCB;

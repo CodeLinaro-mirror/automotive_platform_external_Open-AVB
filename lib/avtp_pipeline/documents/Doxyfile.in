@@ -123,6 +123,8 @@ INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/index.md \
                          @CMAKE_CURRENT_SOURCE_DIR@/../intf_clk_ref \
                          @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_mjpeg_gst \
                          @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_mpeg2ts_file \
+                         @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_mjpeg_file \
+                         @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_h264_file \
                          @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_mpeg2ts_gst \
                          @CMAKE_CURRENT_SOURCE_DIR@/../platform/Linux/intf_wav_file \
                          @CMAKE_CURRENT_SOURCE_DIR@/../include \

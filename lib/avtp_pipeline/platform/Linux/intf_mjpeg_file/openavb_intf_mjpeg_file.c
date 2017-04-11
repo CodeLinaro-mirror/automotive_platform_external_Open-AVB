@@ -41,6 +41,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include "openavb_types_pub.h"
 #include "openavb_trace_pub.h"
 #include "openavb_mediaq_pub.h"
@@ -78,6 +79,7 @@ typedef struct pvt_data_t
                                         an avtp timestamp should be taken */
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
 	U64 frame_time;  //used to pace the talking
+	bool sendFrameDataOnly;
 } pvt_data_t;
 
 // Each configuration name value pair for this mapping will result in this callback being called.
@@ -141,6 +143,12 @@ void openavbIntfMjpegFileCfgCB(media_q_t *pMediaQ, const char *name, const char 
             printf("Frame_Time %" PRIu64 " framePerSec %d\n",
                     pPvtData->frame_time, val);
         }
+	}
+	else if(strcmp(name, "intf_nv_only_send_frame_data") == 0) {
+		tmp = strtol(value, &pEnd, 10);
+		if (*pEnd == '\0' && tmp == 1) {
+			pPvtData->sendFrameDataOnly = (tmp == 1);
+		}
 	}
 
 }
@@ -230,35 +238,35 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 	//Transmit data --BEGIN--
 	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
 	if (pMediaQItem) {
-        if (wait) {
-            openavbAvtpTimeSetToWallTime(&cur_time);
-            if(cur_time.timeNsec < next_tx_time){
-                cnt++;
-                return TRUE;
-            }
-            wait = 0;
-            cnt = 0;
-            //printf("cur time %lld next time %lld count %d\n", cur_time.timeNsec, next_tx_time, cnt);
-        }
-
-		//parse for FFD8 -> Start of Image marker
-		while(pPvtData->find_soi){
-			//make sure not to go out of bounds of the file
-			if (pPvtData->loc + 1 == pPvtData->statbuf.st_size) {
-				pPvtData->loc = 0;
-			}
-			if (pPvtData->fp[pPvtData->loc] == 0xFF && pPvtData->fp[pPvtData->loc+1] == 0xD8){
-				//found SoI
-				pPvtData->find_soi = FALSE;
-
-				// If FPS limited, calculate when the next frame should go out
-				if (pPvtData->frame_time != 0) {
-				    openavbAvtpTimeSetToWallTime(&cur_time);
-				    next_tx_time = cur_time.timeNsec + pPvtData->frame_time;
+		if (pPvtData->sendFrameDataOnly) {
+			if (wait) {
+				openavbAvtpTimeSetToWallTime(&cur_time);
+				if(cur_time.timeNsec < next_tx_time){
+					cnt++;
+					return TRUE;
 				}
-				break;
+				wait = 0;
+				cnt = 0;
+				//printf("cur time %lld next time %lld count %d\n", cur_time.timeNsec, next_tx_time, cnt);
 			}
-			pPvtData->loc++;
+			//parse for FFD8 -> Start of Image marker
+			while(pPvtData->find_soi){
+				//make sure not to go out of bounds of the file
+				if (pPvtData->loc + 1 == pPvtData->statbuf.st_size) {
+					pPvtData->loc = 0;
+				}
+				if (pPvtData->fp[pPvtData->loc] == 0xFF && pPvtData->fp[pPvtData->loc+1] == 0xD8){
+					//found SoI
+					pPvtData->find_soi = FALSE;	
+					// If FPS limited, calculate when the next frame should go out
+					if (pPvtData->frame_time != 0) {
+						openavbAvtpTimeSetToWallTime(&cur_time);
+						next_tx_time = cur_time.timeNsec + pPvtData->frame_time;
+					}
+					break;
+				}
+				pPvtData->loc++;
+			}
 		}
 		//copy over the a read_size amount of data, unless that'll hit eof, then copy up to eof
 		//afterwards check for the End of Image flag
@@ -460,6 +468,7 @@ extern DLL_EXPORT bool openavbIntfMjpegFileInitialize(media_q_t *pMediaQ, openav
 	pIntfCB->intf_gen_end_cb = openavbIntfMjpegFileGenEndCB;
 
 	pPvtData->ignoreTimestamp = FALSE;
+	pPvtData->sendFrameDataOnly = FALSE;
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 	return TRUE;
