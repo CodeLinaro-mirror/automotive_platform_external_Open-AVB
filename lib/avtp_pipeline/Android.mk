@@ -11,6 +11,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/endpoint \
 					$(LOCAL_PATH)/include \
 					$(LOCAL_PATH)/inih \
+					$(LOCAL_PATH)/intf_clk_ref \
 					$(LOCAL_PATH)/intf_ctrl \
 					$(LOCAL_PATH)/intf_echo \
 					$(LOCAL_PATH)/intf_logger \
@@ -20,6 +21,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/maap \
 					$(LOCAL_PATH)/map_aaf_audio \
 					$(LOCAL_PATH)/map_ctrl \
+					$(LOCAL_PATH)/map_clk_ref \
 					$(LOCAL_PATH)/map_h264 \
 					$(LOCAL_PATH)/map_mjpeg \
 					$(LOCAL_PATH)/map_null \
@@ -66,6 +68,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					tl/openavb_tl.c \
 					util/openavb_plugin.c \
 					map_pipe/openavb_map_pipe.c \
+					map_clk_ref/openavb_map_clk_ref.c \
 					map_ctrl/openavb_map_ctrl.c \
 					mediaq/openavb_mediaq.c \
 					avtp/openavb_avtp_time.c \
@@ -91,6 +94,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					platform/Linux/endpoint/openavb_endpoint_cfg.c \
 					endpoint/openavb_endpoint_server.c \
 					intf_viewer/openavb_intf_viewer.c \
+					intf_clk_ref/openavb_intf_clk_ref.c \
 					intf_ctrl/openavb_intf_ctrl.c \
 					intf_echo/openavb_intf_echo.c \
 					intf_logger/openavb_intf_logger.c \
