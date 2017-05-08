@@ -270,8 +270,8 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 		}
 		//copy over the a read_size amount of data, unless that'll hit eof, then copy up to eof
 		//afterwards check for the End of Image flag
-		if (pPvtData->loc + pPvtData->read_size >= pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc - 1;
+		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
+			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
 		}
 		else {
 			read_size = pPvtData->read_size;

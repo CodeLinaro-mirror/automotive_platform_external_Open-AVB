@@ -208,8 +208,8 @@ bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
 	static U32 buf_size ;
 	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
 	if (pMediaQItem) {
-		if (pPvtData->loc + pPvtData->read_size >= pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc - 1;
+		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
+			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
 		}
 		else {
 			read_size = pPvtData->read_size;
