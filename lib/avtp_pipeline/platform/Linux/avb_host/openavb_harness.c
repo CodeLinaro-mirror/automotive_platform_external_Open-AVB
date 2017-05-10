@@ -158,7 +158,7 @@ void openavbTlHarnessMenu()
 /**********************************************
  * main
  */
-int main(int argc, char *argv[])
+int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_HOST);
 
