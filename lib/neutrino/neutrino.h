@@ -50,6 +50,9 @@ struct ifr_data_struct {
 	void *ptr;
 	unsigned int adrs;
 	int bar_num;
+        unsigned int unit;
+        unsigned int addr;
+        unsigned int data;
 };
 
 /* FQTSS related enums and structures */

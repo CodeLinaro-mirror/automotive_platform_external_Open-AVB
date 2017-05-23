@@ -34,7 +34,9 @@
 #ifdef ANDROID
 #include <linux/pci.h>
 #else
+#ifdef PCI_SUPPORT_INCLUDED
 #include <pci/pci.h>
+#endif
 #endif
 
 #include <sys/ioctl.h>
@@ -51,7 +53,7 @@
 
 int pci_connect(device_t * igb_dev)
 {
-#ifndef ANDROID
+#if !defined(ANDROID) && defined(PCI_SUPPORT_INCLUDED)
 	char devpath[IGB_BIND_NAMESZ];
 	struct pci_access *pacc;
 	struct pci_dev *dev;
