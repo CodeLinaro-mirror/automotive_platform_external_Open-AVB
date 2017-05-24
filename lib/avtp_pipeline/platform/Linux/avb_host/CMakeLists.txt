@@ -6,6 +6,7 @@ include_directories(
 		${AVB_SRC_DIR}/srp
 		)
 
+MESSAGE ("PCI_SUPPORT_INCLUDED in avb_host     : ${PCI_SUPPORT_INCLUDED}")
 # Rules to build the AVB host
 if (AVB_FEATURE_GSTREAMER)
 	set(GST_INTF intf_mpeg2ts_gst intf_mjpeg_gst intf_h264_gst)
@@ -13,6 +14,10 @@ endif()
 
 if (AVB_FEATURE_INTF_ALSA2)
 	set (ALSA_INTF alsa_intf)
+endif()
+
+if (PCI_SUPPORT_INCLUDED)
+	set (PCI_PKG_LIBRARIES pci)
 endif()
 
 add_executable ( openavb_host openavb_host.c )
@@ -47,7 +52,7 @@ target_link_libraries( openavb_host
 	pthread 
 	rt 
 	dl 
-	pci )
+	${PCI_PKG_LIBRARIES})
 
 
 # Rules to build the AVB harness
@@ -83,7 +88,7 @@ target_link_libraries( openavb_harness
 	pthread 
 	rt 
 	dl 
-	pci )
+	${PCI_PKG_LIBRARIES})
 
 # Install rules 
 install ( TARGETS openavb_host RUNTIME DESTINATION ${AVB_INSTALL_BIN_DIR} )
