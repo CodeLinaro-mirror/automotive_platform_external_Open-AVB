@@ -105,6 +105,7 @@ static bool setupHWQueue(int nClass, unsigned classBytesPerSec)
 	AVB_TRACE_ENTRY(AVB_TRACE_QUEUE_MANAGER);
 
 #ifdef AVB_FEATURE_NEUTRINO
+	AVB_LOGF_DEBUG("setupHWQueue: interface = %s", qdisc_data.ifname);
 	err = ntn_set_class_bandwidth(nClass, classBytesPerSec, qdisc_data.ifname);
 #else
 	U32 class_a_bytes_per_sec, class_b_bytes_per_sec;
@@ -277,6 +278,9 @@ bool openavbQmgrInitialize(int mode, int ifindex, const char* ifname, unsigned m
 	// Save the configuration
 	if (ifname)
 		strlcpy(qdisc_data.ifname, ifname, IFNAMSIZ);
+
+	AVB_LOGF_DEBUG("Initializing QMgr; interface=%s",qdisc_data.ifname);
+
 	qdisc_data.ifindex = ifindex;
 	qdisc_data.linkKbit = link_kbit;
 	qdisc_data.linkMTU = mtu;

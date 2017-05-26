@@ -112,6 +112,9 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 	if (ifname)
 		strlcpy(x_cfg.ifname, ifname, sizeof(x_cfg.ifname));
 
+	AVB_LOGF_DEBUG("startEndpoint: I Option Interface=%s",x_cfg.ifname);
+
+
 	igbGetMacAddr(x_cfg.ifmac);
 
 	x_cfg.mtu = mtu;
@@ -123,6 +126,8 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 		AVB_LOG_ERROR("Failed to read the endpoint configuration file");
 		goto error;
 	}
+
+	AVB_LOGF_DEBUG("startEndpoint: Ini parsed Interface=%s",x_cfg.ifname);
 
 	endpointRunning = TRUE;
 	int err = pthread_create(&endpointServerHandle, NULL, endpointServerThread, NULL);
