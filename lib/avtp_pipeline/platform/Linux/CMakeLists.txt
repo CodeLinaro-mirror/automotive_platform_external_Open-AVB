@@ -61,8 +61,8 @@ MESSAGE ("-- AVB_INSTALL_LIB_DIR           : ${AVB_INSTALL_LIB_DIR}")
 MESSAGE ("-- SDK_INSTALL_SDK_INTF_MOD_DIR  : ${SDK_INSTALL_SDK_INTF_MOD_DIR}")
 MESSAGE ("-- SDK_INSTALL_SDK_MAP_MOD_DIR   : ${SDK_INSTALL_SDK_MAP_MOD_DIR}")
 MESSAGE ("-- SDK_INSTALL_SDK_EAVB_DIR      : ${SDK_INSTALL_SDK_EAVB_DIR}")
-
-
+MESSAGE ("-- AVB_FEATURE_NEUTRINO          : ${AVB_FEATURE_NEUTRINO}")
+MESSAGE ("-- PCI_SUPPORT_INCLUDED          : ${PCI_SUPPORT_INCLUDED}")
 # Turn on all build warnings
 set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -Wall" )
 
@@ -97,6 +97,10 @@ if (NOT DEFINED AVB_FEATURE_NEUTRINO)
   set ( AVB_FEATURE_NEUTRINO 0 )
 endif ()
 
+# Default PCI support not included
+if (NOT DEFINED PCI_SUPPORT_INCLUDED)
+  set ( PCI_SUPPORT_INCLUDED 0 )
+endif ()
 
 # Export feature flags for sub-builds
 if (AVB_FEATURE_FQTSS)
@@ -113,6 +117,10 @@ if (AVB_FEATURE_NEUTRINO)
 endif ()
 if (AVB_FEATURE_INTF_ALSA2)
 	set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAVB_FEATURE_INTF_ALSA2=1" )
+endif ()
+if (PCI_SUPPORT_INCLUDED)
+  set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPCI_SUPPORT_INCLUDED=1" )
+  set ( PCI_PKG_LIBRARIES pci )
 endif ()
 
 #Export Platform defines
@@ -340,12 +348,12 @@ add_subdirectory ( sdk )
 
 # rawsock_rx
 add_executable (rawsock_rx ${AVB_OSAL_DIR}/rawsock/rawsock_rx.c)
-target_link_libraries (rawsock_rx avbTl ${GLIB_PKG_LIBRARIES} pthread rt pci ${PLATFORM_LINK_LIBRARIES} )
+target_link_libraries (rawsock_rx avbTl ${GLIB_PKG_LIBRARIES} pthread rt ${PCI_PKG_LIBRARIES} ${PLATFORM_LINK_LIBRARIES} )
 install ( TARGETS rawsock_rx RUNTIME DESTINATION ${AVB_INSTALL_BIN_DIR} )
 
 # rawsock_tx
 add_executable (rawsock_tx ${AVB_OSAL_DIR}/rawsock/rawsock_tx.c)
-target_link_libraries (rawsock_tx avbTl ${GLIB_PKG_LIBRARIES} pthread rt pci ${PLATFORM_LINK_LIBRARIES} )
+target_link_libraries (rawsock_tx avbTl ${GLIB_PKG_LIBRARIES} pthread rt ${PCI_PKG_LIBRARIES} ${PLATFORM_LINK_LIBRARIES} )
 install ( TARGETS rawsock_tx RUNTIME DESTINATION ${AVB_INSTALL_BIN_DIR} )
 
 # Copy additional installation files
