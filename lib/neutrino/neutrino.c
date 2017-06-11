@@ -136,6 +136,14 @@ int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
 	float bw100 = 0;
 	float bw1000 = 0;
 
+	char *colon = strchr(ifname, ':');
+	char *ifname_interface = NULL;
+	if (colon) {
+		ifname_interface = colon + 1;
+	}
+	else
+		ifname_interface = ifname;
+
 	if (classBitsPerSecond > 0) {
 		classBitsPerSecond /= 1000 * 1000;
 		classBitsPerSecond += 1;
@@ -182,7 +190,7 @@ int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
 
 	avb_struct.op_mode = QAVB;
 	data.ptr = &avb_struct;
-	strncpy(ifr.ifr_ifrn.ifrn_name, ifname, IFNAMSIZ - 1);
+	strncpy(ifr.ifr_ifrn.ifrn_name, ifname_interface, IFNAMSIZ - 1);
 	ifr.ifr_ifru.ifru_data = (void *)&data;
 
 	errno = 0;
