@@ -196,7 +196,7 @@ void x_openavbMediaQPurgeStaleTail(media_q_t *pMediaQ)
 								pMediaQInfo->tailLocked = TRUE;
 								bool bPurge = FALSE;
 
-#ifdef ENABLE_FIRST_FUTURE
+#ifndef ENABLE_FIRST_FUTURE
 								if (bFirst) {
 									S32 delta = openavbAvtpTimeUsecDelta(pTail->pAvtpTime);
 									S32 maxStale = (S32)(0 - pMediaQInfo->maxStaleTailUsec);

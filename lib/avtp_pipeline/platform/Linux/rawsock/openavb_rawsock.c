@@ -82,6 +82,8 @@ void *openavbRawsockOpen(const char *ifname_uri, bool rx_mode, bool tx_mode, U16
 	const char* ifname = ifname_uri;
 #ifdef ANDROID
     char proto[IF_NAMESIZE] = "pcap";
+#elif defined(AVB_FEATURE_PCAP)
+    char proto[IF_NAMESIZE] = "pcap";
 #else
     char proto[IF_NAMESIZE] = "ring";
 #endif
