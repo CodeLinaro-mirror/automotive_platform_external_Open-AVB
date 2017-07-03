@@ -66,7 +66,8 @@ void print_usage( char *arg0 ) {
 		"\t-A <count> initial accelerated sync count\n"
 		"\t-G <group> group id for shared memory\n"
 		"\t-R <priority 1> priority 1 value\n"
-		"\t-T force master\n\t-L force slave\n" );
+		"\t-T force master\n\t-L force slave\n"
+		"\t-B <0|1> Enable BMCA(1 is by default).Expects pre-configured network if disabled (for 0).\n");
 }
 
 int main(int argc, char **argv)
@@ -76,6 +77,7 @@ int main(int argc, char **argv)
 	int sig;
 
 	bool syntonize = true;
+	bool bmca = true;
 	int i;
 	bool pps = false;
 	uint8_t priority1 = 248;
@@ -136,6 +138,16 @@ int main(int argc, char **argv)
 					syntonize = (atoi(argv[++i]) != 0);
 				} else {
 					syntonize = true;
+				}
+			}
+			if( toupper( argv[i][1] ) == 'B' ) {
+				// Get bmc directive from command line
+				// 1 is to start bmc.
+				// 0 is to not start bmc.
+				if (i + 1 < argc && isdigit(argv[i + 1][0])) {
+					bmca = (atoi(argv[++i]) != 0);
+				} else {
+					bmca = true;
 				}
 			}
 			else if( toupper( argv[i][1] ) == 'T' ) {
@@ -290,7 +302,7 @@ int main(int argc, char **argv)
 
     IEEE1588Port *port =
       new IEEE1588Port
-      ( clock, 1, false, accelerated_sync_count, timestamper, 0, ifname,
+      ( clock, 1, bmca, false, accelerated_sync_count, timestamper, 0, ifname,
 	condition_factory, thread_factory, timer_factory, lock_factory );
 	if (!port->init_port(phy_delay)) {
 		printf("failed to initialize port \n");
