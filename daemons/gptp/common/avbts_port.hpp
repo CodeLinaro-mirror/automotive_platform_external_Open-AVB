@@ -239,6 +239,7 @@ class IEEE1588Port {
 	bool _syntonize;
 
 	bool asCapable;
+	bool _bmca;
 
 	int32_t *rate_offset_array;
 	uint32_t rate_offset_array_size;
@@ -391,6 +392,11 @@ class IEEE1588Port {
 	 * @return asCapable flag
 	 */
 	bool getAsCapable() { return( asCapable ); }
+	/**
+	 * @brief  Gets the bmca flag
+	 * @return _bmca flag
+	 */
+	bool getBmcaStatus() { return( _bmca ); }
 
 	/**
 	 * Destroys a IEEE1588Port
@@ -400,6 +406,7 @@ class IEEE1588Port {
 	/**
 	 * @brief  Creates the IEEE1588Port interface.
 	 * @param  clock IEEE1588Clock instance
+	 * @param  Flag to enable or disable BMCA
 	 * @param  index Interface index
 	 * @param  forceSlave Forces port to be slave
 	 * @param  accelerated_sync_count If non-zero, then start 16ms sync timer
@@ -412,7 +419,7 @@ class IEEE1588Port {
 	 * @param  lock_factory OSLockFactory instance
 	 */
 	IEEE1588Port
-	(IEEE1588Clock * clock, uint16_t index,
+	(IEEE1588Clock * clock, uint16_t index, bool bmca,
 	 bool forceSlave, int accelerated_sync_count,
 	 HWTimestamper * timestamper,
 	 int32_t offset, InterfaceLabel * net_label,
