@@ -69,6 +69,11 @@ typedef enum {
 	V2_P2P
 } PortType;
 
+typedef struct {
+	int8_t sync_req_interval;
+	int8_t pdelay_req_interval;
+	int8_t announce_req_interval;
+} LogMessageInterval_t;
 /**
  * PortIdentity interface
  * Defined at IEEE 802.1AS Clause 8.5.2
@@ -409,6 +414,7 @@ class IEEE1588Port {
 	 * @param  Flag to enable or disable BMCA
 	 * @param  index Interface index
 	 * @param  forceSlave Forces port to be slave
+	 * @param  pointer to input LogMessageinterval timers
 	 * @param  accelerated_sync_count If non-zero, then start 16ms sync timer
 	 * @param  timestamper Hardware timestamper instance
 	 * @param  offset  Initial clock offset
@@ -420,7 +426,7 @@ class IEEE1588Port {
 	 */
 	IEEE1588Port
 	(IEEE1588Clock * clock, uint16_t index, bool bmca,
-	 bool forceSlave, int accelerated_sync_count,
+	 bool forceSlave, int accelerated_sync_count, LogMessageInterval_t * intervals,
 	 HWTimestamper * timestamper,
 	 int32_t offset, InterfaceLabel * net_label,
 	 OSConditionFactory * condition_factory,

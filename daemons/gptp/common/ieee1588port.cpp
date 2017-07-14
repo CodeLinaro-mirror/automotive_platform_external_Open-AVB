@@ -46,6 +46,7 @@
 #include <math.h>
 
 #include <stdlib.h>
+#define PDELAY_REQ_OVERHEAD 5000000
 
 LinkLayerAddress IEEE1588Port::other_multicast(OTHER_MULTICAST);
 LinkLayerAddress IEEE1588Port::pdelay_multicast(PDELAY_MULTICAST);
@@ -70,7 +71,7 @@ IEEE1588Port::~IEEE1588Port()
 
 IEEE1588Port::IEEE1588Port
 (IEEE1588Clock * clock, uint16_t index, bool bmca, bool forceSlave,
- int accelerated_sync_count, HWTimestamper * timestamper, int32_t offset,
+ int accelerated_sync_count, LogMessageInterval_t * intervals, HWTimestamper * timestamper, int32_t offset,
  InterfaceLabel * net_label, OSConditionFactory * condition_factory,
  OSThreadFactory * thread_factory, OSTimerFactory * timer_factory,
  OSLockFactory * lock_factory)
@@ -97,10 +98,10 @@ IEEE1588Port::IEEE1588Port
 	_bmca = bmca;
 
 
-	log_mean_sync_interval = -3;
+	log_mean_sync_interval = intervals->sync_req_interval;
 	_accelerated_sync_count = accelerated_sync_count;
-	log_mean_announce_interval = 0;
-	log_min_mean_pdelay_req_interval = 0;
+	log_mean_announce_interval = intervals->announce_req_interval;
+	log_min_mean_pdelay_req_interval = intervals->pdelay_req_interval;
 
 	_current_clock_offset = _initial_clock_offset = offset;
 
@@ -731,7 +732,8 @@ void IEEE1588Port::processEvent(Event e)
 					interval =
 						((long long)
 						 (pow((double)2,getPDelayInterval())*1000000000.0)) -
-						wait_time*1000;
+						((wait_time*1000) - PDELAY_REQ_OVERHEAD);
+						//subtracting the processing overhead
 					interval = interval > EVENT_TIMER_GRANULARITY ?
 						interval : EVENT_TIMER_GRANULARITY;
 					clock->addEventTimer
