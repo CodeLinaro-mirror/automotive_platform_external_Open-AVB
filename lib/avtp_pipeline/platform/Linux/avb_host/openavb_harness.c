@@ -81,6 +81,8 @@ extern bool openavbIntfAlsa2DualInitialize(media_q_t *pMediaQ, openavb_intf_cb_t
 #endif
 extern bool openavbIntfMjpegGstInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
 extern bool openavbIntfMpeg2tsFileInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
+extern bool openavbIntfMjpegFileInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
+extern bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
 extern bool openavbIntfMpeg2tsGstInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
 extern bool openavbIntfWavFileInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
 extern bool openavbIntfH264RtpGstInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB);
@@ -217,6 +219,8 @@ int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 	registerStaticIntfModule(openavbIntfMjpegGstInitialize);
 #endif
 	registerStaticIntfModule(openavbIntfMpeg2tsFileInitialize);
+	registerStaticIntfModule(openavbIntfMjpegFileInitialize);
+	registerStaticIntfModule(openavbIntfH264RtpFileInitialize);
 #ifdef AVB_FEATURE_GSTREAMER
 	registerStaticIntfModule(openavbIntfMpeg2tsGstInitialize);
 #endif

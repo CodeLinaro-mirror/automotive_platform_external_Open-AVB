@@ -134,7 +134,6 @@ bool IEEE1588Port::init_port(int delay[4])
 	    (&net_iface, factory_name_t("default"), net_label, _hw_timestamper))
 		return false;
 
-	this->net_iface = net_iface;
 	this->net_iface->getLinkLayerAddress(&local_addr);
 	clock->setClockIdentity(&local_addr);
 
