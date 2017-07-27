@@ -38,9 +38,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/tl \
 					$(LOCAL_PATH)/platform/platTCAL/GNU \
 					$(LOCAL_PATH)/util \
-					$(LOCAL_PATH)/../igb \
 					$(LOCAL_PATH)/../libmjpegavbsink \
-					$(LOCAL_PATH)/platform/x86_i210 \
 					$(LOCAL_PATH)/qmgr \
 					$(LOCAL_PATH)/srp \
 					$(LOCAL_PATH)/rawsock \
@@ -56,10 +54,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					platform/Linux/rawsock/openavb_rawsock.c \
 					platform/Linux/rawsock/simple_rawsock.c \
 					platform/Linux/rawsock/ring_rawsock.c \
-					platform/Linux/rawsock/igb_rawsock.c \
 					platform/Linux/openavb_time_osal.c \
-					platform/x86_i210/openavb_time_hal.c \
-					platform/x86_i210/mcr/openavb_mcr_hal.c \
 					openavb_common/avb.c \
 					openavb_common/mrp_client.c \
 					platform/Linux/rawsock/pcap_rawsock.c \
@@ -109,8 +104,6 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					map_null/openavb_map_null.c \
 					map_uncmp_audio/openavb_map_uncmp_audio.c \
 					qmgr/openavb_qmgr.c \
-					platform/x86_i210/openavb_ether_hal.c \
-					../igb/igb.c  \
 					platform/Linux/intf_mjpeg_file/openavb_intf_mjpeg_file.c \
 					platform/Linux/intf_h264_file/openavb_intf_h264_file.c \
 					platform/Linux/intf_h264_stream/openavb_intf_h264_stream.c \
