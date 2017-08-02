@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+* Copyright (c) 2017, The Linux Foundation. All rights reserved.
 */
 
 /*************************************************************************************************************
@@ -37,7 +37,6 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <fcntl.h>
 
 #include "openavb_types_pub.h"
 #include "openavb_trace_pub.h"
@@ -45,14 +44,17 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_intf_pub.h"
 #include "openavb_map_h264_pub.h"
 
-#define	AVB_LOG_COMPONENT	"H264 File Interface"
+#define	AVB_LOG_COMPONENT	"H264 stream Interface"
 #include "openavb_log_pub.h"
+#include "Avbh264Stream.h"
 
 
 #define NBUFS 256
-#define FRAME_SIZE 600000   // 1480 byte from excelfore cam, including ethernet packet header
-#define MAX_READ_SIZE 128
-#define MAX_BUFFER_LEN 1024
+#define MAX_READ_SIZE 192
+
+#define DEFAULT_WIDTH 1920
+#define DEFAULT_HEIGHT 1080
+#define DEFAULT_FRAMERATE 30
 
 typedef struct pvt_data_t
 {
@@ -63,23 +65,25 @@ typedef struct pvt_data_t
 	U32 bufwr;
 	U32 bufrd;
 	U32 seq;
-	U8 rec_frame[FRAME_SIZE];
 	bool asyncRx;
 	bool blockingRx;
 	U32 read_size;
 	U32 loc;
 	int fd;
-        struct stat statbuf;
+    struct stat statbuf;
 	bool get_avtp_timestamp;        /*<! this flag indicates whether
                                         an avtp timestamp should be taken */
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
+	U32 width;
+	U32 height;
+	U32 frameRate;
 } pvt_data_t;
 
 // Each configuration name value pair for this mapping will result in this callback being called.
-void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const char *value)
+void openavbIntfH264StreamCfgCB(media_q_t *pMediaQ, const char *name, const char *value)
 {
 	if (!pMediaQ) {
-		AVB_LOG_DEBUG("H264Rtp-file cfgCB: no mediaQ!");
+		AVB_LOG_DEBUG("H264-Stream cfgCB: no mediaQ!");
 		return;
 	}
 
@@ -91,8 +95,6 @@ void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const cha
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
-
-	pPvtData->asyncRx = FALSE;
 
 	if (strcmp(name, "intf_nv_file_name") == 0) {
 		if (pPvtData->file_name) {
@@ -118,13 +120,25 @@ void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const cha
 			pPvtData->ignoreTimestamp = (tmp == 1);
 		}
 	}
+	else if (strcmp(name, "intf_nv_frame_rate") == 0) {
+		pPvtData->frameRate = atoi(value);
+		AVB_LOGF_INFO("Frame rate is %d", pPvtData->frameRate);
+	}
+	else if (strcmp(name, "intf_nv_width") == 0) {
+		pPvtData->width = atoi(value);
+		AVB_LOGF_INFO("Width is %d", pPvtData->width);
+	}
+	else if (strcmp(name, "intf_nv_height") == 0) {
+		pPvtData->height = atoi(value);
+		AVB_LOGF_INFO("Height is %d", pPvtData->height);
+	}
 }
 
-void openavbIntfH264RtpFileGenInitCB(media_q_t *pMediaQ)
+void openavbIntfH264StreamGenInitCB(media_q_t *pMediaQ)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
 	if (!pMediaQ) {
-		AVB_LOG_DEBUG("H264Rtp-file initCB: no mediaQ!");
+		AVB_LOG_DEBUG("H264-Stream initCB: no mediaQ!");
 		AVB_TRACE_EXIT(AVB_TRACE_INTF);
 		return;
 	}
@@ -147,115 +161,15 @@ static int openavbMediaQGetItemSize(media_q_t *pMediaQ)
 	return itemSize;
 }
 
-// a talker. Any talker initialization can be done in this function.
-void openavbIntfH264RtpFileTxInitCB(media_q_t *pMediaQ)
-{
-	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
-
-	if (!pMediaQ) {
-		AVB_LOG_DEBUG("H264Rtp-gst txinit: no mediaQ!");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
-
-	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
-	if (!pPvtData) {
-		AVB_LOG_ERROR("Private interface module data not allocated.");
-		return;
-	}
-	//mmap file to read and setup private data
-	pPvtData->fd = open(pPvtData->file_name, O_RDONLY);
-	if (pPvtData->fd == -1) {
-		AVB_LOG_DEBUG("H264-file txinit: no file not found");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
-	fstat(pPvtData->fd, &pPvtData->statbuf);
-	pPvtData->fp = (U8*)mmap(NULL, pPvtData->statbuf.st_size, PROT_READ, MAP_FILE|MAP_PRIVATE, pPvtData->fd, (off_t) 0);
-	if (pPvtData->fp == (void*)-1) {
-		AVB_LOG_DEBUG("h264-file txinit: could not mmap file");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-
-	}
-	pPvtData->loc = 0;
-	pPvtData->get_avtp_timestamp = TRUE;
-	pPvtData->read_size = MAX_READ_SIZE;
-
-	AVB_TRACE_EXIT(AVB_TRACE_INTF);
-
-	return;
-}
-
-// This callback will be called for each AVB transmit interval. Commonly this will be
-// 4000 or 8000 times  per second.
-bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
-{
-	AVB_TRACE_ENTRY(AVB_TRACE_INTF_DETAIL);
-
-	if (!pMediaQ) {
-		AVB_LOG_DEBUG("No MediaQ in H264RtpGstTxCB");
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return FALSE;
-	}
-
-	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
-	if (!pPvtData) {
-		AVB_LOG_ERROR("Private interface module data not allocated.");
-		return FALSE;
-	}
-	U32 read_size = 0;
-	static U32 buf_size ;
-	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
-	if (pMediaQItem) {
-		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
-		}
-		else {
-			read_size = pPvtData->read_size;
-		}
-	        if (read_size > 0) {
-			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
-		}
-		else {
-			return FALSE;
-		}
-		pMediaQItem->dataLen = read_size;
-		pPvtData->loc += read_size ;
-		buf_size += read_size ;
-
-		if (buf_size < MAX_BUFFER_LEN) {
-			((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = FALSE;
-			if (read_size > 0 && read_size < MAX_READ_SIZE) {
-				((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
-			}
-		}
-		else {
-			((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
-			buf_size = 0;
-		}
-		openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
-		openavbMediaQHeadPush(pMediaQ);
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return TRUE;
-
-	}
-	else {
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return FALSE;
-	}
-	AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-	return TRUE;
-}
 
 
 // A call to this callback indicates that this interface module will be
 // a listener. Any listener initialization can be done in this function.
-void openavbIntfH264RtpFileRxInitCB(media_q_t *pMediaQ)
+void openavbIntfH264StreamRxInitCB(media_q_t *pMediaQ)
 {
 	AVB_LOG_DEBUG("Rx Init callback.");
 	if (!pMediaQ) {
-		AVB_LOG_DEBUG("No MediaQ in H264RtpFileRxInitCB");
+		AVB_LOG_DEBUG("No MediaQ in H264StreamRxInitCB");
 		return;
 	}
 
@@ -264,18 +178,14 @@ void openavbIntfH264RtpFileRxInitCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
-
-	pPvtData->loc = 0;
-	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        AVB_LOGF_INFO("#############file descripor for the opened file is %d\n", pPvtData->fd);
-	if(pPvtData->fd == -1) {
-		AVB_LOG_ERROR("Failed to create file");
+	int status = Avbh264StreamInitialize(pPvtData->width, pPvtData->height, pPvtData->frameRate);
+	if (status < 0) {
+	AVB_LOG_ERROR("unable to initialize the h264sink Thread");
 	}
-
 }
 
 // This callback is called when acting as a listener.
-bool openavbIntfH264RtpFileRxCB(media_q_t *pMediaQ)
+bool openavbIntfH264StreamRxCB(media_q_t *pMediaQ)
 {
 	if (!pMediaQ) {
 		AVB_LOG_DEBUG("RxCB: no mediaQ!");
@@ -287,40 +197,24 @@ bool openavbIntfH264RtpFileRxCB(media_q_t *pMediaQ)
 		return FALSE;
 	}
 
-	bool moreSourcePackets = TRUE;
+	int err = 0;
 
-	while (moreSourcePackets) {
+	while (1) {
 		media_q_item_t *pMediaQItem = openavbMediaQTailLock(pMediaQ, pPvtData->ignoreTimestamp);
 		// there are no packets available or they are from the future
 		if (!pMediaQItem) {
-			moreSourcePackets = FALSE;
-			continue;
+			break;
 		}
+
 		if (!pMediaQItem->dataLen) {
 			AVB_LOG_DEBUG("No dataLen");
 			openavbMediaQTailPull(pMediaQ);
 			continue;
 		}
-		if (pPvtData->asyncRx) {
-			AVB_LOG_INFO("Rx async called...");
-			U32 bufwr = pPvtData->bufwr;
-			U32 bufrd = pPvtData->bufrd;
-			U32 mdif = bufwr - bufrd;
-			if (mdif >= NBUFS) {
-				openavbMediaQTailPull(pMediaQ);
-				AVB_LOGF_INFO("Rx async queue full, dropping (%" PRIu32 " - %" PRIu32 " = %" PRIu32 ")", bufwr, bufrd, mdif);
-				moreSourcePackets = FALSE;
-				continue;
-			}
-		}
 
-		memcpy(&pPvtData->rec_frame[pPvtData->loc], pMediaQItem->pPubData, pMediaQItem->dataLen);
-		pPvtData->loc += pMediaQItem->dataLen;
-
-		if ( ((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket ) {
-
-			write(pPvtData->fd, pPvtData->rec_frame, pPvtData->loc);
-			pPvtData->loc = 0;
+		if (-1 == Avbh264DataSink(pMediaQItem->pPubData, pMediaQItem->dataLen)) {
+			AVB_LOG_ERROR("RxCB: Failed to send data to sink");
+			return FALSE;
 		}
 
 		openavbMediaQTailPull(pMediaQ);
@@ -330,31 +224,34 @@ bool openavbIntfH264RtpFileRxCB(media_q_t *pMediaQ)
 
 // This callback will be called when the interface needs to be closed. All shutdown should
 // occur in this function.
-void openavbIntfH264RtpFileEndCB(media_q_t *pMediaQ)
+void openavbIntfH264StreamEndCB(media_q_t *pMediaQ)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
-	//bAsyncRXStreaming = FALSE;
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
 	if (!pPvtData) {
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
+	Avbh264StreamClose();
+	if (pPvtData->fd) {
+		close(pPvtData->fd);
+	}
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
 
-void openavbIntfH264RtpFileGenEndCB(media_q_t *pMediaQ)
+void openavbIntfH264StreamGenEndCB(media_q_t *pMediaQ)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
 
 // Main initialization entry point into the interface module
-extern DLL_EXPORT bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB)
+extern DLL_EXPORT bool openavbIntfH264StreamInitialize(media_q_t *pMediaQ, openavb_intf_cb_t *pIntfCB)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_INTF);
 
 	if (!pMediaQ) {
-		AVB_LOG_DEBUG("H264Rtp-gst GstInitialize: no mediaQ!");
+		AVB_LOG_DEBUG("H264-gst GstInitialize: no mediaQ!");
 		AVB_TRACE_EXIT(AVB_TRACE_INTF);
 		return TRUE;
 	}
@@ -363,15 +260,16 @@ extern DLL_EXPORT bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, open
 	pMediaQ->pPvtIntfInfo = calloc(1, sizeof(pvt_data_t));
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
+	pPvtData->width = DEFAULT_WIDTH;
+	pPvtData->height = DEFAULT_HEIGHT;
+	pPvtData->frameRate = DEFAULT_FRAMERATE;
 
-	pIntfCB->intf_cfg_cb = openavbIntfH264RtpFileCfgCB;
-	pIntfCB->intf_gen_init_cb = openavbIntfH264RtpFileGenInitCB;
-	pIntfCB->intf_tx_init_cb =	openavbIntfH264RtpFileTxInitCB;// NULL;
-	pIntfCB->intf_tx_cb =openavbIntfH264RtpFileTxCB;//NULL
-	pIntfCB->intf_rx_init_cb = openavbIntfH264RtpFileRxInitCB;
-	pIntfCB->intf_rx_cb = openavbIntfH264RtpFileRxCB;
-	pIntfCB->intf_end_cb = openavbIntfH264RtpFileEndCB;
-	pIntfCB->intf_gen_end_cb = openavbIntfH264RtpFileGenEndCB;
+	pIntfCB->intf_cfg_cb = openavbIntfH264StreamCfgCB;
+	pIntfCB->intf_gen_init_cb = openavbIntfH264StreamGenInitCB;
+	pIntfCB->intf_rx_init_cb = openavbIntfH264StreamRxInitCB;
+	pIntfCB->intf_rx_cb = openavbIntfH264StreamRxCB;
+	pIntfCB->intf_end_cb = openavbIntfH264StreamEndCB;
+	pIntfCB->intf_gen_end_cb = openavbIntfH264StreamGenEndCB;
 
 	pPvtData->ignoreTimestamp = FALSE;
 
