@@ -221,13 +221,13 @@ class IEEE1588Port {
 	unsigned pdelay_count;
 
 	/* Port Configuration */
-	unsigned char delay_mechanism;
+	uint8_t delay_mechanism;
 	PortState port_state;
-	char log_mean_unicast_sync_interval;
-	char log_mean_sync_interval;
-	char log_mean_announce_interval;
-	char log_min_mean_delay_req_interval;
-	char log_min_mean_pdelay_req_interval;
+	int8_t log_mean_unicast_sync_interval;
+	int8_t log_mean_sync_interval;
+	int8_t log_mean_announce_interval;
+	int8_t log_min_mean_delay_req_interval;
+	int8_t log_min_mean_pdelay_req_interval;
 	bool burst_enabled;
 	int _accelerated_sync_count;
 	/* Signed value allows this to be negative result because of inaccurate
@@ -521,7 +521,7 @@ class IEEE1588Port {
 	 * @brief  Gets the sync interval value
 	 * @return Sync Interval
 	 */
-	char getSyncInterval(void) {
+	int8_t getSyncInterval(void) {
 		return log_mean_sync_interval;
 	}
 
@@ -529,7 +529,7 @@ class IEEE1588Port {
 	 * @brief  Gets the announce interval
 	 * @return Announce interval
 	 */
-	char getAnnounceInterval(void) {
+	int8_t getAnnounceInterval(void) {
 		return log_mean_announce_interval;
 	}
 
@@ -537,7 +537,7 @@ class IEEE1588Port {
 	 * @brief  Gets the pDelay minimum interval
 	 * @return PDelay interval
 	 */
-	char getPDelayInterval(void) {
+	int8_t getPDelayInterval(void) {
 		return log_min_mean_pdelay_req_interval;
 	}
 

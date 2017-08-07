@@ -44,7 +44,11 @@
 
 #include <SkBitmap.h>
 #include <SkStream.h>
+#ifdef USE_SK_CODEC
+#include <SkCodec.h>
+#else
 #include <SkImageDecoder.h>
+#endif
 
 #include "AvbMjpegSink.h"
 #include "GlSink.h"
@@ -102,6 +106,29 @@ bool MjpegFrame::threadLoop() {
     clock_gettime(CLOCK_MONOTONIC, &start_ts);
 #endif
 
+
+#ifdef USE_SK_CODEC
+    // For newer versions of skia library use SkCodec to decode jpeg data
+    sk_sp<SkData> skData = SkData::MakeWithoutCopy(mJpegData, mJpegDataLen);
+    std::unique_ptr<SkCodec> skCodec(SkCodec::NewFromData(skData));
+
+    SkImageInfo info = skCodec->getInfo().makeColorType(kN32_SkColorType);
+    if (!mBitmap.tryAllocPixels(info)) {
+        printf("MjpegFrame::Frame %d failed to alloc skBitmap pixels \n",
+                mFrameNum);
+        return false;
+    }
+    int status = skCodec->getPixels(info, mBitmap.getPixels(), mBitmap.rowBytes());
+
+    if (status != 0) {
+        printf("MjpegFrame::Frame %d decoding failed, status = %d \n",
+                mFrameNum, status);
+        mState = DECODE_ERROR;
+    } else {
+        mState = READY_TO_POST;
+    }
+#else
+    // For older versions of skia library use SkImageDecoder to decode jpeg data
     int status = SkImageDecoder::DecodeMemory(
             mJpegData,
             mJpegDataLen,
@@ -116,6 +143,7 @@ bool MjpegFrame::threadLoop() {
     } else {
         mState = READY_TO_POST;
     }
+#endif
 
 #ifdef ENABLE_TIME_LOGGING
     // record end of decoding

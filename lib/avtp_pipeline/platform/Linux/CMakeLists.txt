@@ -338,6 +338,8 @@ if (AVB_FEATURE_GSTREAMER)
 	add_intf_mod_platform ( "intf_h264_gst" )
 endif ()
 add_intf_mod_platform ( "intf_mpeg2ts_file" )
+add_intf_mod_platform ( "intf_mjpeg_file" )
+add_intf_mod_platform ( "intf_h264_file" )
 add_intf_mod_platform ( "intf_wav_file" )
 
 # API documentation
