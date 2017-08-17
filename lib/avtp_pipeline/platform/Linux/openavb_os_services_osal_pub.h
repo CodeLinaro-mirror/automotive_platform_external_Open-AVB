@@ -42,6 +42,10 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include <unistd.h>
 #include <pthread.h>
 #include <math.h>
+#ifdef ANDROID
+#include <byteswap.h>
+#endif
+
 
 
 #define STD_LOG		stderr
@@ -96,8 +100,13 @@ typedef struct {
 #  define ntohll(x)    (x)
 #  define htonll(x)    (x)
 #elif __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef ANDROID
+#  define ntohll(x)    bswap_64 (x)
+#  define htonll(x)    bswap_64 (x)
+#else
 #  define ntohll(x)    __bswap_64 (x)
 #  define htonll(x)    __bswap_64 (x)
+#endif
 #else
 #  error
 #endif
