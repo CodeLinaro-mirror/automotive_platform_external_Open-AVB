@@ -1,31 +1,31 @@
 /******************************************************************************
 
-  Copyright (c) 2009-2012, Intel Corporation 
+  Copyright (c) 2009-2012, Intel Corporation
   All rights reserved.
-  
-  Redistribution and use in source and binary forms, with or without 
+
+  Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
-  
-   1. Redistributions of source code must retain the above copyright notice, 
+
+   1. Redistributions of source code must retain the above copyright notice,
       this list of conditions and the following disclaimer.
-  
-   2. Redistributions in binary form must reproduce the above copyright 
-      notice, this list of conditions and the following disclaimer in the 
+
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-  
-   3. Neither the name of the Intel Corporation nor the names of its 
-      contributors may be used to endorse or promote products derived from 
+
+   3. Neither the name of the Intel Corporation nor the names of its
+      contributors may be used to endorse or promote products derived from
       this software without specific prior written permission.
-  
+
   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
-  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
-  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE 
-  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
-  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
-  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
-  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
   POSSIBILITY OF SUCH DAMAGE.
 
@@ -117,12 +117,12 @@ IEEE1588Clock::IEEE1588Clock
 
 bool IEEE1588Clock::serializeState( void *buf, off_t *count ) {
   bool ret = true;
-  
+
   if( buf == NULL ) {
     *count = sizeof( _master_local_freq_offset ) + sizeof( _local_system_freq_offset ) + sizeof( LastEBestIdentity );
     return true;
   }
-  
+
   // Master-Local Frequency Offset
   if( ret && *count >= (off_t) sizeof( _master_local_freq_offset )) {
 	  memcpy
@@ -136,7 +136,7 @@ bool IEEE1588Clock::serializeState( void *buf, off_t *count ) {
 	  *count = sizeof( _master_local_freq_offset )-*count;
 	  ret = false;
   }
-  
+
   // Local-System Frequency Offset
   if( ret && *count >= (off_t) sizeof( _local_system_freq_offset )) {
 	  memcpy
@@ -168,11 +168,11 @@ bool IEEE1588Clock::serializeState( void *buf, off_t *count ) {
 
 bool IEEE1588Clock::restoreSerializedState( void *buf, off_t *count ) {
 	bool ret = true;
-  
+
 	/* Master-Local Frequency Offset */
 	if( ret && *count >= (off_t) sizeof( _master_local_freq_offset )) {
 		memcpy
-			( &_master_local_freq_offset, buf, 
+			( &_master_local_freq_offset, buf,
 			  sizeof( _master_local_freq_offset ));
 		*count -= sizeof( _master_local_freq_offset );
 		buf = ((char *)buf) + sizeof( _master_local_freq_offset );
@@ -182,7 +182,7 @@ bool IEEE1588Clock::restoreSerializedState( void *buf, off_t *count ) {
 		*count = sizeof( _master_local_freq_offset )-*count;
 		ret = false;
 	}
-	
+
 	/* Local-System Frequency Offset */
 	if( ret && *count >= (off_t) sizeof( _local_system_freq_offset )) {
 		memcpy
@@ -299,7 +299,7 @@ FrequencyRatio IEEE1588Clock::calcLocalSystemClockRateDifference( Timestamp loca
 	} else {
 		ppt_offset = 1.0;
 	}
-	
+
 	_prev_system_time = system_time;
 	_prev_local_time = local_time;
 
@@ -312,15 +312,15 @@ FrequencyRatio IEEE1588Clock::calcMasterLocalClockRateDifference( Timestamp mast
 	unsigned long long inter_sync_time;
 	unsigned long long inter_master_time;
 	FrequencyRatio ppt_offset;
-	
+
 	XPTPD_INFO( "Calculated master to local clock rate difference" );
 
 	if( !_master_local_freq_offset_init ) {
 		_prev_sync_time = sync_time;
 		_prev_master_time = master_time;
-	
+
 		_master_local_freq_offset_init = true;
-	
+
 		return 1.0;
 	}
 
@@ -345,7 +345,7 @@ void IEEE1588Clock::setMasterOffset
 ( int64_t master_local_offset, Timestamp local_time,
   FrequencyRatio master_local_freq_offset, int64_t local_system_offset,
   Timestamp system_time, FrequencyRatio local_system_freq_offset,
-  unsigned sync_count, unsigned pdelay_count, PortState port_state )
+  unsigned sync_count, unsigned pdelay_count, PortState port_state, bool asCapable )
 {
 	_master_local_freq_offset = master_local_freq_offset;
 	_local_system_freq_offset = local_system_freq_offset;
@@ -385,7 +385,7 @@ void IEEE1588Clock::setMasterOffset
 			}
 		}
 	}
-	
+
 	return;
 }
 
@@ -422,10 +422,10 @@ bool IEEE1588Clock::isBetterThan(PTPMessageAnnounce * msg)
 	tmp = msg->getGrandmasterClockQuality()->offsetScaledLogVariance;
 	tmp = PLAT_htons(tmp);
 	memcpy(that1 + 3, &tmp, sizeof(tmp));
-	
+
 	this1[5] = priority2;
 	that1[5] = msg->getGrandmasterPriority2();
-	
+
 	clock_identity.getIdentityString(this1 + 6);
 	msg->getGrandmasterIdentity((char *)that1 + 6);
 

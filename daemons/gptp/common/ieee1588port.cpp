@@ -50,6 +50,7 @@
 
 LinkLayerAddress IEEE1588Port::other_multicast(OTHER_MULTICAST);
 LinkLayerAddress IEEE1588Port::pdelay_multicast(PDELAY_MULTICAST);
+LinkLayerAddress IEEE1588Port::test_status_multicast(TEST_STATUS_MULTICAST);
 
 OSThreadExitCode openPortWrapper(void *arg)
 {
@@ -69,47 +70,79 @@ IEEE1588Port::~IEEE1588Port()
 	if( qualified_announce != NULL ) delete qualified_announce;
 }
 
-IEEE1588Port::IEEE1588Port
-(IEEE1588Clock * clock, uint16_t index, bool bmca, bool forceSlave,
- int accelerated_sync_count, LogMessageInterval_t * intervals, HWTimestamper * timestamper, int32_t offset,
- InterfaceLabel * net_label, OSConditionFactory * condition_factory,
- OSThreadFactory * thread_factory, OSTimerFactory * timer_factory,
- OSLockFactory * lock_factory)
+IEEE1588Port::IEEE1588Port(IEEE1588PortInit_t *portInit)
 {
 	sync_sequence_id = 0;
 
-	clock->registerPort(this, index);
-	this->clock = clock;
-	ifindex = index;
+	clock = portInit->clock;
+	ifindex = portInit->index;
+	clock->registerPort(this, ifindex);
 
-	this->forceSlave = forceSlave;
+	forceSlave = portInit->forceSlave;
 	port_state = PTP_INITIALIZING;
 
-	asCapable = false;
+	automotive_profile = portInit->automotive_profile;
+	isGM = portInit->isGM;
+	testMode = portInit->testMode;
+	initialLogSyncInterval = portInit->initialLogSyncInterval;
+	initialLogPdelayReqInterval = portInit->initialLogPdelayReqInterval;
+	operLogPdelayReqInterval = portInit->operLogPdelayReqInterval;
+	operLogSyncInterval = portInit->operLogSyncInterval;
+
+	if (automotive_profile) {
+		asCapable = true;
+
+		if (initialLogSyncInterval == LOG2_INTERVAL_INVALID)
+			initialLogSyncInterval = -5;     // 31.25 ms
+		if (initialLogPdelayReqInterval == LOG2_INTERVAL_INVALID)
+			initialLogPdelayReqInterval = -3;  // 125 ms
+		if (operLogPdelayReqInterval == LOG2_INTERVAL_INVALID)
+			operLogPdelayReqInterval = 0;      // 1 second
+		if (operLogSyncInterval == LOG2_INTERVAL_INVALID)
+			operLogSyncInterval = 0;           // 1 second
+	}
+	else {
+		asCapable = false;
+
+		if (initialLogSyncInterval == LOG2_INTERVAL_INVALID)
+			initialLogSyncInterval = -3;       // 125 ms
+		if (initialLogPdelayReqInterval == LOG2_INTERVAL_INVALID)
+			initialLogPdelayReqInterval = -3;  // 125 ms
+		if (operLogPdelayReqInterval == LOG2_INTERVAL_INVALID)
+			operLogPdelayReqInterval = 0;      // 1 second
+		if (operLogSyncInterval == LOG2_INTERVAL_INVALID)
+			operLogSyncInterval = 0;           // 1 second
+	}
 
 	announce_sequence_id = 0;
+	signal_sequence_id = 0;
 	sync_sequence_id = 0;
 	pdelay_sequence_id = 0;
 
-	sync_sequence_id = 0;
-
 	pdelay_started = false;
+	pdelay_halted = false;
+	sync_rate_interval_timer_started = false;
 
-	_bmca = bmca;
+	duplicate_resp_counter = 0;
+	last_invalid_seqid = 0;
 
 
-	log_mean_sync_interval = intervals->sync_req_interval;
-	_accelerated_sync_count = accelerated_sync_count;
-	log_mean_announce_interval = intervals->announce_req_interval;
-	log_min_mean_pdelay_req_interval = intervals->pdelay_req_interval;
+	/*TODO: Add intervals below to a config interface*/
+	log_mean_sync_interval = initialLogSyncInterval;
+	_accelerated_sync_count = portInit->accelerated_sync_count;
+	log_mean_announce_interval = 0;
+	log_min_mean_pdelay_req_interval = initialLogPdelayReqInterval;
 
-	_current_clock_offset = _initial_clock_offset = offset;
+	_current_clock_offset = _initial_clock_offset = portInit->offset;
 
 	rate_offset_array = NULL;
 
-	_hw_timestamper = timestamper;
+	_hw_timestamper = portInit->timestamper;
 
-	one_way_delay = 3600000000000;
+	one_way_delay = ONE_WAY_DELAY_DEFAULT;
+	neighbor_prop_delay_thresh = NEIGHBOR_PROP_DELAY_THRESH;
+	//sync_receipt_thresh = DEFAULT_SYNC_RECEIPT_THRESH;
+	//wrongSeqIDCounter = 0;
 
 	_peer_rate_offset = 1.0;
 
@@ -120,17 +153,32 @@ IEEE1588Port::IEEE1588Port
 
 	qualified_announce = NULL;
 
-	this->net_label = net_label;
+	this->net_label = portInit->net_label;
 
-	this->timer_factory = timer_factory;
-	this->thread_factory = thread_factory;
+	this->timer_factory = portInit->timer_factory;
+	this->thread_factory = portInit->thread_factory;
 
-	this->condition_factory = condition_factory;
-	this->lock_factory = lock_factory;
+	this->condition_factory = portInit->condition_factory;
+	this->lock_factory = portInit->lock_factory;
 
 	pdelay_count = 0;
 	sync_count = 0;
 }
+
+void IEEE1588Port::timestamper_init(void)
+{
+    if( _hw_timestamper != NULL ) {
+        _hw_timestamper->init_phy_delay(this->link_delay);
+        if( !_hw_timestamper->HWTimestamper_init( net_label, net_iface )) {
+            XPTPD_ERROR
+                ( "Failed to initialize hardware timestamper, "
+                  "falling back to software timestamping" );
+            _hw_timestamper = NULL;
+            return;
+        }
+    }
+}
+
 
 bool IEEE1588Port::init_port(int delay[4])
 {
@@ -138,22 +186,19 @@ bool IEEE1588Port::init_port(int delay[4])
 	    (&net_iface, factory_name_t("default"), net_label, _hw_timestamper))
 		return false;
 
+	this->net_iface = net_iface;
 	this->net_iface->getLinkLayerAddress(&local_addr);
 	clock->setClockIdentity(&local_addr);
+	memcpy(this->link_delay, delay, sizeof(this->link_delay));
 
-	if( _hw_timestamper != NULL ) {
-		if( !_hw_timestamper->HWTimestamper_init( net_label, net_iface )) {
-			XPTPD_ERROR
-				( "Failed to initialize hardware timestamper, "
-				  "falling back to software timestamping" );
-			_hw_timestamper = NULL;
-		} else {
-			_hw_timestamper->init_phy_delay(delay);
-		}
-	}
+	this->timestamper_init();
 
 	pdelay_rx_lock = lock_factory->createLock(oslock_recursive);
 	port_tx_lock = lock_factory->createLock(oslock_recursive);
+
+	syncIntervalTimerLock = lock_factory->createLock(oslock_recursive);
+	announceIntervalTimerLock = lock_factory->createLock(oslock_recursive);
+	pDelayIntervalTimerLock = lock_factory->createLock(oslock_recursive);
 
 	port_identity.setClockIdentity(clock->getClockIdentity());
 	port_identity.setPortNumber(&ifindex);
@@ -164,13 +209,50 @@ bool IEEE1588Port::init_port(int delay[4])
 }
 
 void IEEE1588Port::startPDelay() {
-	pdelay_started = true;
-	clock->addEventTimer( this, PDELAY_INTERVAL_TIMEOUT_EXPIRES, 32000000 );
+	if (pdelayHalted()) {
+		return ;
+	}
+	if (automotive_profile) {
+		if (log_min_mean_pdelay_req_interval != PTPMessageSignalling::sigMsgInterval_NoSend) {
+			long long unsigned int waitTime;
+			waitTime = ((long long) (pow((double)2, log_min_mean_pdelay_req_interval) * 1000000000.0));
+			waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime : EVENT_TIMER_GRANULARITY;
+			pdelay_started = true;
+			startPDelayIntervalTimer(waitTime);
+		}
+	}
+	else {
+		pdelay_started = true;
+		startPDelayIntervalTimer(32000000);
+	}
+}
+
+void IEEE1588Port::stopPDelay() {
+	haltPdelay(true);
+	pdelay_started = false;
+	clock->deleteEventTimer( this, PDELAY_INTERVAL_TIMEOUT_EXPIRES);
+}
+
+void IEEE1588Port::startSyncRateIntervalTimer() {
+	if (automotive_profile) {
+		sync_rate_interval_timer_started = true;
+		if (isGM) {
+			// GM will wait up to 8  seconds for signaling rate
+			// TODO: This isn't according to spec but set because it is believed that some slave devices aren't signalling
+			//  to reduce the rate
+			clock->addEventTimer( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED, 8000000000 );
+		}
+		else {
+			// Slave will time out after 4 seconds
+			clock->addEventTimer( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED, 4000000000 );
+		}
+	}
 }
 
 void IEEE1588Port::startAnnounce() {
-	if (_bmca) {
-		clock->addEventTimer( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES, 16000000 );
+	if (!automotive_profile) {
+		startAnnounceIntervalTimer(16000000);
+		//clock->addEventTimer( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES, 16000000 );
 	}
 }
 
@@ -183,114 +265,114 @@ bool IEEE1588Port::serializeState( void *buf, off_t *count ) {
 		return true;
 	}
 
-  if( port_state != PTP_MASTER && port_state != PTP_SLAVE ) {
-    *count = 0;
-    ret = false;
-    goto bail;
-  }
+	if( port_state != PTP_MASTER && port_state != PTP_SLAVE ) {
+		*count = 0;
+		ret = false;
+		goto bail;
+	}
 
-  /* asCapable */
-  if( ret && *count >= (off_t) sizeof( asCapable )) {
-    memcpy( buf, &asCapable, sizeof( asCapable ));
-    *count -= sizeof( asCapable );
-    buf = ((char *)buf) + sizeof( asCapable );
-  } else if( ret == false ) {
-    *count += sizeof( asCapable );
-  } else {
-    *count = sizeof( asCapable )-*count;
-    ret = false;
-  }
+	/* asCapable */
+	if( ret && *count >= (off_t) sizeof( asCapable )) {
+		memcpy( buf, &asCapable, sizeof( asCapable ));
+		*count -= sizeof( asCapable );
+		buf = ((char *)buf) + sizeof( asCapable );
+	} else if( ret == false ) {
+		*count += sizeof( asCapable );
+	} else {
+		*count = sizeof( asCapable )-*count;
+		ret = false;
+	}
 
-  /* Port State */
-  if( ret && *count >= (off_t) sizeof( port_state )) {
-    memcpy( buf, &port_state, sizeof( port_state ));
-    *count -= sizeof( port_state );
-    buf = ((char *)buf) + sizeof( port_state );
-  } else if( ret == false ) {
-    *count += sizeof( port_state );
-  } else {
-    *count = sizeof( port_state )-*count;
-    ret = false;
-  }
+	/* Port State */
+	if( ret && *count >= (off_t) sizeof( port_state )) {
+		memcpy( buf, &port_state, sizeof( port_state ));
+		*count -= sizeof( port_state );
+		buf = ((char *)buf) + sizeof( port_state );
+	} else if( ret == false ) {
+		*count += sizeof( port_state );
+	} else {
+		*count = sizeof( port_state )-*count;
+		ret = false;
+	}
 
-  /* Link Delay */
-  if( ret && *count >= (off_t) sizeof( one_way_delay )) {
-    memcpy( buf, &one_way_delay, sizeof( one_way_delay ));
-    *count -= sizeof( one_way_delay );
-    buf = ((char *)buf) + sizeof( one_way_delay );
-  } else if( ret == false ) {
-    *count += sizeof( one_way_delay );
-  } else {
-    *count = sizeof( one_way_delay )-*count;
-    ret = false;
-  }
+	/* Link Delay */
+	if( ret && *count >= (off_t) sizeof( one_way_delay )) {
+		memcpy( buf, &one_way_delay, sizeof( one_way_delay ));
+		*count -= sizeof( one_way_delay );
+		buf = ((char *)buf) + sizeof( one_way_delay );
+	} else if( ret == false ) {
+		*count += sizeof( one_way_delay );
+	} else {
+		*count = sizeof( one_way_delay )-*count;
+		ret = false;
+	}
 
-  /* Neighbor Rate Ratio */
-  if( ret && *count >= (off_t) sizeof( _peer_rate_offset )) {
-    memcpy( buf, &_peer_rate_offset, sizeof( _peer_rate_offset ));
-    *count -= sizeof( _peer_rate_offset );
-    buf = ((char *)buf) + sizeof( _peer_rate_offset );
-  } else if( ret == false ) {
-    *count += sizeof( _peer_rate_offset );
-  } else {
-    *count = sizeof( _peer_rate_offset )-*count;
-    ret = false;
-  }
+	/* Neighbor Rate Ratio */
+	if( ret && *count >= (off_t) sizeof( _peer_rate_offset )) {
+		memcpy( buf, &_peer_rate_offset, sizeof( _peer_rate_offset ));
+		*count -= sizeof( _peer_rate_offset );
+		buf = ((char *)buf) + sizeof( _peer_rate_offset );
+	} else if( ret == false ) {
+		*count += sizeof( _peer_rate_offset );
+	} else {
+		*count = sizeof( _peer_rate_offset )-*count;
+		ret = false;
+	}
 
  bail:
-  return ret;
+	return ret;
 }
 
 bool IEEE1588Port::restoreSerializedState( void *buf, off_t *count ) {
-  bool ret = true;
+	bool ret = true;
 
-  /* asCapable */
-  if( ret && *count >= (off_t) sizeof( asCapable )) {
-    memcpy( &asCapable, buf, sizeof( asCapable ));
-    *count -= sizeof( asCapable );
-    buf = ((char *)buf) + sizeof( asCapable );
-  } else if( ret == false ) {
-    *count += sizeof( asCapable );
-  } else {
-    *count = sizeof( asCapable )-*count;
-    ret = false;
-  }
+	/* asCapable */
+	if( ret && *count >= (off_t) sizeof( asCapable )) {
+		memcpy( &asCapable, buf, sizeof( asCapable ));
+		*count -= sizeof( asCapable );
+		buf = ((char *)buf) + sizeof( asCapable );
+	} else if( ret == false ) {
+		*count += sizeof( asCapable );
+	} else {
+		*count = sizeof( asCapable )-*count;
+		ret = false;
+	}
 
-  /* Port State */
-  if( ret && *count >= (off_t) sizeof( port_state )) {
-    memcpy( &port_state, buf, sizeof( port_state ));
-    *count -= sizeof( port_state );
-    buf = ((char *)buf) + sizeof( port_state );
-  } else if( ret == false ) {
-    *count += sizeof( port_state );
-  } else {
-    *count = sizeof( port_state )-*count;
-    ret = false;
-  }
+	/* Port State */
+	if( ret && *count >= (off_t) sizeof( port_state )) {
+		memcpy( &port_state, buf, sizeof( port_state ));
+		*count -= sizeof( port_state );
+		buf = ((char *)buf) + sizeof( port_state );
+	} else if( ret == false ) {
+		*count += sizeof( port_state );
+	} else {
+		*count = sizeof( port_state )-*count;
+		ret = false;
+	}
 
-  /* Link Delay */
-  if( ret && *count >= (off_t) sizeof( one_way_delay )) {
-    memcpy( &one_way_delay, buf, sizeof( one_way_delay ));
-    *count -= sizeof( one_way_delay );
-    buf = ((char *)buf) + sizeof( one_way_delay );
-  } else if( ret == false ) {
-    *count += sizeof( one_way_delay );
-  } else {
-    *count = sizeof( one_way_delay )-*count;
-    ret = false;
-  }
+	/* Link Delay */
+	if( ret && *count >= (off_t) sizeof( one_way_delay )) {
+		memcpy( &one_way_delay, buf, sizeof( one_way_delay ));
+		*count -= sizeof( one_way_delay );
+		buf = ((char *)buf) + sizeof( one_way_delay );
+	} else if( ret == false ) {
+		*count += sizeof( one_way_delay );
+	} else {
+		*count = sizeof( one_way_delay )-*count;
+		ret = false;
+	}
 
-  /* Neighbor Rate Ratio */
-  if( ret && *count >= (off_t) sizeof( _peer_rate_offset )) {
-    memcpy( &_peer_rate_offset, buf, sizeof( _peer_rate_offset ));
-    *count -= sizeof( _peer_rate_offset );
-    buf = ((char *)buf) + sizeof( _peer_rate_offset );
-  } else if( ret == false ) {
-    *count += sizeof( _peer_rate_offset );
-  } else {
-    *count = sizeof( _peer_rate_offset )-*count;
-    ret = false;
-  }
+	/* Neighbor Rate Ratio */
+	if( ret && *count >= (off_t) sizeof( _peer_rate_offset )) {
+		memcpy( &_peer_rate_offset, buf, sizeof( _peer_rate_offset ));
+		*count -= sizeof( _peer_rate_offset );
+		buf = ((char *)buf) + sizeof( _peer_rate_offset );
+	} else if( ret == false ) {
+		*count += sizeof( _peer_rate_offset );
+	} else {
+		*count = sizeof( _peer_rate_offset )-*count;
+		ret = false;
+	}
 
   return ret;
 }
@@ -298,7 +380,7 @@ bool IEEE1588Port::restoreSerializedState( void *buf, off_t *count ) {
 void *IEEE1588Port::openPort(IEEE1588Port *port)
 {
 	port_ready_condition->signal();
-	struct phy_delay get_delay;
+	struct phy_delay get_delay = {0, 0, 0,0};
 	port->_hw_timestamper->get_phy_delay(&get_delay);
 
 	while (1) {
@@ -340,7 +422,11 @@ net_result IEEE1588Port::port_send(uint8_t * buf, int size,
 	if (mcast_type != MCAST_NONE) {
 		if (mcast_type == MCAST_PDELAY) {
 			dest = pdelay_multicast;
-		} else {
+		}
+		else if (mcast_type == MCAST_TEST_STATUS) {
+			dest = test_status_multicast;
+		}
+		else {
 			dest = other_multicast;
 		}
 	} else {
@@ -400,22 +486,27 @@ void IEEE1588Port::processEvent(Event e)
 				_accelerated_sync_count = -1;
 			}
 
-			if( port_state != PTP_MASTER ) {
-				fprintf( stderr, "Starting PDelay\n" );
+			if (!automotive_profile) {
+				if (port_state != PTP_SLAVE && port_state != PTP_MASTER) {
+					XPTPD_INFO("Starting PDelay");
+					startPDelay();
+				}
+			}
+			else {
 				startPDelay();
 			}
 
-			if( clock->getPriority1() == 255 || port_state == PTP_SLAVE ) {
+			if( clock->getPriority1() == PRIO_DISABLED || port_state == PTP_SLAVE ) {
 				becomeSlave( true );
 			} else if( port_state == PTP_MASTER ) {
 				becomeMaster( true );
 			} else {
-				if (_bmca) {
 				//e3 = SYNC_RECEIPT_TIMEOUT_EXPIRES;
+				if (!automotive_profile) {
 					e4 = ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES;
 					interval4 = (unsigned long long)
-						(ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
-						pow((double)2,getAnnounceInterval())*1000000000.0);
+							(ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
+							pow((double)2,getAnnounceInterval())*1000000000.0);
 				}
 				interval3 = (unsigned long long)
 					(SYNC_RECEIPT_TIMEOUT_MULTIPLIER*
@@ -440,19 +531,27 @@ void IEEE1588Port::processEvent(Event e)
 
 		clock->putTimerQLock();
 
+		if (automotive_profile && (!isGM)) {
+				// Send an initial signalling message
+			PTPMessageSignalling *sigMsg = new PTPMessageSignalling(this);
+			sigMsg->setintervals(log_min_mean_pdelay_req_interval, log_mean_sync_interval, PTPMessageSignalling::sigMsgInterval_NoSend);
+			sigMsg->sendPort(this, NULL);
+			delete sigMsg;
+		}
+
 		break;
+
 	case STATE_CHANGE_EVENT:
-		if (!_bmca) {
-			break;
-		} else if ( clock->getPriority1() != 255 ) {
+		if (automotive_profile) {       // BMCA is not active with Automotive Profile
+			 break;
+		}
+		if ( clock->getPriority1() != PRIO_DISABLED ) {
 			int number_ports, j;
 			PTPMessageAnnounce *EBest = NULL;
 			char EBestClockIdentity[PTP_CLOCK_IDENTITY_LENGTH];
 
 			IEEE1588Port **ports;
 			clock->getPortList(number_ports, ports);
-
-
 
 			/* Find EBest for all ports */
 			j = 0;
@@ -471,29 +570,23 @@ void IEEE1588Port::processEvent(Event e)
 					}
 				}
 			}
-
-			if (!EBest) {
-				break;
-			}
-
-			/* Check if we've changed */
+				/* Check if we've changed */
 			{
 
-			  uint8_t LastEBestClockIdentity[PTP_CLOCK_IDENTITY_LENGTH];
-			  clock->getLastEBestIdentity().
-				  getIdentityString( LastEBestClockIdentity );
-			  EBest->getGrandmasterIdentity( EBestClockIdentity );
-			  if( memcmp
-				  ( EBestClockIdentity, LastEBestClockIdentity,
-					PTP_CLOCK_IDENTITY_LENGTH ) != 0 )
-			  {
-				  ClockIdentity newGM;
-				  changed_external_master = true;
-				  newGM.set((uint8_t *) EBestClockIdentity );
-				  clock->setLastEBestIdentity( newGM );
-			  } else {
-				  changed_external_master = false;
-			  }
+				uint8_t LastEBestClockIdentity[PTP_CLOCK_IDENTITY_LENGTH];
+				clock->getLastEBestIdentity().
+				getIdentityString( LastEBestClockIdentity );
+				EBest->getGrandmasterIdentity( EBestClockIdentity );
+				if( memcmp( EBestClockIdentity, LastEBestClockIdentity,
+				    PTP_CLOCK_IDENTITY_LENGTH ) != 0 )
+				{
+					ClockIdentity newGM;
+					changed_external_master = true;
+					newGM.set((uint8_t *) EBestClockIdentity );
+					clock->setLastEBestIdentity( newGM );
+				} else {
+					changed_external_master = false;
+				}
 			}
 
 			if( clock->isBetterThan( EBest )) {
@@ -501,14 +594,9 @@ void IEEE1588Port::processEvent(Event e)
 				ClockIdentity clock_identity;
 				unsigned char priority1;
 				unsigned char priority2;
-				PortIdentity portId;
-				uint16_t portNumber = 0;
 				ClockQuality clock_quality;
-
-				getPortIdentity(portId);
-				portId.getPortNumber(&portNumber);
-				clock_identity = getClock()->getClockIdentity();
-				getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
+					clock_identity = getClock()->getClockIdentity();
+				getClock()->setGrandmasterClockIdentity( clock_identity );
 				priority1 = getClock()->getPriority1();
 				getClock()->setGrandmasterPriority1( priority1 );
 				priority2 = getClock()->getPriority2();
@@ -523,30 +611,25 @@ void IEEE1588Port::processEvent(Event e)
 					++j;
 				if (ports[j]->port_state == PTP_DISABLED
 				    || ports[j]->port_state == PTP_FAULTY) {
-					continue;
+				continue;
 				}
 				if (clock->isBetterThan(EBest)) {
 					// We are the GrandMaster, all ports are master
 					EBest = NULL;	// EBest == NULL : we were grandmaster
 					ports[j]->recommendState(PTP_MASTER,
-								 changed_external_master);
+					                         changed_external_master);
 				} else {
 					if( EBest == ports[j]->calculateERBest() ) {
 						// The "best" Announce was recieved on this port
 						ClockIdentity clock_identity;
 						unsigned char priority1;
 						unsigned char priority2;
-						PortIdentity portId;
-						uint16_t portNumber = 0;
 						ClockQuality *clock_quality;
-
 						ports[j]->recommendState
-							( PTP_SLAVE, changed_external_master );
+						  ( PTP_SLAVE, changed_external_master );
 
-						ports[j]->getPortIdentity(portId);
-						portId.getPortNumber(&portNumber);
 						clock_identity = EBest->getGrandmasterClockIdentity();
-						getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
+						getClock()->setGrandmasterClockIdentity(clock_identity);
 						priority1 = EBest->getGrandmasterPriority1();
 						getClock()->setGrandmasterPriority1( priority1 );
 						priority2 = EBest->getGrandmasterPriority2();
@@ -557,7 +640,7 @@ void IEEE1588Port::processEvent(Event e)
 						/* Otherwise we are the master because we have
 						   sync'd to a better clock */
 						ports[j]->recommendState
-							(PTP_MASTER, changed_external_master);
+						  (PTP_MASTER, changed_external_master);
 					}
 				}
 			}
@@ -565,315 +648,316 @@ void IEEE1588Port::processEvent(Event e)
 		break;
 	case ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES:
 	case SYNC_RECEIPT_TIMEOUT_EXPIRES:
-		{
-			if( clock->getPriority1() == 255 ) {
-				// Restart timer
-				if ((e == ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES) && _bmca) {
-					clock->addEventTimer
-						(this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES,
-						 (ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
-						  (unsigned long long)
-						  (pow((double)2,getAnnounceInterval())*
-						   1000000000.0)));
-				} else {
-					clock->addEventTimer
-						(this, SYNC_RECEIPT_TIMEOUT_EXPIRES,
-						 (SYNC_RECEIPT_TIMEOUT_MULTIPLIER*
-						  (unsigned long long)
-						  (pow((double)2,getSyncInterval())*
-						   1000000000.0)));
-				}
-				return;
-			}
-			if (port_state == PTP_INITIALIZING
-			    || port_state == PTP_UNCALIBRATED
-			    || port_state == PTP_SLAVE
-			    || port_state == PTP_PRE_MASTER) {
-				fprintf
-					(stderr,
-					 "*** %s Timeout Expired - Becoming Master\n",
-					 e == ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES ? "Announce" :
-					 "Sync" );
-				{
-				  // We're Grandmaster, set grandmaster info to me
-				  ClockIdentity clock_identity;
-				  unsigned char priority1;
-				  unsigned char priority2;
-				  PortIdentity portId;
-				  uint16_t portNumber = 0;
-				  ClockQuality clock_quality;
+		if (automotive_profile) {
+			// Automotive Profile
+			XPTPD_INFO("SYNC receipt timeout");
+			break;
+		}
 
-				  getPortIdentity(portId);
-				  portId.getPortNumber(&portNumber);
-				  clock_identity = getClock()->getClockIdentity();
-				  getClock()->setGrandmasterClockIdentity(clock_identity, portNumber);
-				  priority1 = getClock()->getPriority1();
-				  getClock()->setGrandmasterPriority1( priority1 );
-				  priority2 = getClock()->getPriority2();
-				  getClock()->setGrandmasterPriority2( priority2 );
-				  clock_quality = getClock()->getClockQuality();
-				  getClock()->setGrandmasterClockQuality( clock_quality );
-				}
-				port_state = PTP_MASTER;
-				Timestamp system_time;
-				Timestamp device_time;
-
-				uint32_t local_clock, nominal_clock_rate;
-
-				getDeviceTime(system_time, device_time,
-					      local_clock, nominal_clock_rate);
-
-				(void) clock->calcLocalSystemClockRateDifference
-				  ( device_time, system_time );
-
-				delete qualified_announce;
-				qualified_announce = NULL;
-
-				// Add timers for Announce and Sync, this is as close to immediately as we get
+		if( clock->getPriority1() == PRIO_DISABLED ) {
+			// Restart timer
+			if( e == ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES ) {
 				clock->addEventTimer
-					( this, SYNC_INTERVAL_TIMEOUT_EXPIRES, 16000000 );
-				startAnnounce();
+				  (this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES,
+				   (ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
+				    (unsigned long long)
+				    (pow((double)2,getAnnounceInterval())*
+				     1000000000.0)));
+			} else {
+				clock->addEventTimer
+				  (this, SYNC_RECEIPT_TIMEOUT_EXPIRES,
+				   (SYNC_RECEIPT_TIMEOUT_MULTIPLIER*
+				    (unsigned long long)
+				    (pow((double)2,getSyncInterval())*
+				     1000000000.0)));
 			}
+		}
+		if (port_state == PTP_INITIALIZING
+		    || port_state == PTP_UNCALIBRATED
+		    || port_state == PTP_SLAVE
+		    || port_state == PTP_PRE_MASTER) {
+			XPTPD_INFO(
+			  "*** %s Timeout Expired - Becoming Master\n",
+			  e == ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES ? "Announce" :
+			  "Sync" );
+			{
+				// We're Grandmaster, set grandmaster info to me
+				ClockIdentity clock_identity;
+				unsigned char priority1;
+				unsigned char priority2;
+				ClockQuality clock_quality;
+
+				clock_identity = getClock()->getClockIdentity();
+				getClock()->setGrandmasterClockIdentity( clock_identity );
+				priority1 = getClock()->getPriority1();
+				getClock()->setGrandmasterPriority1( priority1 );
+				priority2 = getClock()->getPriority2();
+				getClock()->setGrandmasterPriority2( priority2 );
+				clock_quality = getClock()->getClockQuality();
+				getClock()->setGrandmasterClockQuality( clock_quality );
+			}
+			port_state = PTP_MASTER;
+			Timestamp system_time;
+			Timestamp device_time;
+			uint32_t local_clock, nominal_clock_rate;
+			getDeviceTime(system_time, device_time,
+			              local_clock, nominal_clock_rate);
+			(void) clock->calcLocalSystemClockRateDifference
+			         ( device_time, system_time );
+
+			delete qualified_announce;
+			qualified_announce = NULL;
+
+			// Add timers for Announce and Sync, this is as close to immediately as we get
+			if( clock->getPriority1() != PRIO_DISABLED) {
+				clock->addEventTimer
+				  ( this, SYNC_INTERVAL_TIMEOUT_EXPIRES, 16000000 );
+			}
+			startAnnounce();
 		}
 
 		break;
 	case PDELAY_INTERVAL_TIMEOUT_EXPIRES:
-			XPTPD_INFO("PDELAY_INTERVAL_TIMEOUT_EXPIRES occured");
+		XPTPD_INFO("PDELAY_INTERVAL_TIMEOUT_EXPIRES occured");
+		{
+			int ts_good;
+			Timestamp req_timestamp;
+			int iter = TX_TIMEOUT_ITER;
+			long req = TX_TIMEOUT_BASE;
+			unsigned req_timestamp_counter_value;
+			long long wait_time = 0;
+
+			PTPMessagePathDelayReq *pdelay_req =
+			    new PTPMessagePathDelayReq(this);
+			PortIdentity dest_id;
+			getPortIdentity(dest_id);
+			pdelay_req->setPortIdentity(&dest_id);
+
 			{
-				int ts_good;
-				Timestamp req_timestamp;
-				int iter = TX_TIMEOUT_ITER;
-				long req = TX_TIMEOUT_BASE;
-				unsigned req_timestamp_counter_value;
-				long long wait_time = 0;
+				Timestamp pending =
+				    PDELAY_PENDING_TIMESTAMP;
+				pdelay_req->setTimestamp(pending);
+			}
 
-				PTPMessagePathDelayReq *pdelay_req =
-				    new PTPMessagePathDelayReq(this);
-				PortIdentity dest_id;
-				getPortIdentity(dest_id);
-				pdelay_req->setPortIdentity(&dest_id);
+			if (last_pdelay_req != NULL) {
+				delete last_pdelay_req;
+			}
+			setLastPDelayReq(pdelay_req);
 
-				{
-					Timestamp pending =
-					    PDELAY_PENDING_TIMESTAMP;
-					pdelay_req->setTimestamp(pending);
-				}
+			getTxLock();
+			pdelay_req->sendPort(this, NULL);
+			XPTPD_INFO("Sent PDelay Request");
 
-				if (last_pdelay_req != NULL) {
-					delete last_pdelay_req;
-				}
-				setLastPDelayReq(pdelay_req);
-
-				getTxLock();
-				pdelay_req->sendPort(this, NULL);
-				XPTPD_INFO("Sent PDelay Request");
-
+			ts_good = getTxTimestamp
+				(pdelay_req, req_timestamp, req_timestamp_counter_value, false);
+			while (ts_good != GPTP_EC_SUCCESS && iter-- != 0) {
+				timer->sleep(req);
+				wait_time += req;
+				if (ts_good != GPTP_EC_EAGAIN && iter < 1)
+					XPTPD_INFO(
+						 "Error (TX) timestamping PDelay request "
+						 "(Retrying-%d), error=%d\n", iter, ts_good);
 				ts_good =
 				    getTxTimestamp
-					(pdelay_req, req_timestamp, req_timestamp_counter_value,
-					 false);
-				while (ts_good != 0 && iter-- != 0) {
+					(pdelay_req, req_timestamp,
+					 req_timestamp_counter_value, iter == 0);
+				req *= 2;
+			}
+			putTxLock();
+
+			if (ts_good == GPTP_EC_SUCCESS) {
+				pdelay_req->setTimestamp(req_timestamp);
+			} else {
+				Timestamp failed = INVALID_TIMESTAMP;
+				pdelay_req->setTimestamp(failed);
+				XPTPD_INFO( "Invalid TX\n" );
+			}
+
+			if (ts_good != GPTP_EC_SUCCESS) {
+				char msg
+				    [HWTIMESTAMPER_EXTENDED_MESSAGE_SIZE];
+				getExtendedError(msg);
+				XPTPD_ERROR(
+					"Error (TX) timestamping PDelay request, error=%d\t%s",
+					ts_good, msg);
+			}
+#ifdef DEBUG
+			if (ts_good == GPTP_EC_SUCCESS) {
+				XPTPD_INFO
+				    ("Successful PDelay Req timestamp, %u,%u",
+				     req_timestamp.seconds_ls,
+				     req_timestamp.nanoseconds);
+			} else {
+				XPTPD_INFO
+				    ("*** Unsuccessful PDelay Req timestamp");
+			}
+#endif
+
+			{
+				long long timeout;
+				long long interval;
+
+				timeout = PDELAY_RESP_RECEIPT_TIMEOUT_MULTIPLIER *
+					((long long)
+					 (pow((double)2,getPDelayInterval())*1000000000.0)) -
+					wait_time*1000;
+				timeout = timeout > EVENT_TIMER_GRANULARITY ?
+					timeout : EVENT_TIMER_GRANULARITY;
+				clock->addEventTimer
+					(this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES, timeout );
+
+				interval =
+					((long long)
+					 (pow((double)2,getPDelayInterval())*1000000000.0)) -
+					wait_time*1000;
+				interval = interval > EVENT_TIMER_GRANULARITY ?
+					interval : EVENT_TIMER_GRANULARITY;
+				startPDelayIntervalTimer(interval);
+			}
+		}
+
+		break;
+	case SYNC_INTERVAL_TIMEOUT_EXPIRES:
+		XPTPD_INFO("SYNC_INTERVAL_TIMEOUT_EXPIRES occured");
+		{
+			/* Set offset from master to zero, update device vs
+			   system time offset */
+			Timestamp system_time;
+			Timestamp device_time;
+			FrequencyRatio local_system_freq_offset;
+			int64_t local_system_offset;
+			long long wait_time = 0;
+
+			uint32_t local_clock, nominal_clock_rate;
+
+			// Send a sync message and then a followup to broadcast
+			if (asCapable) {
+				PTPMessageSync *sync = new PTPMessageSync(this);
+				PortIdentity dest_id;
+				getPortIdentity(dest_id);
+				sync->setPortIdentity(&dest_id);
+				getTxLock();
+				sync->sendPort(this, NULL);
+				XPTPD_INFO("Sent SYNC message");
+
+				int ts_good;
+				Timestamp sync_timestamp;
+				unsigned sync_timestamp_counter_value;
+				int iter = TX_TIMEOUT_ITER;
+				long req = TX_TIMEOUT_BASE;
+				ts_good =
+					getTxTimestamp(sync, sync_timestamp,
+								   sync_timestamp_counter_value,
+								   false);
+				while (ts_good != GPTP_EC_SUCCESS && iter-- != 0) {
 					timer->sleep(req);
 					wait_time += req;
-					if (ts_good != -72 && iter < 1)
-						fprintf
-							(stderr,
-							 "Error (TX) timestamping PDelay request "
-							 "(Retrying-%d), error=%d\n", iter, ts_good);
+
+					if (ts_good != GPTP_EC_EAGAIN && iter < 1)
+						XPTPD_ERROR(
+							"Error (TX) timestamping Sync (Retrying), "
+							"error=%d", ts_good);
 					ts_good =
-					    getTxTimestamp
-						(pdelay_req, req_timestamp,
-						 req_timestamp_counter_value, iter == 0);
+					getTxTimestamp
+						(sync, sync_timestamp,
+						 sync_timestamp_counter_value, iter == 0);
 					req *= 2;
 				}
 				putTxLock();
 
-				if (ts_good == 0) {
-					pdelay_req->setTimestamp(req_timestamp);
-				} else {
-				  Timestamp failed = INVALID_TIMESTAMP;
-				  pdelay_req->setTimestamp(failed);
-				  fprintf( stderr, "Invalid TX\n" );
-				}
-
-				if (ts_good != 0) {
-					char msg
-					    [HWTIMESTAMPER_EXTENDED_MESSAGE_SIZE];
+				if (ts_good != GPTP_EC_SUCCESS) {
+					char msg [HWTIMESTAMPER_EXTENDED_MESSAGE_SIZE];
 					getExtendedError(msg);
-					XPTPD_ERROR(
-						"Error (TX) timestamping PDelay request, error=%d\t%s",
-						ts_good, msg);
+					XPTPD_INFO(
+						 "Error (TX) timestamping Sync, error="
+						 "%d\n%s",
+						 ts_good, msg );
 				}
-#ifdef DEBUG
-				if (ts_good == 0) {
-					XPTPD_INFO
-					    ("Successful PDelay Req timestamp, %u,%u",
-					     req_timestamp.seconds_ls,
-					     req_timestamp.nanoseconds);
+
+				if (ts_good == GPTP_EC_SUCCESS) {
+					XPTPD_INFO("Successful Sync timestamp");
+					XPTPD_INFO("Seconds: %u",
+							   sync_timestamp.seconds_ls);
+					XPTPD_INFO("Nanoseconds: %u",
+							   sync_timestamp.nanoseconds);
 				} else {
 					XPTPD_INFO
-					    ("*** Unsuccessful PDelay Req timestamp");
+						("*** Unsuccessful Sync timestamp");
 				}
-#endif
 
-				{
-					long long timeout;
-					long long interval;
+				PTPMessageFollowUp *follow_up;
+				if (ts_good == GPTP_EC_SUCCESS) {
 
-					timeout = PDELAY_RESP_RECEIPT_TIMEOUT_MULTIPLIER *
-						((long long)
-						 (pow((double)2,getPDelayInterval())*1000000000.0)) -
-						wait_time*1000;
-					timeout = timeout > EVENT_TIMER_GRANULARITY ?
-						timeout : EVENT_TIMER_GRANULARITY;
-					clock->addEventTimer
-						(this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES, timeout );
-
-					interval =
-						((long long)
-						 (pow((double)2,getPDelayInterval())*1000000000.0)) -
-						((wait_time*1000) - PDELAY_REQ_OVERHEAD);
-						//subtracting the processing overhead
-					interval = interval > EVENT_TIMER_GRANULARITY ?
-						interval : EVENT_TIMER_GRANULARITY;
-					clock->addEventTimer
-						(this, PDELAY_INTERVAL_TIMEOUT_EXPIRES, interval );
-				}
-			}
-			break;
-	case SYNC_INTERVAL_TIMEOUT_EXPIRES:
-			XPTPD_INFO("SYNC_INTERVAL_TIMEOUT_EXPIRES occured");
-			{
-				/* Set offset from master to zero, update device vs
-				   system time offset */
-				Timestamp system_time;
-				Timestamp device_time;
-				FrequencyRatio local_system_freq_offset;
-				int64_t local_system_offset;
-				long long wait_time = 0;
-
-				uint32_t local_clock, nominal_clock_rate;
-
-				// Send a sync message and then a followup to broadcast
-				if (asCapable) {
-					PTPMessageSync *sync = new PTPMessageSync(this);
+					follow_up =
+						new PTPMessageFollowUp(this);
 					PortIdentity dest_id;
 					getPortIdentity(dest_id);
-					sync->setPortIdentity(&dest_id);
-					getTxLock();
-					sync->sendPort(this, NULL);
-					XPTPD_INFO("Sent SYNC message");
 
-					int ts_good;
-					Timestamp sync_timestamp;
-					unsigned sync_timestamp_counter_value;
-					int iter = TX_TIMEOUT_ITER;
-					long req = TX_TIMEOUT_BASE;
-					ts_good =
-						getTxTimestamp(sync, sync_timestamp,
-									   sync_timestamp_counter_value,
-									   false);
-					while (ts_good != 0 && iter-- != 0) {
-						timer->sleep(req);
-						wait_time += req;
-
-						if (ts_good != -72 && iter < 1)
-							XPTPD_ERROR(
-								"Error (TX) timestamping Sync (Retrying), "
-								"error=%d", ts_good);
-						ts_good =
-							getTxTimestamp
-							(sync, sync_timestamp,
-							 sync_timestamp_counter_value, iter == 0);
-						req *= 2;
-					}
-					putTxLock();
-
-					if (ts_good != 0) {
-						char msg
-							[HWTIMESTAMPER_EXTENDED_MESSAGE_SIZE];
-						getExtendedError(msg);
-						fprintf
-							(stderr,
-							 "Error (TX) timestamping Sync, error="
-							 "%d\n%s",
-							 ts_good, msg );
- 					}
-
-					if (ts_good == 0) {
-						XPTPD_INFO("Successful Sync timestamp");
-						XPTPD_INFO("Seconds: %u",
-								   sync_timestamp.seconds_ls);
-						XPTPD_INFO("Nanoseconds: %u",
-								   sync_timestamp.nanoseconds);
-					} else {
-						XPTPD_INFO
-							("*** Unsuccessful Sync timestamp");
-					}
-
-					PTPMessageFollowUp *follow_up;
-					if (ts_good == 0) {
-						follow_up =
-							new PTPMessageFollowUp(this);
-						PortIdentity dest_id;
-						getPortIdentity(dest_id);
-						follow_up->setPortIdentity(&dest_id);
-						follow_up->setSequenceId(sync->getSequenceId());
-						follow_up->setPreciseOriginTimestamp(sync_timestamp);
-						follow_up->sendPort(this, NULL);
-						delete follow_up;
-					} else {
-					}
-					delete sync;
+					follow_up->setPortIdentity(&dest_id);
+					follow_up->setSequenceId(sync->getSequenceId());
+					follow_up->setPreciseOriginTimestamp(sync_timestamp);
+					follow_up->sendPort(this, NULL);
+					delete follow_up;
+				} else {
 				}
-				/* Do getDeviceTime() after transmitting sync frame
-				   causing an update to local/system timestamp */
-				getDeviceTime
-					(system_time, device_time, local_clock, nominal_clock_rate);
+				delete sync;
+			}
+			/* Do getDeviceTime() after transmitting sync frame
+			   causing an update to local/system timestamp */
+			getDeviceTime
+				(system_time, device_time, local_clock, nominal_clock_rate);
 
-				XPTPD_INFO
-					("port::processEvent(): System time: %u,%u Device Time: %u,%u",
-					 system_time.seconds_ls, system_time.nanoseconds,
-					 device_time.seconds_ls, device_time.nanoseconds);
+			XPTPD_INFO
+				("port::processEvent(): System time: %u,%u Device Time: %u,%u",
+				 system_time.seconds_ls, system_time.nanoseconds,
+				 device_time.seconds_ls, device_time.nanoseconds);
 
-				local_system_offset =
+			local_system_offset =
 			    TIMESTAMP_TO_NS(system_time) -
 			    TIMESTAMP_TO_NS(device_time);
-			  local_system_freq_offset =
+			local_system_freq_offset =
 			    clock->calcLocalSystemClockRateDifference
-			    ( device_time, system_time );
-			  clock->setMasterOffset
-				  (0, device_time, 1.0, local_system_offset,
-				   system_time, local_system_freq_offset, sync_count,
-				   pdelay_count, port_state );
+			      ( device_time, system_time );
+			clock->setMasterOffset
+			  (0, device_time, 1.0, local_system_offset,
+			   system_time, local_system_freq_offset, sync_count,
+			   pdelay_count, port_state, asCapable );
 
-			  /* If accelerated_sync is non-zero then start 16 ms sync
-				 timer, subtract 1, for last one start PDelay also */
-			  if( _accelerated_sync_count > 0 ) {
-				  clock->addEventTimer
+			if (!automotive_profile) {
+				/* If accelerated_sync is non-zero then start 16 ms sync
+				   timer, subtract 1, for last one start PDelay also */
+				if( _accelerated_sync_count > 0 ) {
+					clock->addEventTimer
 					  ( this, SYNC_INTERVAL_TIMEOUT_EXPIRES, 8000000 );
-				  --_accelerated_sync_count;
-			  } else {
-				  syncDone();
-				  if( _accelerated_sync_count == 0 ) {
-					  --_accelerated_sync_count;
-				  }
-				  wait_time *= 1000; // to ns
-				  wait_time =
+					    --_accelerated_sync_count;
+				} else {
+					syncDone();
+					if( _accelerated_sync_count == 0 ) {
+						--_accelerated_sync_count;
+					}
+					wait_time *= 1000; // to ns
+					wait_time =
 					  ((long long)
-					   (pow((double)2,getSyncInterval())*1000000000.0)) -
-					  wait_time;
-				  wait_time = wait_time > EVENT_TIMER_GRANULARITY ? wait_time :
-					  EVENT_TIMER_GRANULARITY;
-				  clock->addEventTimer
-					  ( this, SYNC_INTERVAL_TIMEOUT_EXPIRES, wait_time );
-			  }
-
+					     (pow((double)2,getSyncInterval())*1000000000.0)) -
+					    wait_time;
+					wait_time = wait_time > EVENT_TIMER_GRANULARITY ? wait_time :
+					            EVENT_TIMER_GRANULARITY;
+					startSyncIntervalTimer(wait_time);
+				}
 			}
-			break;
+			else {
+				// Automotive Profile
+				syncDone();
+
+				wait_time = ((long long) (pow((double)2, getSyncInterval()) * 1000000000.0));
+				wait_time = wait_time > EVENT_TIMER_GRANULARITY ? wait_time : EVENT_TIMER_GRANULARITY;
+				startSyncIntervalTimer(wait_time);
+			}
+
+		}
+		break;
 	case ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES:
-		if (!_bmca)
-		{
+		if (automotive_profile) {
 			break;
 		}
 		if (asCapable) {
@@ -888,18 +972,16 @@ void IEEE1588Port::processEvent(Event e)
 			annc->sendPort(this, NULL);
 			delete annc;
 		}
-		clock->addEventTimer
-			(this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES,
-			 (unsigned)
-			 (pow ((double)2, getAnnounceInterval()) * 1000000000.0));
+		startAnnounceIntervalTimer(pow((double)2, getAnnounceInterval()) * 1000000000.0);
 		break;
 	case FAULT_DETECTED:
 		XPTPD_INFO("Received FAULT_DETECTED event");
+		setAsCapable(false);
 		break;
 	case PDELAY_DEFERRED_PROCESSING:
 		pdelay_rx_lock->lock();
 		if (last_pdelay_resp_fwup == NULL) {
-			fprintf(stderr, "PDelay Response Followup is NULL!\n");
+			XPTPD_INFO("PDelay Response Followup is NULL!\n");
 			abort();
 		}
 		last_pdelay_resp_fwup->processMessage(this);
@@ -910,8 +992,52 @@ void IEEE1588Port::processEvent(Event e)
 		pdelay_rx_lock->unlock();
 		break;
 	case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
-		setAsCapable(false);
+		if (!automotive_profile) {
+			XPTPD_INFO("PDelay Response Receipt Timeout\n");
+			setAsCapable(false);
+		}
 		pdelay_count = 0;
+		break;
+
+	case PDELAY_RESP_PEER_MISBEHAVING_TIMEOUT_EXPIRES:
+		XPTPD_INFO("PDelay Resp Peer Misbehaving timeout expired! Restarting PDelay");
+
+		haltPdelay(false);
+		if( port_state != PTP_SLAVE && port_state != PTP_MASTER ) {
+			XPTPD_INFO("Starting PDelay\n" );
+			startPDelay();
+		}
+		break;
+	case SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED:
+		{
+			XPTPD_INFO("SYNC_RATE_INTERVAL_TIMEOUT_EXPIRES occured");
+
+			sync_rate_interval_timer_started = false;
+
+			bool sendSignalMessage = false;
+			if (log_mean_sync_interval != operLogSyncInterval) {
+				log_mean_sync_interval = operLogSyncInterval;
+				sendSignalMessage = true;
+			}
+
+			if (log_min_mean_pdelay_req_interval != operLogPdelayReqInterval) {
+				log_min_mean_pdelay_req_interval = operLogPdelayReqInterval;
+				sendSignalMessage = true;
+			}
+
+			if (sendSignalMessage) {
+				if (!isGM) {
+				// Send operational signalling message
+					PTPMessageSignalling *sigMsg = new PTPMessageSignalling(this);
+					if (sigMsg) {
+						sigMsg->setintervals(log_min_mean_pdelay_req_interval, log_mean_sync_interval, PTPMessageSignalling::sigMsgInterval_NoChange);
+						sigMsg->sendPort(this, NULL);
+						delete sigMsg;
+					}
+				}
+			}
+		}
+
 		break;
 	default:
 		XPTPD_INFO
@@ -954,46 +1080,42 @@ void IEEE1588Port::getDeviceTime
 }
 
 void IEEE1588Port::becomeMaster( bool annc ) {
-  port_state = PTP_MASTER;
-  // Start announce receipt timeout timer
-  // Start sync receipt timeout timer
+	port_state = PTP_MASTER;
+	// Start announce receipt timeout timer
+	// Start sync receipt timeout timer
+	clock->deleteEventTimer( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
 	clock->deleteEventTimer( this, SYNC_RECEIPT_TIMEOUT_EXPIRES );
-	if (_bmca) {
-		clock->deleteEventTimer( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
-	}
-	if (annc) {
+	if( annc ) {
 		startAnnounce();
 	}
-	clock->addEventTimer( this, SYNC_INTERVAL_TIMEOUT_EXPIRES, 16000000 );
-	fprintf( stderr, "Switching to Master\n" );
+	startSyncIntervalTimer(16000000);
+	XPTPD_INFO("Switching to Master\n" );
 
-  return;
+
+	return;
 }
 
 void IEEE1588Port::becomeSlave( bool restart_syntonization ) {
-	if (_bmca) {
-		clock->deleteEventTimer( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
-	}
+	clock->deleteEventTimer( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
 	clock->deleteEventTimer( this, SYNC_INTERVAL_TIMEOUT_EXPIRES );
 
 	port_state = PTP_SLAVE;
 
 	/*clock->addEventTimer
-		  ( this, SYNC_RECEIPT_TIMEOUT_EXPIRES,
-			(SYNC_RECEIPT_TIMEOUT_MULTIPLIER*
-			 (unsigned long long)(pow((double)2,getSyncInterval())*1000000000.0)));*/
-	if (_bmca) {
-		clock->addEventTimer
-		    (this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES,
-		    (ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
-			(unsigned long long)
-			(pow((double)2,getAnnounceInterval())*1000000000.0)));
-	}
-	fprintf( stderr, "Switching to Slave\n" );
+		( this, SYNC_RECEIPT_TIMEOUT_EXPIRES,
+		(SYNC_RECEIPT_TIMEOUT_MULTIPLIER*
+		 (unsigned long long)(pow((double)2,getSyncInterval())*1000000000.0)));*/
+	clock->addEventTimer
+	  (this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES,
+	   (ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER*
+	    (unsigned long long)
+	    (pow((double)2,getAnnounceInterval())*1000000000.0)));
+	XPTPD_INFO("Switching to Slave\n" );
 	if( restart_syntonization ) clock->newSyntonizationSetPoint();
 
-		return;
-	}
+
+	return;
+}
 
 void IEEE1588Port::recommendState
 ( PortState state, bool changed_external_master )
@@ -1014,17 +1136,17 @@ void IEEE1588Port::recommendState
 			becomeSlave( true );
 			reset_sync = true;
 		} else {
-		  if( changed_external_master ) {
-		    fprintf( stderr, "Changed master!\n" );
-		    clock->newSyntonizationSetPoint();
-			reset_sync = true;
-		  }
+			if( changed_external_master ) {
+				XPTPD_INFO("Changed master!\n" );
+				clock->newSyntonizationSetPoint();
+				reset_sync = true;
+			}
 		}
 		break;
 	default:
 		XPTPD_INFO
 		    ("Invalid state change requested by call to "
-			 "1588Port::recommendState()");
+		     "1588Port::recommendState()");
 		break;
 	}
 	if( reset_sync ) sync_count = 0;
@@ -1089,3 +1211,25 @@ int IEEE1588Port::getRxTimestamp(PortIdentity * sourcePortIdentity,
 	timestamp = clock->getSystemTime();
 	return 0;
 }
+
+void IEEE1588Port::startSyncIntervalTimer(long long unsigned int waitTime) {
+	syncIntervalTimerLock->lock();
+	clock->deleteEventTimer(this, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+	clock->addEventTimer(this, SYNC_INTERVAL_TIMEOUT_EXPIRES, waitTime);
+	syncIntervalTimerLock->unlock();
+}
+
+void IEEE1588Port::startAnnounceIntervalTimer(long long unsigned int waitTime) {
+	announceIntervalTimerLock->lock();
+	clock->deleteEventTimer(this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES);
+	clock->addEventTimer(this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES, waitTime);
+	announceIntervalTimerLock->unlock();
+}
+
+void IEEE1588Port::startPDelayIntervalTimer(long long unsigned int waitTime) {
+	pDelayIntervalTimerLock->lock();
+	clock->deleteEventTimer(this, PDELAY_INTERVAL_TIMEOUT_EXPIRES);
+	clock->addEventTimer(this, PDELAY_INTERVAL_TIMEOUT_EXPIRES, waitTime);
+	pDelayIntervalTimerLock->unlock();
+}
+

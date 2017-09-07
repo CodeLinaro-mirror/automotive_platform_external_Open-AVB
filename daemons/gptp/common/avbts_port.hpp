@@ -54,10 +54,13 @@
 #define GPTP_MULTICAST 0x0180C200000EULL		/*!< GPTP multicast adddress */
 #define PDELAY_MULTICAST GPTP_MULTICAST			/*!< PDELAY Multicast value */
 #define OTHER_MULTICAST GPTP_MULTICAST			/*!< OTHER multicast value */
+#define TEST_STATUS_MULTICAST 0x011BC50AC000ULL	/*!< AVnu Automotive profile test status msg Multicast value */
 
 #define PDELAY_RESP_RECEIPT_TIMEOUT_MULTIPLIER 3	/*!< PDelay timeout multiplier*/
 #define SYNC_RECEIPT_TIMEOUT_MULTIPLIER 3			/*!< Sync receipt timeout multiplier*/
 #define ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER 3		/*!< Announce receipt timeout multiplier*/
+#define LOG2_INTERVAL_INVALID -127	/* Simple out of range Log base 2 value used for Sync and PDelay msg internvals */
+#define PRIO_DISABLED 255
 
 /**
  * PortType enumeration. Selects between delay request-response (E2E) mechanism
@@ -206,12 +209,95 @@ public:
  */
 typedef std::map < PortIdentity, LinkLayerAddress > IdentityMap_t;
 
+ /*
+ * Structure for initializing the IEEE1588 class
+ */
+typedef struct {
+	/* clock IEEE1588Clock instance */
+	IEEE1588Clock * clock;
+
+	/* index Interface index */
+	uint16_t index;
+
+	/* forceSlave Forces port to be slave  */
+	bool forceSlave;
+
+	/* accelerated_sync_count If non-zero, then start 16ms sync timer */
+	int accelerated_sync_count;
+
+	/* timestamper Hardware timestamper instance */
+	HWTimestamper * timestamper;
+
+	/* offset  Initial clock offset */
+	int32_t offset;
+
+	/* net_label Network label */
+	InterfaceLabel * net_label;
+
+	/* automotive_profile set the AVnu automotive profile */
+	bool automotive_profile;
+
+	/* Set to true if the port is the grandmaster. Used for fixed GM in the the AVnu automotive profile */
+	bool isGM;
+
+
+	/* Set to true if the port is the grandmaster. Used for fixed GM in the the AVnu automotive profile */
+	bool testMode;
+
+	/* gPTP 10.2.4.4 */
+	int8_t initialLogSyncInterval;
+
+	/* gPTP 11.5.2.2 */
+	int8_t initialLogPdelayReqInterval;
+
+	/* CDS 6.2.1.5 */
+	int8_t operLogPdelayReqInterval;
+
+	/* CDS 6.2.1.6 */
+	int8_t operLogSyncInterval;
+
+	/* condition_factory OSConditionFactory instance */
+	OSConditionFactory * condition_factory;
+
+	/* thread_factory OSThreadFactory instance */
+	OSThreadFactory * thread_factory;
+
+	/* timer_factory OSTimerFactory instance */
+	OSTimerFactory * timer_factory;
+
+	/* lock_factory OSLockFactory instance */
+	OSLockFactory * lock_factory;
+} IEEE1588PortInit_t;
+
+/**
+ * Structure for IEE1588Port Counters
+ */
+typedef struct {
+	int32_t ieee8021AsPortStatRxSyncCount;
+	int32_t ieee8021AsPortStatRxFollowUpCount;
+	int32_t ieee8021AsPortStatRxPdelayRequest;
+	int32_t ieee8021AsPortStatRxPdelayResponse;
+	int32_t ieee8021AsPortStatRxPdelayResponseFollowUp;
+	int32_t ieee8021AsPortStatRxAnnounce;
+	int32_t ieee8021AsPortStatRxPTPPacketDiscard;
+	int32_t ieee8021AsPortStatRxSyncReceiptTimeouts;
+	int32_t ieee8021AsPortStatAnnounceReceiptTimeouts;
+	int32_t ieee8021AsPortStatPdelayAllowedLostResponsesExceeded;
+	int32_t ieee8021AsPortStatTxSyncCount;
+	int32_t ieee8021AsPortStatTxFollowUpCount;
+	int32_t ieee8021AsPortStatTxPdelayRequest;
+	int32_t ieee8021AsPortStatTxPdelayResponse;
+	int32_t ieee8021AsPortStatTxPdelayResponseFollowUp;
+	int32_t ieee8021AsPortStatTxAnnounce;
+} IEEE1588PortCounters_t;
+
 /**
  * Provides the IEEE 1588 port interface
  */
 class IEEE1588Port {
 	static LinkLayerAddress other_multicast;
 	static LinkLayerAddress pdelay_multicast;
+	static LinkLayerAddress test_status_multicast;
 
 	PortIdentity port_identity;
 	/* directly connected node */
@@ -219,6 +305,7 @@ class IEEE1588Port {
 
 	OSNetworkInterface *net_iface;
 	LinkLayerAddress local_addr;
+	int link_delay[4];
 
 	/* Port Status */
 	unsigned sync_count;  // 0 for master, ++ for each sync receive as slave
@@ -235,16 +322,35 @@ class IEEE1588Port {
 	int8_t log_min_mean_pdelay_req_interval;
 	bool burst_enabled;
 	int _accelerated_sync_count;
+	static const int64_t ONE_WAY_DELAY_DEFAULT = 3600000000000;
+	static const int64_t INVALID_LINKDELAY = 3600000000000;
+	static const int64_t NEIGHBOR_PROP_DELAY_THRESH = 800;
+	static const unsigned int DEFAULT_SYNC_RECEIPT_THRESH = 5;
+	static const unsigned int DUPLICATE_RESP_THRESH = 3;
+
+	unsigned int duplicate_resp_counter;
+	uint16_t last_invalid_seqid;
+
 	/* Signed value allows this to be negative result because of inaccurate
 	   timestamp */
 	int64_t one_way_delay;
+	int64_t neighbor_prop_delay_thresh;
 	/* Implementation Specific data/methods */
 	IEEE1588Clock *clock;
 
 	bool _syntonize;
 
 	bool asCapable;
-	bool _bmca;
+	/* Automotive Profile : Static variables */
+	// port_state : already defined as port_state
+	bool isGM;
+	bool testMode;
+	// asCapable : already defined as asCapable
+	int8_t initialLogPdelayReqInterval;
+	int8_t initialLogSyncInterval;
+	int8_t operLogPdelayReqInterval;
+	int8_t operLogSyncInterval;
+	bool automotive_profile;
 
 	int32_t *rate_offset_array;
 	uint32_t rate_offset_array_size;
@@ -263,8 +369,9 @@ class IEEE1588Port {
 
 	uint16_t announce_sequence_id;
 	uint16_t sync_sequence_id;
-
+	uint16_t signal_sequence_id;
 	uint16_t pdelay_sequence_id;
+
 	PTPMessagePathDelayReq *last_pdelay_req;
 	PTPMessagePathDelayResp *last_pdelay_resp;
 	PTPMessagePathDelayRespFollowUp *last_pdelay_resp_fwup;
@@ -284,6 +391,11 @@ class IEEE1588Port {
 	OSLock *pdelay_rx_lock;
 	OSLock *port_tx_lock;
 
+	OSLock *syncIntervalTimerLock;
+	OSLock *announceIntervalTimerLock;
+	OSLock *pDelayIntervalTimerLock;
+
+
 	OSThreadFactory *thread_factory;
 	OSTimerFactory *timer_factory;
 
@@ -299,8 +411,22 @@ class IEEE1588Port {
 	OSConditionFactory *condition_factory;
 
 	bool pdelay_started;
+	bool pdelay_halted;
+	bool sync_rate_interval_timer_started;
+
+	uint16_t lastGmTimeBaseIndicator;
+
+	IEEE1588PortCounters_t counters;
  public:
 	bool forceSlave;	//!< Forces port to be slave. Added for testing.
+
+	/**
+	 * @brief  Starts Sync Rate Interval event timer. Used for the
+	 *         Automotive Profile.
+	 * @return void
+	 */
+	void startSyncRateIntervalTimer();
+
 
 	/**
 	 * @brief  Serializes (i.e. copy over buf pointer) the information from
@@ -353,6 +479,30 @@ class IEEE1588Port {
 	void startPDelay();
 
 	/**
+	 * @brief Stops PDelay event timer
+	 * @return void
+	 */
+	void stopPDelay();
+
+	/**
+	 * @brief Enable/Disable PDelay Request messages
+	 * @param hlt True to HALT (stop sending), False to resume (start sending).
+	 */
+	void haltPdelay(bool hlt)
+	{
+		pdelay_halted = hlt;
+	}
+
+	/**
+	 * @brief Get the status of pdelayHalted condition.
+	 * @return True PdelayRequest halted. False when PDelay Request is running
+	 */
+	bool pdelayHalted(void)
+	{
+		return pdelay_halted;
+	}
+
+	/**
 	 * @brief  Starts announce event timer
 	 * @return void
 	 */
@@ -362,7 +512,15 @@ class IEEE1588Port {
 	 * @brief  Starts pDelay event timer if not yet started.
 	 * @return void
 	 */
-	void syncDone() {
+	void syncDone()
+	{
+		if (automotive_profile) {
+			if (!sync_rate_interval_timer_started) {
+				if (log_mean_sync_interval != operLogSyncInterval) {
+					startSyncRateIntervalTimer();
+				}
+			}
+		}
 		if( !pdelay_started ) {
 			startPDelay();
 		}
@@ -397,16 +555,19 @@ class IEEE1588Port {
 	 * @return asCapable flag
 	 */
 	bool getAsCapable() { return( asCapable ); }
+
 	/**
-	 * @brief  Gets the bmca flag
-	 * @return _bmca flag
+	 * @brief  Gets the AVnu automotive profile flag
+	 * @return automotive_profile flag
 	 */
-	bool getBmcaStatus() { return( _bmca ); }
+	bool getAutomotiveProfile() { return( automotive_profile ); }
+
 
 	/**
 	 * Destroys a IEEE1588Port
 	 */
 	~IEEE1588Port();
+
 
 	/**
 	 * @brief  Creates the IEEE1588Port interface.
@@ -433,6 +594,12 @@ class IEEE1588Port {
 	 OSThreadFactory * thread_factory,
 	 OSTimerFactory * timer_factory,
 	 OSLockFactory * lock_factory);
+
+	/**
+	 * @brief  Creates the IEEE1588Port interface.
+	 * @param  init IEEE1588PortInit initialization parameters
+	 */
+	IEEE1588Port(IEEE1588PortInit_t *portInit);
 
 	/**
 	 * @brief  Initializes the port. Creates network interface, initializes
@@ -529,6 +696,13 @@ class IEEE1588Port {
 		if( qualified_announce != NULL ) delete qualified_announce;
 		qualified_announce = msg;
 	}
+	/**
+	 * @brief  Gets the local_addr
+	 * @return LinkLayerAddress
+	 */
+	LinkLayerAddress *getLocalAddr(void) {
+		return &local_addr;
+	}
 
 	/**
 	 * @brief  Gets the sync interval value
@@ -537,14 +711,31 @@ class IEEE1588Port {
 	int8_t getSyncInterval(void) {
 		return log_mean_sync_interval;
 	}
+	/*
+	 * @brief  Sets the sync interval value
+	 * @param  val time interval
+	 * @return none
+	 */
+	void setSyncInterval(int8_t val) {
+		log_mean_sync_interval = val;
+	}
 
 	/**
-	 * @brief  Gets the announce interval
-	 * @return Announce interval
+	 * @brief  Sets the sync interval back to initial value
+	 * @return none
 	 */
-	int8_t getAnnounceInterval(void) {
-		return log_mean_announce_interval;
+	void setInitSyncInterval(void) {
+		log_mean_sync_interval = initialLogSyncInterval;
 	}
+
+	/**
+	 * @brief  Start sync interval timer
+	 * @param  waitTime time interval
+	 * @return none
+	 */
+	void startSyncIntervalTimer(long long unsigned int waitTime);
+
+
 
 	/**
 	 * @brief  Gets the pDelay minimum interval
@@ -555,12 +746,70 @@ class IEEE1588Port {
 	}
 
 	/**
+	 * @brief  Sets the pDelay minimum interval
+	 * @param  val time interval
+	 * @return none
+	 */
+	void setPDelayInterval(int8_t val) {
+		log_min_mean_pdelay_req_interval = val;
+	}
+
+	/**
+	 * @brief  Sets the pDelay minimum interval back to initial
+	 *         value
+	 * @return none */
+	void setInitPDelayInterval(void) {
+		log_min_mean_pdelay_req_interval = initialLogPdelayReqInterval;
+	}
+
+	/**
+	 * @brief  Start pDelay interval timer
+	 * @param  waitTime time interval
+	 * @return none
+	 */
+	void startPDelayIntervalTimer(long long unsigned int waitTime);
+
+	/**
+	 * @brief  Gets the announce interval
+	 * @return Announce interval
+	 */
+	int8_t getAnnounceInterval(void) {
+		return log_mean_announce_interval;
+	}
+
+    /*
+	 * @brief  Sets the announce interval
+	 * @param  val time interval
+	 * @return none
+	 */
+	void setAnnounceInterval(int8_t val) {
+		log_mean_announce_interval = val;
+	}
+
+	/**
+	 * @brief  Start announce interval timer
+	 * @param  waitTime time interval
+	 * @return none
+	 */
+	void startAnnounceIntervalTimer(long long unsigned int waitTime);
+
+
+	/**
 	 * @brief  Gets the portState information
 	 * @return PortState
 	 */
 	PortState getPortState(void) {
 		return port_state;
 	}
+
+	/**
+	 * @brief  Increments signal sequence id and returns
+	 * @return Next signal sequence id.
+	 */
+	uint16_t getNextSignalSequenceId(void) {
+		return signal_sequence_id++;
+	}
+
 
 	/**
 	 * @brief Sets the PortState
@@ -823,6 +1072,11 @@ class IEEE1588Port {
 			*msg = '\0';
 		}
 	}
+	/**
+	 * @brief Initializes the hwtimestamper
+	 */
+	void timestamper_init(void);
+
 
 	/**
 	 * @brief  Gets RX timestamp based on port identity
@@ -911,6 +1165,16 @@ class IEEE1588Port {
 	}
 
 	/**
+	 * @brief  Sets the neighbor propagation delay threshold
+	 * @param  delay Delay in nanoseconds
+	 * @return void
+	 */
+	void setNeighPropDelayThresh(int64_t delay) {
+		neighbor_prop_delay_thresh = delay;
+	}
+
+
+	/**
 	 * @brief  Changes the port state
 	 * @param  state Current state
 	 * @param  changed_external_master TRUE if external master has changed, FALSE otherwise
@@ -969,6 +1233,24 @@ class IEEE1588Port {
 	unsigned getSyncCount() {
 		return sync_count;
 	}
+
+	/**
+	 * @brief  Gets the lastGmTimeBaseIndicator
+	 * @return uint16 of the lastGmTimeBaseIndicator
+	 */
+	uint16_t getLastGmTimeBaseIndicator(void) {
+		return lastGmTimeBaseIndicator;
+	}
+
+	/**
+	 * @brief  Sets the lastGmTimeBaseIndicator
+	 * @param  gmTimeBaseIndicator from last Follow up message
+	 * @return void
+	 */
+	void setLastGmTimeBaseIndicator(uint16_t gmTimeBaseIndicator) {
+		lastGmTimeBaseIndicator = gmTimeBaseIndicator;
+	}
+
 };
 
 #endif

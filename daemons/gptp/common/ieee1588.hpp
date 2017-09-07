@@ -51,6 +51,15 @@
 
 #define MAX_PORTS 32	/*!< Maximum number of IEEE1588Port instances */
 
+/**
+ * @brief Return codes for gPTP
+*/
+#define GPTP_EC_SUCCESS     0       /*!< No errors.*/
+#define GPTP_EC_FAILURE     -1      /*!< Generic error */
+#define GPTP_EC_EAGAIN      -72     /*!< Error: Try again */
+
+
+
 #define PTP_CLOCK_IDENTITY_LENGTH 8		/*!< Size of a clock identifier stored in the ClockIndentity class, described at IEEE 802.1AS Clause 8.5.2.4*/
 
 class LinkLayerAddress;
@@ -85,6 +94,9 @@ typedef enum {
 	FAULT_DETECTED,						//!< A fault was detected.
 	PDELAY_DEFERRED_PROCESSING,			//!< Defers pdelay processing
 	PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES,	//!< Pdelay response message timeout
+	PDELAY_RESP_PEER_MISBEHAVING_TIMEOUT_EXPIRES,   //!< Timeout for peer misbehaving. This even will re-enable the PDelay Requests
+	SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED,  //!< Sync rate signal timeout for the Automotive Profile
+
 } Event;
 
 /**
