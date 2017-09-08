@@ -4,11 +4,14 @@ include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -Wall -Wextra -Wno-parentheses -ggdb -D_GNU_SOURCE -Wunreachable-code -DAVB_FEATURE_FQTSS
 
+LOCAL_LDFLAGS += -Wl,--export-dynamic
+
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/avtp \
 					$(LOCAL_PATH)/endpoint \
 					$(LOCAL_PATH)/include \
 					$(LOCAL_PATH)/inih \
+					$(LOCAL_PATH)/intf_clk_ref \
 					$(LOCAL_PATH)/intf_ctrl \
 					$(LOCAL_PATH)/intf_echo \
 					$(LOCAL_PATH)/intf_logger \
@@ -18,6 +21,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/maap \
 					$(LOCAL_PATH)/map_aaf_audio \
 					$(LOCAL_PATH)/map_ctrl \
+					$(LOCAL_PATH)/map_clk_ref \
 					$(LOCAL_PATH)/map_h264 \
 					$(LOCAL_PATH)/map_mjpeg \
 					$(LOCAL_PATH)/map_null \
@@ -43,6 +47,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
 					$(LOCAL_PATH)/../../daemons/mrpd \
 					$(LOCAL_PATH)/../../daemons/common \
 					$(LOCAL_PATH)/../libmpeg2ts \
+					$(LOCAL_PATH)/../libh264sink \
 					external/tinyalsa/include/
 
 
@@ -63,6 +68,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					tl/openavb_tl.c \
 					util/openavb_plugin.c \
 					map_pipe/openavb_map_pipe.c \
+					map_clk_ref/openavb_map_clk_ref.c \
 					map_ctrl/openavb_map_ctrl.c \
 					mediaq/openavb_mediaq.c \
 					avtp/openavb_avtp_time.c \
@@ -88,6 +94,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					platform/Linux/endpoint/openavb_endpoint_cfg.c \
 					endpoint/openavb_endpoint_server.c \
 					intf_viewer/openavb_intf_viewer.c \
+					intf_clk_ref/openavb_intf_clk_ref.c \
 					intf_ctrl/openavb_intf_ctrl.c \
 					intf_echo/openavb_intf_echo.c \
 					intf_logger/openavb_intf_logger.c \
@@ -106,6 +113,7 @@ LOCAL_SRC_FILES :=  platform/Linux/avb_host/openavb_host.c \
 					../igb/igb.c  \
 					platform/Linux/intf_mjpeg_file/openavb_intf_mjpeg_file.c \
 					platform/Linux/intf_h264_file/openavb_intf_h264_file.c \
+					platform/Linux/intf_h264_stream/openavb_intf_h264_stream.c \
 					platform/Linux/intf_alsa/openavb_intf_tinyalsa.c \
 					mcr/openavb_reference_clock.c \
 					platform/Linux/intf_mjpeg_opengl/openavb_intf_mjpeg_opengl.c \
@@ -116,7 +124,8 @@ LOCAL_STATIC_LIBRARIES += 	libpcap \
 LOCAL_SHARED_LIBRARIES += 	libtinyalsa \
 				liblog \
 				libmjpegavbsink \
-                                libmpeg2ts
+                                libmpeg2ts\
+				libh264sink
 
 LOCAL_MODULE := openavb_harness
 

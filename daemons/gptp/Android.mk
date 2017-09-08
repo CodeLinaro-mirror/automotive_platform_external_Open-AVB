@@ -2,11 +2,10 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_CFLAGS := -DWITHOUT_IFADDRS -Wno-sign-compare -frtti -L
+LOCAL_CFLAGS := -DWITHOUT_IFADDRS -Wno-unused-parameter -frtti
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/common \
                     $(LOCAL_PATH)/linux/src
-
 
 
 LOCAL_SRC_FILES := linux/src/daemon_cl.cpp \

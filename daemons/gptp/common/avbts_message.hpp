@@ -177,7 +177,7 @@ protected:
 	unsigned char flags[2];		/*!< PTP flags field */
 	
 	uint16_t messageLength;			/*!< PTP message length */
-	char logMeanMessageInterval;	/*!< LogMessageInterval (IEEE 1588-2008 table 24)*/
+	int8_t logMeanMessageInterval;	/*!< LogMessageInterval (IEEE 1588-2008 table 24)*/
 	long long correctionField;		/*!< Correction Field (IEEE 1588-2008 table 21) */
 	unsigned char domainNumber;		/*!< PTP domain number */
 	
