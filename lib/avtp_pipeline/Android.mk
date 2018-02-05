@@ -101,6 +101,7 @@ LOCAL_SRC_FILES := platform/Linux/avb_host/openavb_host.c
 
 LOCAL_SHARED_LIBRARIES += \
             libopenavb \
+            libopenavb_intf_audio_stream \
             libopenavb_intf_clk_ref \
             libopenavb_intf_ctrl \
             libopenavb_intf_echo \
