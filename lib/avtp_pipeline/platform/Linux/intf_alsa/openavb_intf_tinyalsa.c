@@ -800,10 +800,9 @@ void openavbIntfTinyalsaRxInitCB(media_q_t *pMediaQ)
 static void consumeAudio(pvt_data_t *pPvtData, void *data, U32 dataLen)
 {
 	S32 rslt;
-
 	rslt = pcm_write(pPvtData->pcmHandle, data, dataLen);
 	if (rslt) {
-		//AVB_LOGF_ERROR("pcm_write: %d %d  %s", rslt, errno, pcm_get_error(pPvtData->pcmHandle));
+		AVB_LOGF_ERROR("pcm_write: %d %d  %s %d", rslt, errno, pcm_get_error(pPvtData->pcmHandle), dataLen);
 		pcm_close(pPvtData->pcmHandle);
 		pPvtData->pcmHandle = pcm_open(0, 0, PCM_OUT, &pPvtData->config);
 		if (!pPvtData->pcmHandle || !pcm_is_ready(pPvtData->pcmHandle)) {
