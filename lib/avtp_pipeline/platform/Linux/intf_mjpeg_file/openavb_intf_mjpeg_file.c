@@ -225,6 +225,11 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return FALSE;
 	}
+
+	if (pPvtData->fd == -1) {
+		return FALSE;
+	}
+
 	bool eoi = FALSE;
 	U32 read_size;
 	U32 i = 0;
@@ -292,9 +297,10 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 		}
 		pMediaQItem->dataLen = i+1;
 		pPvtData->loc += i+1;//check if it's form the dof case or not?
-		if (pPvtData->loc + pPvtData->read_size >= pPvtData->statbuf.st_size) {
-
+		if (pPvtData->loc == pPvtData->statbuf.st_size) {
+			AVB_LOG_INFO("EOF reached!!!. Closing the file");
 			close(pPvtData->fd);
+			pPvtData->fd = -1;
 		}
 
 
@@ -357,18 +363,12 @@ void openavbIntfMjpegFileRxInitCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Output file name not provided in ini");
 		AVB_TRACE_EXIT(AVB_TRACE_INTF);
 	}
-	else if (stat(pPvtData->file_name, &stats) == 0) {
-		AVB_LOGF_ERROR("Will not open output file: %s  file exists", pPvtData->file_name);
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
 
 	pPvtData->loc = 0;
-	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if(pPvtData->fd == -1) {
 		AVB_LOG_ERROR("Failed to create file");
 	}
-
 }
 
 // This callback is called when acting as a listener.

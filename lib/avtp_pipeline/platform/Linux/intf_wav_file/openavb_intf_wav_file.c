@@ -497,10 +497,6 @@ bool openavbIntfWavFileTxCB(media_q_t *pMediaQ)
 
 						fseek(pPvtData->pFile, 44, 0);
 					}
-					else {
-						return FALSE;
-					}
-
 				}
 				pMediaQItem->dataLen = pPubMapUncmpAudioInfo->itemSize;
 
@@ -546,11 +542,6 @@ void openavbIntfWavFileRxInitCB(media_q_t *pMediaQ)
         if (!pPvtData->pFileName) {
             AVB_LOG_ERROR("Output wav file not provided in ini");
             AVB_TRACE_EXIT(AVB_TRACE_INTF);
-        }
-        else if (stat(pPvtData->pFileName, &buf) == 0) {
-            AVB_LOGF_ERROR("Will not open output file: %s  file exists", pPvtData->pFileName);
-            AVB_TRACE_EXIT(AVB_TRACE_INTF);
-            return;
         }
         else {
                 AVB_LOGF_INFO("Creating output wav file: %s", pPvtData->pFileName);

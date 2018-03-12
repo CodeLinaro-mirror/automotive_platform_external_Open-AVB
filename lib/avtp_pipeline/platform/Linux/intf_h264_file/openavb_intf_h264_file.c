@@ -189,6 +189,11 @@ bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return FALSE;
 	}
+
+	if (pPvtData->fd == -1) {
+		return FALSE;
+	}
+
 	U32 read_size = 0;
 	static U32 buf_size ;
 	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
@@ -203,6 +208,11 @@ bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
 			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
 		}
 		else {
+			if(pPvtData->loc == pPvtData->statbuf.st_size){
+				AVB_LOG_INFO("EOF Reached...Closing file");
+				close(pPvtData->fd);
+				pPvtData->fd = -1;
+			}
 			return FALSE;
 		}
 		pMediaQItem->dataLen = read_size;
@@ -255,14 +265,9 @@ void openavbIntfH264RtpFileRxInitCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Output file name not provided in ini");
 		AVB_TRACE_EXIT(AVB_TRACE_INTF);
 	}
-	else if (stat(pPvtData->file_name, &stats) == 0) {
-		AVB_LOGF_ERROR("Will not open output file: %s  file exists", pPvtData->file_name);
-		AVB_TRACE_EXIT(AVB_TRACE_INTF);
-		return;
-	}
 
 	pPvtData->loc = 0;
-	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
         AVB_LOGF_INFO("#############file descripor for the opened file is %d\n", pPvtData->fd);
 	if(pPvtData->fd == -1) {
 		AVB_LOG_ERROR("Failed to create file");

@@ -88,6 +88,8 @@ typedef struct {
 	int nRepeatCount;
 	int nBuffersSent;
 
+	int mqFlush;
+
 	// Talker variables for tracking bitrate
 	unsigned int maxBitrate;
 	int    enableBitrateTracking;
@@ -580,12 +582,6 @@ void openavbIntfMpeg2tsFileRxInitCB(media_q_t *pMediaQ)
 			AVB_LOG_ERROR("Output file name not provided in ini");
 			AVB_TRACE_EXIT(AVB_TRACE_INTF);
 		}
-		else if (stat(pPvtData->pFileName, &stats) == 0) {
-			AVB_LOGF_ERROR("Will not open output file: %s  file exists", pPvtData->pFileName);
-			AVB_TRACE_EXIT(AVB_TRACE_INTF);
-			return;
-		}
-
 		else {
 			pPvtData->pFile = fopen(pPvtData->pFileName, "wb");
 			if (!pPvtData->pFile) {
@@ -616,6 +612,7 @@ bool openavbIntfMpeg2tsFileRxCB(media_q_t *pMediaQ)
 		while (moreData) {
 			media_q_item_t *pMediaQItem = openavbMediaQTailLock(pMediaQ, pPvtData->ignoreTimestamp);
 			if (pMediaQItem) {
+				pPvtData->mqFlush = FALSE;      /* mqFlush initialised to zero when media available .*/
 				while (pPvtData->pFile && pMediaQItem->dataLen > 0) {
 					written = fwrite(pMediaQItem->pPubData, 1, pMediaQItem->dataLen, pPvtData->pFile);
 					if (written == 0) {
@@ -623,8 +620,7 @@ bool openavbIntfMpeg2tsFileRxCB(media_q_t *pMediaQ)
 						AVB_LOGF_ERROR("Error writing file: %s, %s", pPvtData->pFileName, strerror(e));
 						fclose(pPvtData->pFile);
 						pPvtData->pFile = NULL;
-					}
-					else {
+					} else {
 						pMediaQItem->dataLen -= written;
 					}
 				}
@@ -632,6 +628,12 @@ bool openavbIntfMpeg2tsFileRxCB(media_q_t *pMediaQ)
 			}
 			else {
 				moreData = FALSE;
+			}
+		}
+		if (moreData == FALSE) {
+			if (pPvtData->mqFlush == FALSE) {
+				fflush(pPvtData->pFile);
+				pPvtData->mqFlush = TRUE;
 			}
 		}
 	}
