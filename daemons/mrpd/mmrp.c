@@ -1499,6 +1499,7 @@ int mmrp_dumptable(struct sockaddr_in *client)
 		goto free_msgbuf;
 
 	memset(msgbuf, 0, MAX_MRPD_CMDSZ);
+	memset(stage, 0, BUFSIZE);
 
 	msgbuf_wrptr = msgbuf;
 

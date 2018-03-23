@@ -57,7 +57,7 @@ int state_transit(maap_info_t *maap_info)
 	uint8_t *s = NULL;
 	int i= 0;
 	int num_bytes = 0;
-	int maap_probe_count;
+	int maap_probe_count = MAAP_PROBE_RETRANSMITS;
 
 	switch (current_state) {
 	case INITIAL:
