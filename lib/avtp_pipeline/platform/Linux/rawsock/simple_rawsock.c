@@ -450,7 +450,8 @@ bool simpleRawsockRxMulticast(void *pvRawsock, bool add_membership, const U8 add
 		}
 	}
 	else {
-		if (setsockopt(rawsock->sock, SOL_SOCKET, SO_DETACH_FILTER, NULL, 0) < 0) {
+		int dummy = 0;
+		if (setsockopt(rawsock->sock, SOL_SOCKET, SO_DETACH_FILTER, &dummy, sizeof(dummy)) < 0) {
 			AVB_LOGF_ERROR("Setting multicast; setsockopt(SO_DETACH_FILTER) failed: %s", strerror(errno));
 		}
 	}

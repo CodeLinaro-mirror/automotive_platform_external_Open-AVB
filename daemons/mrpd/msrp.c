@@ -1111,7 +1111,7 @@ int msrp_recv_msg()
 				if (NULL == listener_vectevt) {
 					listener_vectevt_sz = 64;
 					listener_vectevt =
-					    (int *)malloc(listener_vectevt_sz *
+					    (int *)calloc(1,listener_vectevt_sz *
 							  sizeof(int));
 					if (NULL == listener_vectevt)
 						goto out;
@@ -3530,7 +3530,7 @@ int msrp_recv_cmd(const char *buf, int buflen, struct sockaddr_in *client)
 	int rc;
 	char respbuf[64];
 	int mrp_event;
-	unsigned int substate;
+	unsigned int substate = 0;
 	struct msrpdu_domain domain_param;
 	struct msrpdu_talker_fail talker_param;
 	int err_index;
@@ -3703,7 +3703,7 @@ int msrp_recv_cmd(const char *buf, int buflen, struct sockaddr_in *client)
 			goto out_ERI;	/* oops - internal error */
 	} else if (strncmp(buf, "I+S", 3 ) == 0 ) {
 		/* Add a stream id to the interesting stream id list */
-		uint8_t stream_id[8];
+		uint8_t stream_id[8] = {0};
 
 		if (!MSRP_db->enable_pruning_of_uninteresting_ids)
 			goto out_ERP;
@@ -3719,7 +3719,7 @@ int msrp_recv_cmd(const char *buf, int buflen, struct sockaddr_in *client)
 	} else if (strncmp(buf, "I-S", 3 ) == 0 ) {
 		/* Remove a stream id from the interesting stream id list */
 		struct msrp_attribute listener_lookup;
-		uint8_t stream_id[8];
+		uint8_t stream_id[8] = {0};
 
 		if (!MSRP_db->enable_pruning_of_uninteresting_ids)
 			goto out_ERP;

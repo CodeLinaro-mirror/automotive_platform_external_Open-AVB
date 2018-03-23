@@ -512,6 +512,9 @@ void IEEE1588Port::processEvent(Event e)
 				    || ports[j]->port_state == PTP_FAULTY) {
 					continue;
 				}
+				if(!EBest){
+					break;
+				}
 				if (clock->isBetterThan(EBest)) {
 					// We are the GrandMaster, all ports are master
 					EBest = NULL;	// EBest == NULL : we were grandmaster
