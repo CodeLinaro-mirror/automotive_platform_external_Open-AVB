@@ -123,14 +123,16 @@ openavb_array_elem_t openavbArrayAdd(openavb_array_t array, void *data)
 		}
 		else {
 			// Need to make room for new element
-			openavb_array_elem_t newElemArray = realloc(array->elemArray, (array->size + 1) * sizeof(struct openavb_array_elem));
-			if (newElemArray) {
-				array->elemArray = newElemArray;
-				retElem = &array->elemArray[array->size];
-				retElem->data = NULL;
-				retElem->managed = FALSE;
-				retElem->idx = array->size;
-				array->size++;
+			if (array->elemArray) {
+				openavb_array_elem_t newElemArray = realloc(array->elemArray, (array->size + 1) * sizeof(struct openavb_array_elem));
+				if (newElemArray) {
+					array->elemArray = newElemArray;
+					retElem = &array->elemArray[array->size];
+					retElem->data = NULL;
+					retElem->managed = FALSE;
+					retElem->idx = array->size;
+					array->size++;
+				}
 			}
 		}
 

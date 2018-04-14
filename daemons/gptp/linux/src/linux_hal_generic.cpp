@@ -389,6 +389,7 @@ bool LinuxTimestamperGeneric::post_init( int ifindex, int sd, TicketingLock *loc
 static inline ptp_clock_time pct_diff
 ( struct ptp_clock_time *a, struct ptp_clock_time *b ) {
 	ptp_clock_time result;
+	memset(&result,0,sizeof(ptp_clock_time));
 	if( a->nsec >= b->nsec ) {
 		result.nsec = a->nsec - b->nsec;
 	} else {

@@ -106,31 +106,31 @@ void avbLogRTRender(log_queue_item_t *pLogItem)
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_U16:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.unsignedShortVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRIu16"] ", pLogRTItem->data.unsignedShortVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_S16:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.signedShortVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRId16"] ", pLogRTItem->data.signedShortVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_U32:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.unsignedLongVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRIu32"] ", pLogRTItem->data.unsignedLongVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_S32:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.signedLongVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRId32"] ", pLogRTItem->data.signedLongVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_U64:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.unsignedLongLongVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRIu64"] ", pLogRTItem->data.unsignedLongLongVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_S64:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.signedLongLongVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%"PRId64"] ", pLogRTItem->data.signedLongLongVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					case LOG_RT_DATATYPE_FLOAT:
-						snprintf(rt_msg, LOG_RT_MSG_LEN, pLogRTItem->pFormat, pLogRTItem->data.floatVar);
+						snprintf(rt_msg, LOG_RT_MSG_LEN, "[%f] ", pLogRTItem->data.floatVar);
 						strlcat((char *)pLogItem->msg, rt_msg, LOG_QUEUE_MSG_SIZE);
 						break;
 					default:
