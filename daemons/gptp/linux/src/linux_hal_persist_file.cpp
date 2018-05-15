@@ -119,6 +119,7 @@ public:
 	{
 		if (!writeCB) {
 			GPTP_LOG_ERROR("Persistent write callback not registered");
+			return false;
 		}
 
 		bool result = false;
