@@ -168,6 +168,10 @@ bool EtherPort::_init_port( void )
 {
 	pdelay_rx_lock = lock_factory->createLock(oslock_recursive);
 	port_tx_lock = lock_factory->createLock(oslock_recursive);
+	last_sync_lock = lock_factory->createLock(oslock_recursive);
+	last_pdelay_lock = lock_factory->createLock(oslock_recursive);
+	last_pdelay_resp_lock = lock_factory->createLock(oslock_recursive);
+	last_pdelay_fwup_lock = lock_factory->createLock(oslock_recursive);
 
 	pDelayIntervalTimerLock = lock_factory->createLock(oslock_recursive);
 
@@ -529,6 +533,7 @@ bool EtherPort::_processEvent( Event e )
 				pdelay_req->setTimestamp(pending);
 			}
 
+			getLastMsgLock(PATH_DELAY_REQ_MESSAGE);
 			if (last_pdelay_req != NULL) {
 				delete last_pdelay_req;
 			}
@@ -538,6 +543,7 @@ bool EtherPort::_processEvent( Event e )
 			pdelay_req->sendPort(this, NULL);
 			GPTP_LOG_DEBUG("*** Sent PDelay Request message");
 			putTxLock();
+			putLastMsgLock(PATH_DELAY_REQ_MESSAGE);
 
 			{
 				long long timeout;
@@ -634,18 +640,26 @@ bool EtherPort::_processEvent( Event e )
 		}
 		break;
 	case PDELAY_DEFERRED_PROCESSING:
-		GPTP_LOG_DEBUG("PDELAY_DEFERRED_PROCESSING occured");
-		pdelay_rx_lock->lock();
-		if (last_pdelay_resp_fwup == NULL) {
-			GPTP_LOG_ERROR("PDelay Response Followup is NULL!");
-			abort();
+		{
+			PTPMessagePathDelayRespFollowUp * msg = NULL;
+			GPTP_LOG_DEBUG("PDELAY_DEFERRED_PROCESSING occured");
+
+			getLastMsgLock(PATH_DELAY_FOLLOWUP_MESSAGE);
+			msg = getLastPDelayRespFollowUp();
+			setLastPDelayRespFollowUp(NULL); // PTPMessagePathDelayRespFollowUp::processMessage will set this back to msg if necessary
+			putLastMsgLock(PATH_DELAY_FOLLOWUP_MESSAGE);
+
+			pdelay_rx_lock->lock();
+			if (msg == NULL) {
+				GPTP_LOG_ERROR("PDelay Response Followup is NULL!");
+				abort();
+			}
+			msg->processMessage(this);
+			if (msg->garbage()) {
+				delete msg;
+			}
+			pdelay_rx_lock->unlock();
 		}
-		last_pdelay_resp_fwup->processMessage(this);
-		if (last_pdelay_resp_fwup->garbage()) {
-			delete last_pdelay_resp_fwup;
-			this->setLastPDelayRespFollowUp(NULL);
-		}
-		pdelay_rx_lock->unlock();
 		break;
 	case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
 		if (!automotive_profile) {

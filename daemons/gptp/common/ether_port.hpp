@@ -139,6 +139,10 @@ class EtherPort : public CommonPort
 
 	OSLock *pdelay_rx_lock;
 	OSLock *port_tx_lock;
+	OSLock *last_sync_lock;
+	OSLock *last_pdelay_lock;
+	OSLock *last_pdelay_resp_lock;
+	OSLock *last_pdelay_fwup_lock;
 
 	OSLock *pDelayIntervalTimerLock;
 
@@ -404,6 +408,32 @@ protected:
 
 	bool putTxLock() {
 		return port_tx_lock->unlock() == oslock_ok ? true : false;
+	}
+
+	bool getLastMsgLock(MessageType messageType) {
+		OSLock * lock = NULL;
+		switch(messageType) {
+			case SYNC_MESSAGE:                lock = last_sync_lock;        break;
+			case PATH_DELAY_REQ_MESSAGE:      lock = last_pdelay_lock;      break;
+			case PATH_DELAY_RESP_MESSAGE:     lock = last_pdelay_resp_lock; break;
+			case PATH_DELAY_FOLLOWUP_MESSAGE: lock = last_pdelay_fwup_lock; break;
+			default:
+				return false;
+		}
+		return lock->lock() == oslock_ok ? true : false;
+	}
+
+	bool putLastMsgLock(MessageType messageType) {
+		OSLock * lock = NULL;
+		switch(messageType) {
+			case SYNC_MESSAGE:                lock = last_sync_lock;        break;
+			case PATH_DELAY_REQ_MESSAGE:      lock = last_pdelay_lock;      break;
+			case PATH_DELAY_RESP_MESSAGE:     lock = last_pdelay_resp_lock; break;
+			case PATH_DELAY_FOLLOWUP_MESSAGE: lock = last_pdelay_fwup_lock; break;
+			default:
+				return false;
+		}
+		return lock->unlock() == oslock_ok ? true : false;
 	}
 
 	/**

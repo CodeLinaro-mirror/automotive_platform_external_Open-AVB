@@ -892,12 +892,14 @@ void PTPMessageSync::processMessage( EtherPort *port )
 #if CHECK_ASSIST_BIT
 	if( flags[PTP_ASSIST_BYTE] & (0x1<<PTP_ASSIST_BIT)) {
 #endif
+		port->getLastMsgLock(SYNC_MESSAGE);
 		PTPMessageSync *old_sync = port->getLastSync();
 
 		if (old_sync != NULL) {
 			delete old_sync;
 		}
 		port->setLastSync(this);
+		port->putLastMsgLock(SYNC_MESSAGE);
 		_gc = false;
 		goto done;
 #if CHECK_ASSIST_BIT
@@ -1017,11 +1019,12 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 
 	port->incCounter_ieee8021AsPortStatRxFollowUpCount();
 
+	port->getLastMsgLock(SYNC_MESSAGE);
 	PortIdentity sync_id;
 	PTPMessageSync *sync = port->getLastSync();
 	if (sync == NULL) {
 		GPTP_LOG_ERROR("Received Follow Up but there is no sync message");
-		return;
+		goto done;
 	}
 	sync->getPortIdentity(&sync_id);
 
@@ -1154,8 +1157,11 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 
 done:
 	_gc = true;
-	port->setLastSync(NULL);
-	delete sync;
+	if (sync) {
+		port->setLastSync(NULL);
+		delete sync;
+	}
+	port->putLastMsgLock(SYNC_MESSAGE);
 
 	return;
 }
@@ -1330,6 +1336,7 @@ void PTPMessagePathDelayResp::processMessage( EtherPort *port )
 	uint16_t resp_port_number;
 	uint16_t oldresp_port_number;
 
+	port->getLastMsgLock(PATH_DELAY_RESP_MESSAGE);
 	PTPMessagePathDelayResp *old_pdelay_resp = port->getLastPDelayResp();
 	if( old_pdelay_resp == NULL ) {
 		goto bypass_verify_duplicate;
@@ -1377,6 +1384,7 @@ bypass_verify_duplicate:
 	if (old_pdelay_resp != NULL) {
 		delete old_pdelay_resp;
 	}
+	port->putLastMsgLock(PATH_DELAY_RESP_MESSAGE);
 
 	port->putPDelayRxLock();
 	_gc = false;
@@ -1489,6 +1497,8 @@ void PTPMessagePathDelayRespFollowUp::processMessage
 	if (port->tryPDelayRxLock() != true)
 		return;
 
+	port->getLastMsgLock(PATH_DELAY_REQ_MESSAGE);
+	port->getLastMsgLock(PATH_DELAY_RESP_MESSAGE);
 	PTPMessagePathDelayReq *req = port->getLastPDelayReq();
 	PTPMessagePathDelayResp *resp = port->getLastPDelayResp();
 
@@ -1596,6 +1606,7 @@ void PTPMessagePathDelayRespFollowUp::processMessage
 	if (request_tx_timestamp.nanoseconds ==
 	    PDELAY_PENDING_TIMESTAMP.nanoseconds) {
 		// Defer processing
+		port->getLastMsgLock(PATH_DELAY_FOLLOWUP_MESSAGE);
 		if(
 			port->getLastPDelayRespFollowUp() != NULL &&
 			port->getLastPDelayRespFollowUp() != this )
@@ -1603,6 +1614,7 @@ void PTPMessagePathDelayRespFollowUp::processMessage
 			delete port->getLastPDelayRespFollowUp();
 		}
 		port->setLastPDelayRespFollowUp(this);
+		port->putLastMsgLock(PATH_DELAY_FOLLOWUP_MESSAGE);
 		port->getClock()->addEventTimerLocked
 			(port, PDELAY_DEFERRED_PROCESSING, 1000000);
 		goto defer;
@@ -1707,6 +1719,8 @@ void PTPMessagePathDelayRespFollowUp::processMessage
 
  defer:
 	port->putPDelayRxLock();
+	port->putLastMsgLock(PATH_DELAY_RESP_MESSAGE);
+	port->putLastMsgLock(PATH_DELAY_REQ_MESSAGE);
 
 	return;
 }
