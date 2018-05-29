@@ -103,6 +103,8 @@ typedef struct {
 	// intf_nv_number_of_data_bytes
 	U32 numberOfDataBytes;
 
+	// intf_nv_repeat_data
+	int repeatData;
 } pvt_data_t;
 
 // fread that (mostly) ignores return value - to silence compiler warnings
@@ -371,6 +373,16 @@ void openavbIntfWavFileCfgCB(media_q_t *pMediaQ, const char *name, const char *v
                 AVB_LOG_INFO("Forced audio samples endian conversion: little <-> big");
             }
         }
+       else if (strcmp(name, "intf_nv_repeat_data") == 0) {
+           val = strtol(value, &pEnd, 10);
+           if ((val == 0) || (val == 1)) {
+               pPvtData->repeatData = val;
+           }
+           else {
+               AVB_LOG_ERROR("Invalid intf_nv_repeat_data value : setting to default(no repetation).");
+               pPvtData->repeatData = 0;
+           }
+        }
     }
     AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
@@ -447,6 +459,20 @@ bool openavbIntfWavFileTxCB(media_q_t *pMediaQ)
 			pMediaQItem = NULL;
 		}
 
+		if (!pPvtData->pFile) {
+			// input already closed
+			AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
+			return FALSE;
+		}
+
+		if (feof(pPvtData->pFile) && pPvtData->repeatData == 0) {
+			AVB_LOGF_INFO("EOF, closing input file: %s", pPvtData->pFile);
+			fclose(pPvtData->pFile);
+			pPvtData->pFile = NULL;
+			AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
+			return FALSE;
+		}
+
 		if (pPvtData->intervalCounter++ % pPubMapUncmpAudioInfo->packingFactor != 0)
 			return TRUE;
 
@@ -465,7 +491,12 @@ bool openavbIntfWavFileTxCB(media_q_t *pMediaQ)
 					memset(pMediaQItem->pPubData + bytesRead, 0x00, pPubMapUncmpAudioInfo->itemSize - bytesRead);
 
 					// Repeat wav file. Seek to start of data for our only supported wav file format.
-					fseek(pPvtData->pFile, 44, 0);
+					if (pPvtData->repeatData) {
+						fseek(pPvtData->pFile, 44, 0);
+					}
+					else {
+						return FALSE;
+					}
 				}
 				pMediaQItem->dataLen = pPubMapUncmpAudioInfo->itemSize;
 
@@ -690,6 +721,7 @@ extern DLL_EXPORT bool openavbIntfWavFileInitialize(media_q_t *pMediaQ, openavb_
 		pPvtData->audioEndian = AVB_AUDIO_ENDIAN_LITTLE;		//wave file default
 
 		pPvtData->intervalCounter = 0;
+		pPvtData->repeatData = 0;
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
