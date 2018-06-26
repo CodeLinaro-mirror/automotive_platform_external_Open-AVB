@@ -87,6 +87,8 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
 {
 	automotive_profile = portInit->automotive_profile;
 	linkUp = portInit->linkUp;
+	linkUpCount = 0;
+	linkDownCount = 0;
 	setTestMode( portInit->testMode );
 
 	pdelay_sequence_id = 0;
@@ -156,8 +158,10 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
 			linkUpCount = 1;  // TODO : really should check the current linkup status http://stackoverflow.com/questions/15723061/how-to-check-if-interface-is-up
 			linkDownCount = 0;
 		}
-		setStationState(STATION_STATE_RESERVED);
+	} else {
+		avbSyncState = 0;   /* Invalid value for avbSyncState */
 	}
+	setStationState(STATION_STATE_RESERVED);
 }
 
 bool EtherPort::_init_port( void )
