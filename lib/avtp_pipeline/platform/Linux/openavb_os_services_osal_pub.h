@@ -90,6 +90,17 @@ typedef struct {
 #define MUTEX_UNLOCK_ALT(mutex_handle) pthread_mutex_unlock(&mutex_handle)
 #define MUTEX_DESTROY_ALT(mutex_handle) pthread_mutex_destroy(&mutex_handle)
 
+#define COND_HANDLE(cv_handle)                           pthread_cond_t cv_handle
+#define COND_CREATE_ERR()                                int cv_err
+#define COND_CREATE(cv_handle)                           cv_err=pthread_cond_init(&cv_handle, NULL)
+#define COND_WAIT(cv_handle, mutex_handle)               cv_err=pthread_cond_wait(&cv_handle, &mutex_handle)
+#define COND_TIMEDWAIT(cv_handle, mutex_handle, timeout) cv_err=pthread_cond_timedwait(&cv_handle, &mutex_handle, &timeout)
+#define COND_SIGNAL(cv_handle)                           cv_err=pthread_cond_signal(&cv_handle)
+#define COND_BROADCAST(cv_handle)                        cv_err=pthread_cond_broadcast(&cv_handle)
+#define COND_DESTROY(cv_handle)                          cv_err=pthread_cond_destroy(&cv_handle)
+#define COND_LOG_ERR(message)                            if (cv_err) AVB_LOG_ERROR(message);
+#define COND_IS_ERR                                      (cv_err != 0)
+
 
 //	pthread_mutexattr_t   mta;
 //	pthread_mutexattr_init(&mta);

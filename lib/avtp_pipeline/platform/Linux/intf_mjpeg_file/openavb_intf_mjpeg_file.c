@@ -47,26 +47,20 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_mediaq_pub.h"
 #include "openavb_intf_pub.h"
 #include "openavb_map_mjpeg_pub.h"
+#include "openavb_filewriter.h"
 
 #define	AVB_LOG_COMPONENT	"MJPEG File Interface"
 #include "openavb_log_pub.h"
 
-#define APPSINK_NAME "avbsink"
-#define APPSRC_NAME "avbsrc"
-#define PACKETS_PER_RX_CALL 20
-
-#define FRAME_SIZE 600000 //600KB big enough for a frame?
+#define MAX_PAYLOAD_SIZE 1412
 
 typedef struct pvt_data_t
 {
 	char *file_name;
 	bool ignoreTimestamp;
 	U8 *fp;
-	U32 bufwr;
-	U32 bufrd;
 	U32 seq;
 	U32 bitrate;
-	U8 rec_frame[FRAME_SIZE];
 	bool asyncRx;
 	bool blockingRx;
 	struct stat statbuf;
@@ -74,6 +68,7 @@ typedef struct pvt_data_t
 	U32 loc;
 	bool find_soi;
 	int fd;
+	void* filewriter;
 	int call_rate;
 	bool get_avtp_timestamp;        /*<! this flag indicates whether
                                         an avtp timestamp should be taken */
@@ -364,10 +359,11 @@ void openavbIntfMjpegFileRxInitCB(media_q_t *pMediaQ)
 		return;
 	}
 
-	pPvtData->loc = 0;
-	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	if(pPvtData->fd == -1) {
-		AVB_LOG_ERROR("Failed to create file");
+	pPvtData->filewriter = filewriter_init(MAX_PAYLOAD_SIZE, pPvtData->file_name);
+	if (!pPvtData->filewriter) {
+		AVB_LOGF_ERROR("Unable to create filewriter for file: %s", pPvtData->file_name);
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return;
 	}
 }
 
@@ -400,16 +396,9 @@ bool openavbIntfMjpegFileRxCB(media_q_t *pMediaQ)
 		}
 
 
-		memcpy(&pPvtData->rec_frame[pPvtData->loc], pMediaQItem->pPubData, pMediaQItem->dataLen);
-		pPvtData->loc += pMediaQItem->dataLen;
+		filewriter_write(pPvtData->filewriter, pMediaQItem->pPubData, pMediaQItem->dataLen);
 		if ( ((media_q_item_map_mjpeg_pub_data_t *)pMediaQItem->pPubMapData)->lastFragment ) {
 			pPvtData->get_avtp_timestamp = TRUE;
-			//Found End of Image, write frame to the file
-			if (pPvtData->fd) {
-				write(pPvtData->fd, pPvtData->rec_frame, pPvtData->loc);
-			}
-			pPvtData->loc = 0;
-			//in the case of a deocder, pass it up the timestamp as well
 		}
 		else {
 			if(pPvtData->get_avtp_timestamp) {
@@ -443,6 +432,15 @@ void openavbIntfMjpegFileEndCB(media_q_t *pMediaQ)
 		return;
 	}
 
+	if (pPvtData->fd) {
+		close(pPvtData->fd);
+		pPvtData->fd = -1;
+	}
+
+	if (pPvtData->filewriter) {
+		filewriter_close(pPvtData->filewriter);
+		pPvtData->filewriter = NULL;
+	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }

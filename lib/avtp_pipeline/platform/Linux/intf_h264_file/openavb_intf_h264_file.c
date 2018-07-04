@@ -44,32 +44,28 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_mediaq_pub.h"
 #include "openavb_intf_pub.h"
 #include "openavb_map_h264_pub.h"
+#include "openavb_filewriter.h"
 
 #define	AVB_LOG_COMPONENT	"H264 File Interface"
 #include "openavb_log_pub.h"
 
-
-#define NBUFS 256
-#define FRAME_SIZE 600000   // 1480 byte from excelfore cam, including ethernet packet header
 #define MAX_READ_SIZE 128
 #define MAX_BUFFER_LEN 1024
+#define MAX_PAYLOAD_SIZE 1412
 
 typedef struct pvt_data_t
 {
 	char *file_name;
 	bool ignoreTimestamp;
 	U8 *fp;
-	char *pPipelineStr;
-	U32 bufwr;
-	U32 bufrd;
 	U32 seq;
-	U8 rec_frame[FRAME_SIZE];
 	bool asyncRx;
 	bool blockingRx;
 	U32 read_size;
 	U32 loc;
 	int fd;
-        struct stat statbuf;
+	void* filewriter;
+	struct stat statbuf;
 	bool get_avtp_timestamp;        /*<! this flag indicates whether
                                         an avtp timestamp should be taken */
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
@@ -266,11 +262,11 @@ void openavbIntfH264RtpFileRxInitCB(media_q_t *pMediaQ)
 		return;
 	}
 
-	pPvtData->loc = 0;
-	pPvtData->fd = open(pPvtData->file_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        AVB_LOGF_INFO("#############file descripor for the opened file is %d\n", pPvtData->fd);
-	if(pPvtData->fd == -1) {
-		AVB_LOG_ERROR("Failed to create file");
+	pPvtData->filewriter = filewriter_init(MAX_PAYLOAD_SIZE, pPvtData->file_name);
+	if (!pPvtData->filewriter) {
+		AVB_LOGF_ERROR("Unable to create filewriter for file: %s", pPvtData->file_name);
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return;
 	}
 
 }
@@ -302,29 +298,7 @@ bool openavbIntfH264RtpFileRxCB(media_q_t *pMediaQ)
 			openavbMediaQTailPull(pMediaQ);
 			continue;
 		}
-		if (pPvtData->asyncRx) {
-			AVB_LOG_INFO("Rx async called...");
-			U32 bufwr = pPvtData->bufwr;
-			U32 bufrd = pPvtData->bufrd;
-			U32 mdif = bufwr - bufrd;
-			if (mdif >= NBUFS) {
-				openavbMediaQTailPull(pMediaQ);
-				AVB_LOGF_INFO("Rx async queue full, dropping (%" PRIu32 " - %" PRIu32 " = %" PRIu32 ")", bufwr, bufrd, mdif);
-				moreSourcePackets = FALSE;
-				continue;
-			}
-		}
-
-		memcpy(&pPvtData->rec_frame[pPvtData->loc], pMediaQItem->pPubData, pMediaQItem->dataLen);
-		pPvtData->loc += pMediaQItem->dataLen;
-
-		if ( ((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket ) {
-			if (pPvtData->fd) {
-				write(pPvtData->fd, pPvtData->rec_frame, pPvtData->loc);
-			}
-			pPvtData->loc = 0;
-		}
-
+		filewriter_write(pPvtData->filewriter, pMediaQItem->pPubData, pMediaQItem->dataLen);
 		openavbMediaQTailPull(pMediaQ);
 	}
 	return TRUE;
@@ -341,6 +315,17 @@ void openavbIntfH264RtpFileEndCB(media_q_t *pMediaQ)
 		AVB_LOG_ERROR("Private interface module data not allocated.");
 		return;
 	}
+
+	if (pPvtData->fd) {
+		close(pPvtData->fd);
+		pPvtData->fd = -1;
+	}
+
+	if (pPvtData->filewriter) {
+		filewriter_close(pPvtData->filewriter);
+		pPvtData->filewriter = NULL;
+	}
+
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
 

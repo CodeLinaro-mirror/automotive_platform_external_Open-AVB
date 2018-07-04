@@ -26,6 +26,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
             $(LOCAL_PATH)/platform/generic/include/linux \
             $(LOCAL_PATH)/platform/Linux \
             $(LOCAL_PATH)/platform/Linux/endpoint \
+            $(LOCAL_PATH)/platform/Linux/filewriter \
             $(LOCAL_PATH)/platform/Linux/rawsock \
             $(LOCAL_PATH)/tl \
             $(LOCAL_PATH)/util \
@@ -50,6 +51,7 @@ LOCAL_SRC_FILES := \
             openavb_common/mrp_client.c \
             platform/Linux/tl/openavb_tl_osal.c \
             platform/Linux/endpoint/openavb_endpoint_osal.c \
+            platform/Linux/filewriter/openavb_filewriter.c \
             platform/Linux/openavb_osal_endpoint.c \
             platform/Linux/openavb_time_osal.c \
             platform/Linux/endpoint/openavb_endpoint_cfg.c \

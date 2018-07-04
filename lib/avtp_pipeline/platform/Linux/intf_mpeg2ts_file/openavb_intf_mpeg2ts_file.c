@@ -42,6 +42,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_trace_pub.h"
 #include "openavb_mediaq_pub.h"
 #include "openavb_intf_pub.h"
+#include "openavb_filewriter.h"
 
 #define	AVB_LOG_COMPONENT	"MPEG2TS Interface"
 #include "openavb_log_pub.h" 
@@ -53,6 +54,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define MAX_TABLE_PIDS 100
 #define F27_MHZ 27000000.0
 #define F90_KHZ 90000.0
+#define MAX_PAYLOAD_SIZE 1412
 
 struct PIDStatus {
   double firstClock, lastClock, firstRealTime, lastRealTime;
@@ -82,6 +84,7 @@ typedef struct {
 	// Variable data
 	/////////////
 	FILE *pFile;
+	void* filewriter;
 
 	// Talker variables for tracking rewind
 	struct timespec startTime;
@@ -581,9 +584,9 @@ void openavbIntfMpeg2tsFileRxInitCB(media_q_t *pMediaQ)
 			AVB_TRACE_EXIT(AVB_TRACE_INTF);
 		}
 		else {
-			pPvtData->pFile = fopen(pPvtData->pFileName, "wb");
-			if (!pPvtData->pFile) {
-				AVB_LOGF_ERROR("Unable to open output file: %s", pPvtData->pFileName);
+			pPvtData->filewriter = filewriter_init(MAX_PAYLOAD_SIZE, pPvtData->pFileName);
+			if (!pPvtData->filewriter) {
+				AVB_LOGF_ERROR("Unable to create filewriter for file: %s", pPvtData->pFileName);
 				AVB_TRACE_EXIT(AVB_TRACE_INTF);
 				return;
 			}
@@ -610,18 +613,7 @@ bool openavbIntfMpeg2tsFileRxCB(media_q_t *pMediaQ)
 		while (moreData) {
 			media_q_item_t *pMediaQItem = openavbMediaQTailLock(pMediaQ, pPvtData->ignoreTimestamp);
 			if (pMediaQItem) {
-				while (pPvtData->pFile && pMediaQItem->dataLen > 0) {
-					written = fwrite(pMediaQItem->pPubData, 1, pMediaQItem->dataLen, pPvtData->pFile);
-					fflush(pPvtData->pFile);
-					if (written == 0) {
-						int e = ferror(pPvtData->pFile);
-						AVB_LOGF_ERROR("Error writing file: %s, %s", pPvtData->pFileName, strerror(e));
-						fclose(pPvtData->pFile);
-						pPvtData->pFile = NULL;
-					} else {
-						pMediaQItem->dataLen -= written;
-					}
-				}
+				filewriter_write(pPvtData->filewriter, pMediaQItem->pPubData, pMediaQItem->dataLen);
 				openavbMediaQTailPull(pMediaQ);
 			}
 			else {
@@ -649,6 +641,11 @@ void openavbIntfMpeg2tsFileEndCB(media_q_t *pMediaQ)
 		if (pPvtData->pFile) {
 			fclose(pPvtData->pFile);
 			pPvtData->pFile = NULL;
+		}
+
+		if (pPvtData->filewriter) {
+			filewriter_close(pPvtData->filewriter);
+			pPvtData->filewriter = NULL;
 		}
 	}
 
