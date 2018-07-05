@@ -160,6 +160,7 @@ U8 *pcapRawsockGetRxFrame(void *pvRawsock, U32 timeout, unsigned int *offset, un
 			AVB_LOGF_ERROR("pcap_next_ex failed: %s", pcap_geterr(rawsock->handle));
 			break;
 		case 0:
+			usleep(1000); //1ms
 			// timeout;
 			break;
 		case -2:
