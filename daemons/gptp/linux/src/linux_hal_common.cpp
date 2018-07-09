@@ -641,7 +641,7 @@ bool LinuxSharedMemoryIPC::init( OS_IPC_ARG *barg ) {
 	}
 	grp = getgrnam( group_name );
 	if( grp == NULL ) {
-		XPTPD_ERROR( "Group %s not found, will try root (0) instead", group_name );
+		XPTPD_INFO( "Group %s not found, will try root (0) instead", group_name );
 	}
 #ifdef ANDROID
 	shm_fd = open( SHM_NAME, O_RDWR | O_CREAT, 0660 );
