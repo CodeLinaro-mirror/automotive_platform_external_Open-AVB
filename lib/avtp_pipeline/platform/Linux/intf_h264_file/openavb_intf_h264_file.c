@@ -69,6 +69,7 @@ typedef struct pvt_data_t
 	bool get_avtp_timestamp;        /*<! this flag indicates whether
                                         an avtp timestamp should be taken */
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
+	bool repeatData;
 } pvt_data_t;
 
 // Each configuration name value pair for this mapping will result in this callback being called.
@@ -112,6 +113,16 @@ void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const cha
 		tmp = strtol(value, &pEnd, 10);
 		if (*pEnd == '\0' && tmp == 1) {
 			pPvtData->ignoreTimestamp = (tmp == 1);
+		}
+	}
+	else if (strcmp(name, "intf_nv_repeat_data") == 0) {
+		tmp = strtol(value, &pEnd, 10);
+		if ((tmp == 0) || (tmp == 1)) {
+			pPvtData->repeatData = (tmp == 1);
+		}
+		else {
+			AVB_LOG_ERROR("Invalid intf_nv_repeat_data value : setting to default(no repetition).");
+			pPvtData->repeatData = FALSE;
 		}
 	}
 }
@@ -196,24 +207,32 @@ bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
 	if (pMediaQItem) {
 		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
 			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
-		}
-		else {
+		} else {
 			read_size = pPvtData->read_size;
 		}
-	        if (read_size > 0) {
+
+		if (read_size > 0) {
 			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
+		} else {
+			AVB_LOGF_ERROR("Invalid read size %d. read pos = %d, file size = %d",
+					read_size, pPvtData->loc, pPvtData->statbuf.st_size);
+			return FALSE;
 		}
-		else {
-			if(pPvtData->loc == pPvtData->statbuf.st_size){
-				AVB_LOG_INFO("EOF Reached...Closing file");
+
+		pMediaQItem->dataLen = read_size;
+		pPvtData->loc += read_size;
+		buf_size += read_size;
+
+		// Check if we've reached the end of the file
+		if (pPvtData->loc >= pPvtData->statbuf.st_size) {
+			if (pPvtData->repeatData) {
+				pPvtData->loc = 0;
+			} else {
+				AVB_LOG_INFO("EOF reached, closing the file.");
 				close(pPvtData->fd);
 				pPvtData->fd = -1;
 			}
-			return FALSE;
 		}
-		pMediaQItem->dataLen = read_size;
-		pPvtData->loc += read_size ;
-		buf_size += read_size ;
 
 		if (buf_size < MAX_BUFFER_LEN) {
 			((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = FALSE;
@@ -366,6 +385,7 @@ extern DLL_EXPORT bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, open
 	pIntfCB->intf_gen_end_cb = openavbIntfH264RtpFileGenEndCB;
 
 	pPvtData->ignoreTimestamp = FALSE;
+	pPvtData->repeatData = FALSE;
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 	return TRUE;

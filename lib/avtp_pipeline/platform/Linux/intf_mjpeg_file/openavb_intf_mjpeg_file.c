@@ -75,6 +75,7 @@ typedef struct pvt_data_t
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
 	U64 frame_time;  //used to pace the talking
 	bool sendFrameDataOnly;
+	bool repeatData;
 } pvt_data_t;
 
 // Each configuration name value pair for this mapping will result in this callback being called.
@@ -143,6 +144,16 @@ void openavbIntfMjpegFileCfgCB(media_q_t *pMediaQ, const char *name, const char 
 		tmp = strtol(value, &pEnd, 10);
 		if (*pEnd == '\0' && tmp == 1) {
 			pPvtData->sendFrameDataOnly = (tmp == 1);
+		}
+	}
+	else if (strcmp(name, "intf_nv_repeat_data") == 0) {
+		tmp = strtol(value, &pEnd, 10);
+		if ((tmp == 0) || (tmp == 1)) {
+			pPvtData->repeatData = (tmp == 1);
+		}
+		else {
+			AVB_LOG_ERROR("Invalid intf_nv_repeat_data value : setting to default(no repetition).");
+			pPvtData->repeatData = FALSE;
 		}
 	}
 
@@ -251,8 +262,15 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 			//parse for FFD8 -> Start of Image marker
 			while(pPvtData->find_soi){
 				//make sure not to go out of bounds of the file
-				if (pPvtData->loc + 1 == pPvtData->statbuf.st_size) {
-					pPvtData->loc = 0;
+				if (pPvtData->loc + 1 >= pPvtData->statbuf.st_size) {
+					if (pPvtData->repeatData) {
+						pPvtData->loc = 0;
+					} else {
+						AVB_LOG_INFO("EOF reached. Closing the file");
+						close(pPvtData->fd);
+						pPvtData->fd = -1;
+						return FALSE;
+					}
 				}
 				if (pPvtData->fp[pPvtData->loc] == 0xFF && pPvtData->fp[pPvtData->loc+1] == 0xD8){
 					//found SoI
@@ -292,12 +310,17 @@ bool openavbIntfMjpegFileTxCB(media_q_t *pMediaQ)
 		}
 		pMediaQItem->dataLen = i+1;
 		pPvtData->loc += i+1;//check if it's form the dof case or not?
-		if (pPvtData->loc == pPvtData->statbuf.st_size) {
-			AVB_LOG_INFO("EOF reached!!!. Closing the file");
-			close(pPvtData->fd);
-			pPvtData->fd = -1;
-		}
 
+		// Check if we've reached the end of the file
+		if (pPvtData->loc >= pPvtData->statbuf.st_size) {
+			if (pPvtData->repeatData) {
+				pPvtData->loc = 0;
+			} else {
+				AVB_LOG_INFO("EOF reached. Closing the file");
+				close(pPvtData->fd);
+				pPvtData->fd = -1;
+			}
+		}
 
 		if (eoi) {
 			((media_q_item_map_mjpeg_pub_data_t *)pMediaQItem->pPubMapData)->lastFragment = TRUE;
@@ -484,6 +507,7 @@ extern DLL_EXPORT bool openavbIntfMjpegFileInitialize(media_q_t *pMediaQ, openav
 
 	pPvtData->ignoreTimestamp = FALSE;
 	pPvtData->sendFrameDataOnly = FALSE;
+	pPvtData->repeatData = FALSE;
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 	return TRUE;
