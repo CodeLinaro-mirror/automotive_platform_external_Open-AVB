@@ -45,6 +45,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define	AVB_LOG_COMPONENT	"TL Host"
 #include "openavb_log_pub.h"
+#include <sched.h>
+
+#define DEFAULT_NICE -20
 
 bool bRunning = TRUE;
 
@@ -77,6 +80,8 @@ void openavbTlHostUsage(char *programName)
 		"Usage: %s [options] file...\n"
 		"  -I val     Use given (val) interface globally, can be overriden by giving the ifname= option to the config line.\n"
 		"  -e endpoint.ini.\n"
+		"  -r Increase process prority to RealTime. Overrides -n option.\n"
+		"  -n val Set process nice to (val). Range -20 (highest priority) to +19 (lowest priority), default: -20.\n"
 		"\n"
 		"Examples:\n"
 		"  %s talker.ini\n"
@@ -102,6 +107,9 @@ int main(int argc, char *argv[])
 	char *programName;
 	char *optIfnameGlobal = NULL;
 	char *endpointIniFile = NULL;
+	struct sched_param param;
+	int niceVal = DEFAULT_NICE;
+	int useRTprio = 0;
 
 	programName = strrchr(argv[0], '/');
 	programName = programName ? programName + 1 : argv[0];
@@ -117,7 +125,7 @@ int main(int argc, char *argv[])
 	// Process command line
 	bool optDone = FALSE;
 	while (!optDone) {
-		int opt = getopt(argc, argv, "hI:e:");
+		int opt = getopt(argc, argv, "hrn:I:e:");
 		if (opt != EOF) {
 			switch (opt) {
 				case 'I':
@@ -126,6 +134,20 @@ int main(int argc, char *argv[])
 				case 'e':
 					endpointIniFile = strdup(optarg);
 					break;
+				case 'r':
+					useRTprio = 1;
+					break;
+				case 'n': {
+					char *pEnd;
+					niceVal = strtol(optarg, &pEnd, 10);
+					if ((niceVal < -20) || (niceVal > 19)) {
+						printf("Invalid nice value %d. Must be -20 to 19.\n", niceVal);
+						exit(-1);
+					} else {
+						printf("Using nice value %d.\n", niceVal);
+					}
+					break;
+				}
 				case 'h':
 				default:
 					openavbTlHostUsage(programName);
@@ -134,6 +156,26 @@ int main(int argc, char *argv[])
 		}
 		else {
 			optDone = TRUE;
+		}
+	}
+
+	if (useRTprio) {
+		param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+		errno = 0;
+		if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+			printf("Failed to increase priority to RT. errno = %d (%s) \n",
+					errno, strerror(errno));
+			exit(-1);
+		} else {
+			printf("Process marked as RT with priority %d \n", param.sched_priority);
+		}
+	} else {
+		errno = 0;
+		nice(niceVal);
+		if (errno) {
+			printf("Failed to set nice() - errno = %d (%s).\n",
+					errno, strerror(errno));
+			exit(-1);
 		}
 	}
 
