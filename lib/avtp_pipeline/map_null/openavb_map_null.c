@@ -142,6 +142,8 @@ typedef struct {
 	// Transmit interval in frames per second. 0 = default for talker class.
 	U32 txInterval;
 
+	U32 maxDataSize;
+
 	/////////////
 	// Variable data
 	/////////////
@@ -170,6 +172,15 @@ void openavbMapNullCfgCB(media_q_t *pMediaQ, const char *name, const char *value
 			char *pEnd;
 			pPvtData->txInterval = strtol(value, &pEnd, 10);
 		}
+		else if (strcmp(name, "map_nv_max_payload_size") == 0) {
+		    char *pEnd;
+			U32 size = strtol(value, &pEnd, 10);
+			if (size > 1412) {
+				AVB_LOGF_WARNING("map_nv_max_payload_size too large. Parameter set to default: %d", MAX_PAYLOAD_SIZE);
+				size = MAX_PAYLOAD_SIZE;
+			}
+			pPvtData->maxDataSize = size + TOTAL_HEADER_SIZE;
+		}
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_MAP);
@@ -196,7 +207,8 @@ U16 openavbMapNullMaxDataSizeCB(media_q_t *pMediaQ)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_MAP);
 	AVB_TRACE_EXIT(AVB_TRACE_MAP);
-	return MAX_DATA_SIZE;
+	pvt_data_t *pPvtData = pMediaQ->pPvtMapInfo;
+	return pPvtData->maxDataSize;
 }
 
 // Returns the intended transmit interval (in frames per second). 0 = default for talker / class.
@@ -377,6 +389,7 @@ extern DLL_EXPORT bool openavbMapNullInitialize(media_q_t *pMediaQ, openavb_map_
 		pPvtData->itemCount = 20;
 		pPvtData->txInterval = 0;
 		pPvtData->maxTransitUsec = inMaxTransitUsec;
+		pPvtData->maxDataSize = MAX_DATA_SIZE;
 
 		openavbMediaQSetMaxLatency(pMediaQ, inMaxTransitUsec);
 	}
