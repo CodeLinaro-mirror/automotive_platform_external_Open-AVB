@@ -190,7 +190,7 @@ int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
 
 	avb_struct.op_mode = QAVB;
 	data.ptr = &avb_struct;
-	strncpy(ifr.ifr_ifrn.ifrn_name, ifname_interface, IFNAMSIZ - 1);
+	snprintf(ifr.ifr_ifrn.ifrn_name, sizeof(ifr.ifr_ifrn.ifrn_name), "%s", ifname_interface);
 	ifr.ifr_ifru.ifru_data = (void *)&data;
 
 	errno = 0;
