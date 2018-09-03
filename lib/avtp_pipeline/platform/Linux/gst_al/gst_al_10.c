@@ -120,6 +120,86 @@ void gst_al_buffer_unref(GstAlBuf *buf)
 	g_free(buf);
 }
 
+/*
+ * gst_al_pull_rtp_buffer_payload_and_header:
+ * @sink:              source from sink
+ * @rtpheader: (out) : pointer to the rtp header
+ *
+ * Pull the video sample from sink and parse the buffer to get the payload and rtpheader
+ * Same as function: gst_al_pull_rtp_buffer except that the rtpheader is also returned.
+ *
+ * Returns: A #GstAlBuf to the sample from the sink
+ */
+GstAlBuf* gst_al_pull_rtp_buffer_payload_and_header(GstAppSink *sink, guint8** rtpheader)
+{
+	GstAlBuf *buf = g_new0(GstAlBuf,1);
+	GstBuffer *buffer;
+	GstSample *sample = gst_app_sink_pull_sample(sink);
+	buf->m_sample = sample;
+
+	if(sample)
+	{
+		buffer = gst_sample_get_buffer(sample);
+		buf->m_buffer = buffer;
+
+		if(buffer)
+		{
+			GstRTPBuffer *rtpbuf = &buf->m_rtpbuf;
+			if( gst_rtp_buffer_map(buffer, GST_MAP_READ, rtpbuf))
+			{
+				buf->m_dptr = gst_rtp_buffer_get_payload(rtpbuf);
+				buf->m_dlen = gst_rtp_buffer_get_payload_len(rtpbuf);
+				// get the RTP header pointer
+				*rtpheader = rtpbuf->data[0];
+				goto pull_rtp_success;
+			}
+		}
+		gst_sample_unref(sample);
+	}
+	g_free(buf);
+	buf = NULL;
+ pull_rtp_success:
+	return buf;
+}
+
+/*
+ * gst_al_alloc_fill_rtp_buffer:
+ * @payload_len: the payload length
+ * @pad_len    : the amount of padding
+ * @csrc_count : the number of CSRC entries
+ * @rtpheader  : the rtp header to be inserted
+ * @rtpheader_len : the rtp header length
+ *
+ * Allocate enough space to contain a RTP payload and the RTP header,
+ * and the header is initialized using the @rtpheader.
+ *
+ * Returns: A #GstAlBuf to the new allocated buffer with RTP header added.
+ */
+GstAlBuf* gst_al_alloc_fill_rtp_buffer(guint payload_len,
+	guint8 pad_len, guint8 csrc_count, guint8* rtpheader, guint rtpheader_len)
+{
+	GstAlBuf *buf = g_new0(GstAlBuf, 1);
+	GstBuffer *buffer = gst_rtp_buffer_new_allocate(payload_len, pad_len, csrc_count);
+	buf->m_buffer = buffer;
+	if(buffer)
+	{
+		GstRTPBuffer *rtpbuf = &buf->m_rtpbuf;
+		if( gst_rtp_buffer_map(buffer, GST_MAP_WRITE, rtpbuf))
+		{
+			buf->m_dptr = gst_rtp_buffer_get_payload(rtpbuf);
+			buf->m_dlen = gst_rtp_buffer_get_payload_len(rtpbuf);
+			// copy rtp header
+			memcpy(rtpbuf->data[0], rtpheader, rtpheader_len);
+			goto alloc_rtp_success;
+		}
+		gst_buffer_unref(buffer);
+	}
+	g_free(buf);
+	buf = NULL;
+ alloc_rtp_success:
+	return buf;
+}
+
 GstAlBuf* gst_al_pull_rtp_buffer(GstAppSink *sink)
 {
 

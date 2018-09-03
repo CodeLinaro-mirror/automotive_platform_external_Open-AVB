@@ -51,7 +51,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define PACKETS_PER_RX_CALL 20
 
 #define NBUFS 256
-
+#define RTPHEADER_LEN 12
 typedef struct pvt_data_t
 {
 	char *pPipelineStr;
@@ -260,7 +260,7 @@ void openavbIntfH264RtpGstTxInitCB(media_q_t *pMediaQ)
 }
 
 // This callback will be called for each AVB transmit interval. Commonly this will be
-// 4000 or 8000 times  per second.
+// 4000 or 8000 times per second.
 bool openavbIntfH264RtpGstTxCB(media_q_t *pMediaQ)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_INTF_DETAIL);
@@ -292,12 +292,12 @@ bool openavbIntfH264RtpGstTxCB(media_q_t *pMediaQ)
 		if (pMediaQItem)
 		{
 			U32 paySize = 0;
-
+			guint8* rtpheader = NULL; // point to the 12 byte RTP header
 			GstAlBuf *txBuf = NULL;
 
-			txBuf = gst_al_pull_rtp_buffer(GST_APP_SINK(pPvtData->appsink));
+			txBuf = gst_al_pull_rtp_buffer_payload_and_header(GST_APP_SINK(pPvtData->appsink), &rtpheader);
 
-			if (!txBuf)
+			if (!txBuf || !rtpheader)
 			{
 				pMediaQItem->dataLen = 0;
 				openavbMediaQHeadUnlock(pMediaQ);
@@ -308,9 +308,9 @@ bool openavbIntfH264RtpGstTxCB(media_q_t *pMediaQ)
 
 			g_atomic_int_add(&pPvtData->nWaiting, -1);
 			paySize = GST_AL_BUF_SIZE(txBuf);
+			paySize += RTPHEADER_LEN;
 
-			if(paySize > pMediaQItem->itemSize){
-
+			if (paySize > pMediaQItem->itemSize) {
 				AVB_LOGF_ERROR("PaySize (%d) exceeds pMediaQItem itemSize (%d).", paySize, pMediaQItem->itemSize);
 
 				pMediaQItem->dataLen = 0;
@@ -321,7 +321,9 @@ bool openavbIntfH264RtpGstTxCB(media_q_t *pMediaQ)
 			}
 
 			pMediaQItem->dataLen = paySize;
-			memcpy(pMediaQItem->pPubData, GST_AL_BUF_DATA(txBuf), paySize);
+			memcpy(pMediaQItem->pPubData, rtpheader, RTPHEADER_LEN);
+			memcpy(pMediaQItem->pPubData + RTPHEADER_LEN, GST_AL_BUF_DATA(txBuf), paySize - RTPHEADER_LEN);
+
 			if (gst_al_rtp_buffer_get_marker(txBuf))
 			{
 				((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
@@ -451,6 +453,7 @@ void openavbIntfH264RtpGstRxInitCB(media_q_t *pMediaQ)
 		g_object_set(pPvtData->appsrc, "block", 1, NULL); // and now we have to do async rx :)
 	}
 
+	g_object_set(pPvtData->appsrc, "format", GST_FORMAT_TIME, NULL);
 	//FIXME: Check if state change was successful
 	gst_element_set_state(pPvtData->pipe, GST_STATE_PLAYING);
 
@@ -517,7 +520,9 @@ bool openavbIntfH264RtpGstRxCB(media_q_t *pMediaQ)
 				continue;
 			}
 		}
-		GstAlBuf *rxBuf = gst_al_alloc_rtp_buffer(pMediaQItem->dataLen, 0,0);
+		// allocate a Gstreamer buffer with 12 byte RTP header initialized
+		GstAlBuf *rxBuf = gst_al_alloc_fill_rtp_buffer(pMediaQItem->dataLen - RTPHEADER_LEN, 0,
+								0, pMediaQItem->pPubData, RTPHEADER_LEN);
 
 		if (!rxBuf || !GST_AL_BUF_DATA(rxBuf))
 		{
@@ -525,7 +530,9 @@ bool openavbIntfH264RtpGstRxCB(media_q_t *pMediaQ)
 			openavbMediaQTailUnlock(pMediaQ);
 			return FALSE;
 		}
-		memcpy(GST_AL_BUF_DATA(rxBuf), pMediaQItem->pPubData, pMediaQItem->dataLen);
+		// copy the true payload
+		memcpy(GST_AL_BUF_DATA(rxBuf),
+			pMediaQItem->pPubData + RTPHEADER_LEN, pMediaQItem->dataLen - RTPHEADER_LEN);
 
 		GST_AL_BUFFER_TIMESTAMP(rxBuf) = GST_CLOCK_TIME_NONE;
 		GST_AL_BUFFER_DURATION(rxBuf) = GST_CLOCK_TIME_NONE;
@@ -533,8 +540,6 @@ bool openavbIntfH264RtpGstRxCB(media_q_t *pMediaQ)
 		{
 			gst_al_rtp_buffer_set_marker(rxBuf,TRUE);
 		}
-
-		gst_al_rtp_buffer_set_params(rxBuf, 5, 96, 2, pPvtData->seq++);
 
 		if (pPvtData->asyncRx)
 		{

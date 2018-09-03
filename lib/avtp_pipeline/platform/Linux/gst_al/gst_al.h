@@ -98,6 +98,28 @@ GstFlowReturn gst_al_push_buffer(GstAppSrc *src, GstAlBuf *buf);
  */
 GstAlBuf* gst_al_alloc_buffer(gint len);
 /**
+ * \brief - pulls a RTP buffer and header from sink
+ *
+ * \param sink - a sink to pull buffer from
+ * \param rtpheader - out pointer to rtp header
+ *
+ * \return - a newly allocated buffer
+ */
+GstAlBuf* gst_al_pull_rtp_buffer_payload_and_header(GstAppSink *sink, guint8** rtpheader);
+/**
+ * \brief - allocate a rtp buffer with RTP header added
+ *
+ * \param payload_len - a payload length param
+ * \param pad_len - pad length
+ * \param csrc_count - a param of csrc number
+ * \param rtpheader - rtpheader
+ * \param rtpheader_len - rtp header length
+ *
+ * \return - a newly allocated buffer
+ */
+GstAlBuf* gst_al_alloc_fill_rtp_buffer(guint payload_len, guint8 pad_len, guint8 csrc_count,
+					guint8* rtpheader, guint rtpheader_len);
+/**
  * \brief - unrefs a buffer
  *
  * \param buf - a buffer to unref
