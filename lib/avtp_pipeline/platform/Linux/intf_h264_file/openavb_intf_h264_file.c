@@ -364,6 +364,13 @@ extern DLL_EXPORT bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, open
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
 
+        if(!pPvtData) {
+		AVB_LOG_ERROR("Private interface module data not allocated.");
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return TRUE;
+	}
+
+
 	pIntfCB->intf_cfg_cb = openavbIntfH264RtpFileCfgCB;
 	pIntfCB->intf_gen_init_cb = openavbIntfH264RtpFileGenInitCB;
 	pIntfCB->intf_tx_init_cb =	openavbIntfH264RtpFileTxInitCB;// NULL;

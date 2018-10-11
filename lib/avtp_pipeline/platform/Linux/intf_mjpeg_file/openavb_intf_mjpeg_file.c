@@ -456,6 +456,12 @@ extern DLL_EXPORT bool openavbIntfMjpegFileInitialize(media_q_t *pMediaQ, openav
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
 
+        if(!pPvtData) {
+		AVB_LOG_ERROR("Private interface module data not allocated.");
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return TRUE;
+        }
+
 	pPvtData->get_avtp_timestamp = TRUE;
 
 	pIntfCB->intf_cfg_cb = openavbIntfMjpegFileCfgCB;
