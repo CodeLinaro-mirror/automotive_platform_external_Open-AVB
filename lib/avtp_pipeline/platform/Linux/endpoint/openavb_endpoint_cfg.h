@@ -53,6 +53,10 @@ typedef struct {
 	unsigned	nsr_kbit;
 	unsigned	mtu;
 	unsigned	fqtss_mode;
+	unsigned	domain_class_a_priority;
+	unsigned	domain_class_a_vid;
+	unsigned	domain_class_b_priority;
+	unsigned	domain_class_b_vid;
 	bool        noSrp;
 	bool        bypassAsCapableCheck;
 } openavb_endpoint_cfg_t;

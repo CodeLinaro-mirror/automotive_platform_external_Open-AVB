@@ -56,6 +56,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define MATCH(A, B)(strcasecmp((A), (B)) == 0)
 #define MATCH_FIRST(A, B)(strncasecmp((A), (B), strlen(B)) == 0)
 
+#define VLAN_ID_MAX 4095 // 12 bits = 0x0FFF = 4095
+#define VLAN_PRIO_MAX 7 // 3 bits = 0x07 = 7
+
 static void cfgValErr(const char *section, const char *name, const char *value)
 {
 	AVB_LOGF_ERROR("Invalid value: section=%s, name=%s, value=%s",
@@ -161,6 +164,46 @@ static int cfgCallback(void *user, const char *section, const char *name, const 
 					pCfg->bypassAsCapableCheck = TRUE;
 				else
 					pCfg->bypassAsCapableCheck = FALSE;
+			}
+		}
+		else if (MATCH(name, "domain_class_a_pcp")) {
+			errno = 0;
+			unsigned temp = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (temp <= VLAN_PRIO_MAX) {
+					valOK = TRUE;
+					pCfg->domain_class_a_priority = temp;
+				}
+			}
+		}
+		else if (MATCH(name, "domain_class_a_vid")) {
+			errno = 0;
+			unsigned temp = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (temp <= VLAN_ID_MAX) {
+					valOK = TRUE;
+					pCfg->domain_class_a_vid = temp;
+				}
+			}
+		}
+		else if (MATCH(name, "domain_class_b_pcp")) {
+			errno = 0;
+			unsigned temp = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (temp <= VLAN_PRIO_MAX) {
+					valOK = TRUE;
+					pCfg->domain_class_b_priority = temp;
+				}
+			}
+		}
+		else if (MATCH(name, "domain_class_b_vid")) {
+			errno = 0;
+			unsigned temp = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (temp <= VLAN_ID_MAX) {
+					valOK = TRUE;
+					pCfg->domain_class_b_vid = temp;
+				}
 			}
 		}
 		else {

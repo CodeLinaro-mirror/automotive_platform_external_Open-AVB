@@ -114,6 +114,10 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 	x_cfg.mtu = mtu;
 	x_cfg.link_kbit = link_kbit;
 	x_cfg.nsr_kbit = nsr_kbit;
+	x_cfg.domain_class_a_priority = domain_class_a_priority;
+	x_cfg.domain_class_a_vid = domain_class_a_vid;
+	x_cfg.domain_class_b_priority = domain_class_b_priority;
+	x_cfg.domain_class_b_vid = domain_class_b_vid;
 
 	if (endpointIniFile != NULL &&
 	    openavbReadConfig(endpointIniFile, &x_cfg) != 0) {

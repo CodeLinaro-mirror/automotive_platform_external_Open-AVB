@@ -59,6 +59,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_avtp.h"
 #include "openavb_qmgr.h"
 #include "openavb_maap.h"
+#include "mrp_client.h"
 
 #define	AVB_LOG_COMPONENT	"Endpoint"
 #include "openavb_pub.h"
@@ -488,6 +489,17 @@ int avbEndpointLoop(void)
 			AVB_LOG_WARNING("on each and every device in the network, without exception.");
 			AVB_LOG_WARNING("AN AVB NETWORK WILL NOT FUNCTION AS EXPECTED UNLESS ALL");
 			AVB_LOG_WARNING("STREAMS ARE PROPERLY CONFIGURED ON ALL NETWORK DEVICES.");
+			AVB_LOG_WARNING(" ");
+
+			domain_class_a_priority = x_cfg.domain_class_a_priority;
+			domain_class_a_vid = x_cfg.domain_class_a_vid;
+			domain_class_b_priority = x_cfg.domain_class_b_priority;
+			domain_class_b_vid = x_cfg.domain_class_b_vid;
+			AVB_LOG_WARNING("Using VLAN configuration: ");
+			AVB_LOGF_WARNING("class A vlan id: %d", domain_class_a_vid);
+			AVB_LOGF_WARNING("        vlan priority: %d", domain_class_a_priority);
+			AVB_LOGF_WARNING("class B vlan id: %d", domain_class_b_vid);
+			AVB_LOGF_WARNING("        vlan priority: %d", domain_class_b_priority);
 			AVB_LOG_WARNING(" ");
 		}
 
