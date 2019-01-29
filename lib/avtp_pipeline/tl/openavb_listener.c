@@ -197,8 +197,8 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 		}
 	}
 	else {
-            SLEEP(1);
-            bRet = TRUE;
+		SLEEP_MSEC(1);
+		bRet = TRUE;
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
