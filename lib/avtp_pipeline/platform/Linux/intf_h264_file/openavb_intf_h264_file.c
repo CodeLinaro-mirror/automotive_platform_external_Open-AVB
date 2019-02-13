@@ -361,6 +361,11 @@ extern DLL_EXPORT bool openavbIntfH264RtpFileInitialize(media_q_t *pMediaQ, open
 
 	// Memory freed by the media queue when the media queue is destroyed.
 	pMediaQ->pPvtIntfInfo = calloc(1, sizeof(pvt_data_t));
+	if (!pMediaQ->pPvtIntfInfo) {
+		AVB_LOG_DEBUG("H264Rtp-file FileInitialize: Can't allocate pMediaQ->pPvtIntfInfo!");
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return FALSE;
+	}
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
 
