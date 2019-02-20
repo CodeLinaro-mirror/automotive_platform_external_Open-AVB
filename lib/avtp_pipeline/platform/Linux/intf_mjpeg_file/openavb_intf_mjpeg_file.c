@@ -453,8 +453,19 @@ extern DLL_EXPORT bool openavbIntfMjpegFileInitialize(media_q_t *pMediaQ, openav
 	}
 
 	pMediaQ->pPvtIntfInfo = calloc(1, sizeof(pvt_data_t));		// Memory freed by the media queue when the media queue is destroyed.
+	if (!pMediaQ->pPvtIntfInfo) {
+		AVB_LOG_DEBUG("mjpeg-file FileInitialize: Can't allocate pMediaQ->pPvtIntfInfo!");
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return FALSE;
+	}
 
 	pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
+
+        if(!pPvtData) {
+		AVB_LOG_ERROR("Private interface module data not allocated.");
+		AVB_TRACE_EXIT(AVB_TRACE_INTF);
+		return TRUE;
+        }
 
 	pPvtData->get_avtp_timestamp = TRUE;
 
