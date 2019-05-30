@@ -39,6 +39,13 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define LOG_EXTRA_NEWLINE 1
 
+#ifdef ANDROID
+#define LOG_TAG "OpenAvb"
+#include <utils/Log.h>
+#else
+#define ALOGE(format, ...)
+#endif
+
 #ifdef USE_GLIB
 #include <glib.h>
 #define strlcpy g_strlcpy
@@ -83,6 +90,8 @@ static bool loggingThreadRunning = false;
 extern void *loggingThreadFn(void *pv);
 THREAD_TYPE(loggingThread);
 THREAD_DEFINITON(loggingThread);
+
+static log_out_t gLoggingType;
 
 static MUTEX_HANDLE_ALT(gLogMutex);
 #define LOG_LOCK() MUTEX_LOCK_ALT(gLogMutex)
@@ -139,8 +148,9 @@ void avbLogRTRender(log_queue_item_t *pLogItem)
 				}
 
 				if (pLogRTItem->bEnd) {
-					if (LOG_EXTRA_NEWLINE)
+					if (LOG_EXTRA_NEWLINE && (gLoggingType == LOG_OUT_SHELL)) {
 						strlcat((char *)pLogItem->msg, "\n", LOG_QUEUE_MSG_SIZE);
+					}
 					bMore = FALSE;
 				}
 				openavbQueueTailPull(logRTQueue);
@@ -192,7 +202,11 @@ void *loggingThreadFn(void *pv)
 				if (pLogItem->bRT)
 					avbLogRTRender(pLogItem);
 				
-				fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+				if (gLoggingType == LOG_OUT_SHELL) {
+					fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+				} else {
+					ALOGE("%s", (const char *)pLogItem->msg);
+				}
 				openavbQueueTailPull(logQueue);
 				more = TRUE;
 			}
@@ -202,18 +216,26 @@ void *loggingThreadFn(void *pv)
 	return NULL;
 }
 
-extern void DLL_EXPORT avbLogInit(void)
+extern void DLL_EXPORT avbLogInit(log_out_t loggingType)
 {
 	MUTEX_CREATE_ALT(gLogMutex);
-  
+	gLoggingType = loggingType;
+
 	logQueue = openavbQueueNewQueue(sizeof(log_queue_item_t), LOG_QUEUE_MSG_CNT);
 	if (!logQueue) {
-		printf("Failed to initialize logging facility\n");
+		if (gLoggingType == LOG_OUT_SHELL) {
+			printf("Failed to initialize logging facility\n");
+		} else {
+			ALOGE("Failed to initialize logging facility\n");
+		}
 	}
-	
 	logRTQueue = openavbQueueNewQueue(sizeof(log_rt_queue_item_t), LOG_RT_QUEUE_CNT);
 	if (!logRTQueue) {
-		printf("Failed to initialize logging RT facility\n");
+		if (gLoggingType == LOG_OUT_SHELL) {
+			printf("Failed to initialize logging RT facility\n");
+		} else {
+			ALOGE("Failed to initialize logging RT facility\n");
+		}
 	}
 
 	// Start the logging task
@@ -282,13 +304,18 @@ extern void DLL_EXPORT avbLogFn(
 		}
 
 		// using sprintf and puts allows using static buffers rather than heap.
-		if (LOG_EXTRA_NEWLINE)
+		if (LOG_EXTRA_NEWLINE && (gLoggingType == LOG_OUT_SHELL)) {
 			/* S32 full_msg_len = */ snprintf(full_msg, LOG_FULL_MSG_LEN, "[%s%s%s%s %s %s%s] %s: %s\n", time_msg, timestamp_msg, proc_msg, thread_msg, company, component, file_msg, tag, msg);
-		else
+		} else {
 			/* S32 full_msg_len = */ snprintf(full_msg, LOG_FULL_MSG_LEN, "[%s%s%s%s %s %s%s] %s: %s", time_msg, timestamp_msg, proc_msg, thread_msg, company, component, file_msg, tag, msg);
+		}
 
 		if (!OPENAVB_LOG_FROM_THREAD && !OPENAVB_LOG_PULL_MODE) {
-			fputs(full_msg, AVB_LOG_OUTPUT_FD);
+			if (gLoggingType == LOG_OUT_SHELL) {
+				fputs(full_msg, AVB_LOG_OUTPUT_FD);
+			} else {
+				ALOGE("%s", full_msg);
+			}
 		}
 		else {
 			if (logQueue) {
@@ -389,7 +416,11 @@ extern void DLL_EXPORT avbLogRT(int level, bool bBegin, bool bItem, bool bEnd, c
 							openavbQueueHeadPush(logQueue);
 						} else {
 							avbLogRTRender(pLogItem);
-							fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+							if (gLoggingType == LOG_OUT_SHELL) {
+								fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+							} else {
+								ALOGE("%s", (const char *)pLogItem->msg);
+							}
 							openavbQueueHeadUnlock(logQueue);
 						}
 					}

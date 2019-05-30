@@ -155,6 +155,10 @@ typedef enum {
 	LOG_RT_DATATYPE_FLOAT
 } log_rt_datatype_t;
 
+typedef enum {
+	LOG_OUT_SHELL,
+	LOG_OUT_LOGCAT
+} log_out_t;
 
 #define LOG_VARX(x, y) x ## y
 #define LOG_VAR(x, y) LOG_VARX(x, y)
@@ -172,7 +176,7 @@ typedef enum {
 #define STREAMID_FORMAT    "%02x:%02x:%02x:%02x:%02x:%02x/%d"
 #define STREAMID_ARGS(s)   (s)->addr[0],(s)->addr[1],(s)->addr[2],(s)->addr[3],(s)->addr[4],(s)->addr[5],(s)->uniqueID
 
-void avbLogInit(void);
+void avbLogInit(log_out_t loggingType);
 
 void avbLogExit(void);
 
