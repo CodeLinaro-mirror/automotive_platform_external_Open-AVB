@@ -56,6 +56,10 @@ typedef enum {
 	GPTP_LOG_LVL_VERBOSE,
 } GPTP_LOG_LEVEL;
 
+typedef enum {
+    GPTP_LOGCAT_OFF,
+    GPTP_LOGCAT_ON
+}gptplogcat_t;
 
 void gptplogRegister(void);
 void gptplogUnregister(void);

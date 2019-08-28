@@ -69,6 +69,9 @@
 
 void gPTPPersistWriteCB(char *bufPtr, uint32_t bufSize);
 
+// gptp logcat support
+extern gptplogcat_t gptplogcat;
+
 
 #define MAX_NSEC 1000000000
 /* Return *a - *b */
@@ -94,7 +97,7 @@ static inline int64_t pctns(struct ptp_clock_time t)
 void print_usage( char *arg0 ) {
 	fprintf( stderr,
 			"%s <network interface> [-S] [-P] [-M <filename>] "
-			"[-G <group>] [-R <priority 1>] "
+			"[-l <logcat>] [-G <group>] [-R <priority 1>] "
 			"[-D <gb_tx_delay,gb_rx_delay,mb_tx_delay,mb_rx_delay>] "
 			"[-T] [-L] [-E] [-GM] [-INITSYNC <value>] [-OPERSYNC <value>] "
 			"[-INITPDELAY <value>] [-OPERPDELAY <value>] "
@@ -119,6 +122,7 @@ void print_usage( char *arg0 ) {
 		  "\t-INITPDELAY <value> initial pdelay interval (Log base 2. 0 = 1 second)\n"
 		  "\t-OPERPDELAY <value> operational pdelay interval (Log base 2. 0 = 1 sec)\n"
 		  "\t-F <path-to-ini-file>\n"
+		  "\t-l <output logging to logcat>\n"
 		);
 }
 
@@ -191,7 +195,6 @@ int main(int argc, char **argv)
 	}
 
 	GPTP_LOG_REGISTER();
-	GPTP_LOG_INFO("gPTP starting");
 	if (watchdog_setup(thread_factory) != 0) {
 		GPTP_LOG_ERROR("Watchdog handler setup error");
 		return -1;
@@ -255,6 +258,14 @@ int main(int argc, char **argv)
 			else if( strcmp(argv[i] + 1,  "L" ) == 0 ) {
 				override_portstate = true;
 				port_state = PTP_SLAVE;
+			}
+			else if( strcmp(argv[i] + 1,  "l" ) == 0 ) {
+#ifdef ANDROID
+				gptplogcat = GPTP_LOGCAT_ON;
+				fprintf(stderr, "redirecting logs to logcat ..\n");
+#else
+				GPTP_LOG_ERROR( "unsupported on current platform \n" );
+#endif
 			}
 			else if( strcmp(argv[i] + 1,  "M" )  == 0 ) {
 				// Open file
@@ -597,6 +608,7 @@ int main(int argc, char **argv)
 		pGPTPPersist->registerWriteCB(gPTPPersistWriteCB);
 	}
 
+	GPTP_LOG_INFO("gPTP starting");
 	pPort->processEvent(POWERUP);
 
 	do {

@@ -33,6 +33,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // MS VC++ 2013 has C++11 but not C11 support, use this to get millisecond resolution
 #include <chrono>
 
+#ifdef ANDROID
+#define LOG_TAG "gPTP"
+#include <utils/Log.h>
+#else
+#define ALOGE(format, ...)
+#endif
+
 #ifdef GENIVI_DLT
 DLT_DECLARE_CONTEXT(dlt_con_gptp);
 #endif
@@ -53,6 +60,9 @@ void gptplogUnregister(void)
 #endif
 }
 
+// logcat support
+gptplogcat_t gptplogcat = GPTP_LOGCAT_OFF;
+
 void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line, const char *fmt, ...)
 {
 	char msg[1024];
@@ -70,12 +80,24 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line, 
 	long int millis = (long int) std::chrono::duration_cast<std::chrono::milliseconds>(roundNow).count();
 
 	if (path) {
-		fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] [%s:%u] %s\n",
+		if (gptplogcat) {
+			ALOGE("%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] [%s:%u] %s\n",
 			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, path, line, msg);
+		}
+		else {
+			fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] [%s:%u] %s\n",
+			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, path, line, msg);
+		}
 	}
 	else {
-		fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] %s\n",
+		if (gptplogcat) {
+			ALOGE("%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] %s\n",
 			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, msg);
+		}
+		else {
+			fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] %s\n",
+			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, msg);
+		}
 	}
 #else
 	DltLogLevelType dlt_level; 
