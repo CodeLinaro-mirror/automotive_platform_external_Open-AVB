@@ -15,4 +15,6 @@ LOCAL_SHARED_LIBRARIES := \
             libopenavb_map_clk_ref \
             libopenavb
 
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
+
 include $(BUILD_SHARED_LIBRARY)
