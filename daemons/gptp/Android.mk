@@ -26,11 +26,14 @@ LOCAL_SRC_FILES := linux/src/daemon_cl.cpp \
                    linux/src/linux_hal_generic_adj.cpp
 
 LOCAL_MODULE := gptp
+
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin
+
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := DATA
 LOCAL_MODULE := gptp_cfg.ini
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
-LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/avb
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/etc
 include $(BUILD_PREBUILT)

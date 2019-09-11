@@ -17,6 +17,7 @@ LOCAL_SRC_FILES := mrpd.c \
 
 LOCAL_MODULE := mrpd
 
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin
 
 include $(BUILD_EXECUTABLE)
 

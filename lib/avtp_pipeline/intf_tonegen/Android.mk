@@ -15,4 +15,6 @@ LOCAL_SHARED_LIBRARIES := libopenavb \
         libopenavb_map_aaf_audio \
         libopenavb_map_uncmp_audio
 
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
+
 include $(BUILD_SHARED_LIBRARY)

@@ -94,7 +94,9 @@ LOCAL_MODULE := libopenavb
 
 LOCAL_STATIC_LIBRARIES := libpcap
 
-LOCAL_SHARED_LIBRARIES += liblog
+LOCAL_SHARED_LIBRARIES += liblog libutils
+
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -116,12 +118,9 @@ LOCAL_SHARED_LIBRARIES += \
             libopenavb_intf_ctrl \
             libopenavb_intf_echo \
             libopenavb_intf_h264_file \
-            libopenavb_intf_h264_stream \
             libopenavb_intf_logger \
             libopenavb_intf_mjpeg_file \
-            libopenavb_intf_mjpeg_opengl \
             libopenavb_intf_mpeg2ts_file \
-            libopenavb_intf_mpeg2ts_stream \
             libopenavb_intf_null \
             libopenavb_intf_tinyalsa \
             libopenavb_intf_tonegen \
@@ -137,7 +136,10 @@ LOCAL_SHARED_LIBRARIES += \
             libopenavb_map_pipe \
             libopenavb_map_uncmp_audio
 
+#LOCAL_SHARED_LIBRARIES += libopenavb_intf_h264_stream libopenavb_intf_mjpeg_opengl libopenavb_intf_mpeg2ts_stream
+
 LOCAL_MODULE := openavb_harness
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin
 LOCAL_REQUIRED_MODULES := endpoint.ini
 
 include $(BUILD_EXECUTABLE)
@@ -149,7 +151,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := DATA
 LOCAL_MODULE := endpoint.ini
 LOCAL_SRC_FILES := endpoint/$(LOCAL_MODULE)
-LOCAL_MODULE_PATH := $(TARGET_OUT_DATA)/avb
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/etc
 include $(BUILD_PREBUILT)
 
 
