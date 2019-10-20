@@ -213,6 +213,45 @@ static int cfgCallback(void *user, const char *section, const char *name, const 
 			return 0;
 		}
 	}
+	else if (MATCH(section, "log"))
+	{
+		if (MATCH(name, "mode")) {
+			errno = 0;
+			unsigned logmode = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (logmode < AVB_LOG_MODE_MAX && logmode != 0) {
+					pCfg->log_mode = logmode;
+				}
+				else if (logmode == 0) {
+					pCfg->log_mode = AVB_LOG_LOGCAT;
+				}
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "loglistenerstatus")) {
+			errno = 0;
+			unsigned loglistenerstatus = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (loglistenerstatus == 1 && pCfg->log_mode == AVB_LOG_FILE) {
+					pCfg->loglistenerstatus = loglistenerstatus;
+				}
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "listener_status_file")) {
+			errno = 0;
+			pCfg->listener_status_file = strdup (value);
+			if (errno == 0 && pCfg->listener_status_file) {
+				valOK = TRUE;
+			}
+		}
+		else {
+			// unmatched item, fail
+			AVB_LOGF_ERROR("Unrecognized configuration item: section=%s, name=%s", section, name);
+			AVB_TRACE_EXIT(AVB_TRACE_ENDPOINT);
+			return 0;
+		}
+	}
 	else {
 		// unmatched item, fail
 		AVB_LOGF_ERROR("Unrecognized configuration item: section=%s, name=%s", section, name);
@@ -269,6 +308,10 @@ void openavbUnconfigure(openavb_endpoint_cfg_t *pCfg)
 		if (pCfg->ptp_start_opts) {
 			free(pCfg->ptp_start_opts);
 			pCfg->ptp_start_opts = NULL;
+		}
+		if (pCfg->listener_status_file) {
+			free(pCfg->listener_status_file);
+			pCfg->listener_status_file = NULL;
 		}
 	}
 

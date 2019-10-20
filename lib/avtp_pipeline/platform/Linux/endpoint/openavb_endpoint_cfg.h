@@ -48,6 +48,7 @@ typedef struct {
 	char 		ifname[IFNAMSIZ];
 	U8			ifmac[ETH_ALEN];
 	char		*ptp_start_opts;
+	char		*listener_status_file;
 	int			ifindex;
 	unsigned	link_kbit;
 	unsigned	nsr_kbit;
@@ -57,6 +58,8 @@ typedef struct {
 	unsigned	domain_class_a_vid;
 	unsigned	domain_class_b_priority;
 	unsigned	domain_class_b_vid;
+	unsigned	log_mode;
+	unsigned	loglistenerstatus;
 	bool        noSrp;
 	bool        bypassAsCapableCheck;
 } openavb_endpoint_cfg_t;

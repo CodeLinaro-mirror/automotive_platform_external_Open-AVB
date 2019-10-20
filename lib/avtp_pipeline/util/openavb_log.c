@@ -37,6 +37,13 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #include "openavb_log.h"
 
+#ifdef ANDROID
+#define LOG_TAG "AVTP"
+#include <utils/Log.h>
+#else
+#define ALOGE(format, ...)
+#endif
+
 #define LOG_EXTRA_NEWLINE 1
 
 #ifdef USE_GLIB
@@ -66,6 +73,11 @@ typedef struct {
 	bool bEnd;
 } log_rt_queue_item_t;
 
+static FILE *listener_status_file_fp = NULL;
+static avb_log_mode defaultLoggingType;
+static avb_log_mode requestedLoggingType;
+static char custom_file_msg[LOG_FULL_MSG_LEN] ="";
+
 static openavb_queue_t logQueue;
 static openavb_queue_t logRTQueue;
 
@@ -87,6 +99,48 @@ THREAD_DEFINITON(loggingThread);
 static MUTEX_HANDLE_ALT(gLogMutex);
 #define LOG_LOCK() MUTEX_LOCK_ALT(gLogMutex)
 #define LOG_UNLOCK() MUTEX_UNLOCK_ALT(gLogMutex)
+
+bool avbTLlogConfigure(openavb_endpoint_cfg_t *logcfg) {
+	bool status = FALSE;
+	if (logcfg->log_mode == AVB_LOG_FILE) {
+		if (logcfg->listener_status_file && logcfg->loglistenerstatus == 1) {
+			listener_status_file_fp = fopen(logcfg->listener_status_file, "w+");
+			if (listener_status_file_fp != NULL) {
+				AVB_LOG_INFO("Log mode is FILE, Creating listener status file");
+				AVB_LOG_INFO("logs will be on file and on logcat");
+				requestedLoggingType = AVB_LOG_FILE;
+				status = TRUE;
+			}
+			else {
+				AVB_LOG_ERROR("Error creating listener status file");
+				status = FALSE;
+			}
+		}
+		else {
+			AVB_LOG_ERROR("Unable to set log mode as FILE, Log mode will default to LOGCAT");
+			requestedLoggingType = AVB_LOG_LOGCAT;
+			status = FALSE;
+		}
+	}
+	else if (logcfg->log_mode == AVB_LOG_DISABLED) {
+		AVB_LOG_INFO("Log mode is disabled, no logs will be produced");
+		requestedLoggingType = AVB_LOG_DISABLED;
+		status = TRUE;
+	}
+	else if (logcfg->log_mode == AVB_LOG_LOGCAT) {
+		AVB_LOG_INFO("Log mode is LOGCAT, logs will be on logcat");
+		requestedLoggingType = AVB_LOG_LOGCAT;
+		status = TRUE;
+	}
+	else {
+		// use default
+		AVB_LOG_INFO("Log mode is default to LOGCAT");
+		requestedLoggingType = AVB_LOG_LOGCAT;
+		status = TRUE;
+	}
+
+	return status;
+}
 
 void avbLogRTRender(log_queue_item_t *pLogItem)
 {
@@ -191,8 +245,15 @@ void *loggingThreadFn(void *pv)
 				
 				if (pLogItem->bRT)
 					avbLogRTRender(pLogItem);
-				
-				fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+				if (requestedLoggingType != AVB_LOG_DISABLED) {
+					if (defaultLoggingType == AVB_LOG_LOGCAT) {
+						ALOGE("%s",(const char *)pLogItem->msg);
+					}
+					else {
+						fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+					}
+				}
+
 				openavbQueueTailPull(logQueue);
 				more = TRUE;
 			}
@@ -202,18 +263,30 @@ void *loggingThreadFn(void *pv)
 	return NULL;
 }
 
-extern void DLL_EXPORT avbLogInit(void)
+extern void DLL_EXPORT avbLogInit(avb_log_mode loggingtype)
 {
 	MUTEX_CREATE_ALT(gLogMutex);
-  
+
+	defaultLoggingType = loggingtype;
+
 	logQueue = openavbQueueNewQueue(sizeof(log_queue_item_t), LOG_QUEUE_MSG_CNT);
 	if (!logQueue) {
-		printf("Failed to initialize logging facility\n");
+		if (defaultLoggingType == AVB_LOG_LOGCAT) {
+			ALOGE("Failed to initialize logging facility\n");
+		}
+		else {
+			printf("Failed to initialize logging facility\n");
+		}
 	}
 	
 	logRTQueue = openavbQueueNewQueue(sizeof(log_rt_queue_item_t), LOG_RT_QUEUE_CNT);
 	if (!logRTQueue) {
-		printf("Failed to initialize logging RT facility\n");
+		if (defaultLoggingType == AVB_LOG_LOGCAT) {
+			ALOGE("Failed to initialize logging facility\n");
+		}
+		else {
+			printf("Failed to initialize logging facility\n");
+		}
 	}
 
 	// Start the logging task
@@ -230,6 +303,11 @@ extern void DLL_EXPORT avbLogExit()
 	if (OPENAVB_LOG_FROM_THREAD) {
 		loggingThreadRunning = false;
 		THREAD_JOIN(loggingThread, NULL);
+	}
+
+	if (listener_status_file_fp) {
+		fflush(listener_status_file_fp);
+		listener_status_file_fp = NULL;
 	}
 }
 
@@ -282,22 +360,54 @@ extern void DLL_EXPORT avbLogFn(
 		}
 
 		// using sprintf and puts allows using static buffers rather than heap.
-		if (LOG_EXTRA_NEWLINE)
+		if (LOG_EXTRA_NEWLINE && defaultLoggingType != AVB_LOG_LOGCAT) {
 			/* S32 full_msg_len = */ snprintf(full_msg, LOG_FULL_MSG_LEN, "[%s%s%s%s %s %s%s] %s: %s\n", time_msg, timestamp_msg, proc_msg, thread_msg, company, component, file_msg, tag, msg);
-		else
+		}
+		else {
 			/* S32 full_msg_len = */ snprintf(full_msg, LOG_FULL_MSG_LEN, "[%s%s%s%s %s %s%s] %s: %s", time_msg, timestamp_msg, proc_msg, thread_msg, company, component, file_msg, tag, msg);
+		}
 
 		if (!OPENAVB_LOG_FROM_THREAD && !OPENAVB_LOG_PULL_MODE) {
-			fputs(full_msg, AVB_LOG_OUTPUT_FD);
+			if (requestedLoggingType != AVB_LOG_DISABLED) {
+				if (defaultLoggingType == AVB_LOG_LOGCAT) {
+					ALOGE("%s",full_msg);
+				}
+				else {
+					fputs(full_msg, AVB_LOG_OUTPUT_FD);
+				}
+
+				if (requestedLoggingType == AVB_LOG_FILE) {
+					if (listener_status_file_fp != NULL) {
+						fputs(custom_file_msg,listener_status_file_fp);
+					}
+				}
+			}
 		}
 		else {
 			if (logQueue) {
-				openavb_queue_elem_t elem = openavbQueueHeadLock(logQueue);
-				if (elem) {
-					log_queue_item_t *pLogItem = (log_queue_item_t *)openavbQueueData(elem);
-					pLogItem->bRT = FALSE;
-					strlcpy((char *)pLogItem->msg, full_msg, LOG_QUEUE_MSG_SIZE);
-					openavbQueueHeadPush(logQueue);
+				if (requestedLoggingType != AVB_LOG_DISABLED) {
+					// curtomer specific changes
+					if (requestedLoggingType == AVB_LOG_FILE ) {
+						if (listener_status_file_fp != NULL && (strncmp(tag, "L_STATUS",8) == 0)) {
+							struct timespec filenowTS;
+							CLOCK_GETTIME(OPENAVB_CLOCK_REALTIME, &filenowTS);
+							snprintf(custom_file_msg, LOG_FULL_MSG_LEN, "%s : [%ld:%09lu] %s\n",tag,filenowTS.tv_sec % 10, filenowTS.tv_nsec,msg);
+							fputs(custom_file_msg, listener_status_file_fp);
+						}
+					}
+
+					if (defaultLoggingType == AVB_LOG_LOGCAT) {
+						ALOGE("%s",full_msg);
+					}
+					else {
+						openavb_queue_elem_t elem = openavbQueueHeadLock(logQueue);
+						if (elem) {
+							log_queue_item_t *pLogItem = (log_queue_item_t *)openavbQueueData(elem);
+							pLogItem->bRT = FALSE;
+							strlcpy((char *)pLogItem->msg, full_msg, LOG_QUEUE_MSG_SIZE);
+							openavbQueueHeadPush(logQueue);
+						}
+					}
 				}
 			}
 		}
@@ -389,8 +499,15 @@ extern void DLL_EXPORT avbLogRT(int level, bool bBegin, bool bItem, bool bEnd, c
 							openavbQueueHeadPush(logQueue);
 						} else {
 							avbLogRTRender(pLogItem);
-							fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
-							openavbQueueHeadUnlock(logQueue);
+							if (requestedLoggingType != AVB_LOG_DISABLED) {
+								if (defaultLoggingType == AVB_LOG_LOGCAT ) {
+									ALOGE("%s",(const char *)pLogItem->msg);
+								}
+								else {
+									fputs((const char *)pLogItem->msg, AVB_LOG_OUTPUT_FD);
+								}
+								openavbQueueHeadUnlock(logQueue);
+							}
 						}
 					}
 				}

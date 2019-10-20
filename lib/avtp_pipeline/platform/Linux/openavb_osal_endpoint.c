@@ -40,7 +40,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 extern DLL_EXPORT bool osalAVBInitialize(const char* ifname,
 					 const char* endpointIniFile)
 {
-	avbLogInit();
+	avbLogInit(AVB_LOG_LOGCAT);
 	if (!osalAVBTimeInit()) {
 		return FALSE;
 	}

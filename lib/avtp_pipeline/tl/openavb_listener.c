@@ -49,6 +49,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #include "openavb_debug.h"
 
+extern openavb_endpoint_cfg_t  x_cfg;
+bool gListenerStreaming = FALSE;
+
 bool listenerStartStream(tl_state_t *pTLState)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_TL);
@@ -94,6 +97,9 @@ bool listenerStartStream(tl_state_t *pTLState)
 
 	// we're good to go!
 	pTLState->bStreaming = TRUE;
+	if (x_cfg.loglistenerstatus == 1) {
+		gListenerStreaming = pTLState->bStreaming;
+	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
 	return TRUE;
@@ -131,6 +137,10 @@ void listenerStopStream(tl_state_t *pTLState)
 	if (pTLState->bStreaming) {
 		openavbAvtpShutdown(pListenerData->avtpHandle);
 		pTLState->bStreaming = FALSE;
+	}
+
+	if (x_cfg.loglistenerstatus == 1) {
+		gListenerStreaming = pTLState->bStreaming;
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);

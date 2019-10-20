@@ -40,6 +40,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 // Merge Issue
 // TODO: Restructure to remove #ifdef code.
 // ********
+#include "openavb_endpoint_cfg.h"
 
 #include "openavb_platform_pub.h"
 #include <stdio.h>
@@ -60,13 +61,28 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #endif
 #endif
 
-#define AVB_LOG_LEVEL_NONE	   0
-#define AVB_LOG_LEVEL_ERROR	   1
-#define AVB_LOG_LEVEL_WARNING  2
-#define AVB_LOG_LEVEL_INFO     3
-#define AVB_LOG_LEVEL_STATUS   4
-#define AVB_LOG_LEVEL_DEBUG    5
-#define AVB_LOG_LEVEL_VERBOSE  6
+#define AVB_LOG_LEVEL_NONE	      0
+#define AVB_LOG_LEVEL_ERROR	      1
+#define AVB_LOG_LEVEL_WARNING     2
+#define AVB_LOG_LEVEL_INFO        3
+#define AVB_LOG_LEVEL_EXCEPTION   4
+#define AVB_LOG_LEVEL_DIAGNOSTIC  5
+#define AVB_LOG_LEVEL_STATUS      6
+#define AVB_LOG_LEVEL_L_STATUS    7
+#define AVB_LOG_LEVEL_DEBUG       8
+#define AVB_LOG_LEVEL_VERBOSE     9
+
+// Modes for log capture only customer specific
+typedef enum {
+	// Disable logs
+	AVB_LOG_DISABLED = 1,
+	// log to logcat and  file
+	AVB_LOG_FILE,
+	// logcat -- default option
+	AVB_LOG_LOGCAT,
+	// MAX logmode
+	AVB_LOG_MODE_MAX
+} avb_log_mode;
 
 // Special case development logging levels for use with AVB_LOGF_DEV and AVB_LOG_DEV
 #define AVB_LOG_LEVEL_DEV_ON    AVB_LOG_LEVEL_NONE
@@ -76,7 +92,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #ifndef AVB_LOG_LEVEL
 //#define AVB_LOG_LEVEL AVB_LOG_LEVEL_ERROR 
 //#define AVB_LOG_LEVEL AVB_LOG_LEVEL_INFO 
-#define AVB_LOG_LEVEL AVB_LOG_LEVEL_STATUS 
+#define AVB_LOG_LEVEL AVB_LOG_LEVEL_L_STATUS
 //#define AVB_LOG_LEVEL AVB_LOG_LEVEL_DEBUG
 //#define AVB_LOG_LEVEL AVB_LOG_LEVEL_VERBOSE
 #endif
@@ -172,7 +188,9 @@ typedef enum {
 #define STREAMID_FORMAT    "%02x:%02x:%02x:%02x:%02x:%02x/%d"
 #define STREAMID_ARGS(s)   (s)->addr[0],(s)->addr[1],(s)->addr[2],(s)->addr[3],(s)->addr[4],(s)->addr[5],(s)->uniqueID
 
-void avbLogInit(void);
+bool avbTLlogConfigure(openavb_endpoint_cfg_t *);
+
+void avbLogInit(avb_log_mode loggingType);
 
 void avbLogExit(void);
 
@@ -203,13 +221,18 @@ void avbLogRT(int level, bool bBegin, bool bItem, bool bEnd, char *pFormat, log_
 #define AVB_LOGF_STATUS(FMT, ...)     avbLogFn2(AVB_LOG_LEVEL_STATUS,  "STATUS",  AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_DEBUG(FMT, ...)      avbLogFn2(AVB_LOG_LEVEL_DEBUG,   "DEBUG",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_VERBOSE(FMT, ...)    avbLogFn2(AVB_LOG_LEVEL_VERBOSE, "VERBOSE", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
+#define AVB_LOGF_EXCEPTION(FMT, ...)  avbLogFn2(AVB_LOG_LEVEL_EXCEPTION, "EXCEPTION",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
+#define AVB_LOGF_DIAGNOSTIC(FMT, ...) avbLogFn2(AVB_LOG_LEVEL_DIAGNOSTIC, "DIAGNOSTIC", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOG_DEV(LEVEL, FMT, ...)  avbLogFn2(LEVEL,                 "DEV",     AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOG_ERROR(MSG)            avbLogFn2(AVB_LOG_LEVEL_ERROR,   "ERROR",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOG_WARNING(MSG)          avbLogFn2(AVB_LOG_LEVEL_WARNING, "WARNING", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOG_INFO(MSG)             avbLogFn2(AVB_LOG_LEVEL_INFO,    "INFO",    AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOG_STATUS(MSG)           avbLogFn2(AVB_LOG_LEVEL_STATUS,  "STATUS",  AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
+#define AVB_LOG_L_STATUS(MSG)         avbLogFn2(AVB_LOG_LEVEL_L_STATUS,  "L_STATUS",  AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOG_DEBUG(MSG)            avbLogFn2(AVB_LOG_LEVEL_DEBUG,   "DEBUG",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOG_VERBOSE(MSG)          avbLogFn2(AVB_LOG_LEVEL_VERBOSE, "VERBOSE", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
+#define AVB_LOG_EXCEPTION(MSG)        avbLogFn2(AVB_LOG_LEVEL_EXCEPTION, "EXCEPTION", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
+#define AVB_LOG_DIAGNOSTIC(MSG)       avbLogFn2(AVB_LOG_LEVEL_DIAGNOSTIC, "DIAGNOSTIC", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, "%s", MSG)
 #define AVB_LOGRT_ERROR(BEGIN, ITEM, END, FMT, TYPE, VAL)	avbLogRT(AVB_LOG_LEVEL_ERROR, BEGIN, ITEM, END, FMT, TYPE, VAL)
 #define AVB_LOGRT_WARNING(BEGIN, ITEM, END, FMT, TYPE, VAL)	avbLogRT(AVB_LOG_LEVEL_WARNING, BEGIN, ITEM, END, FMT, TYPE, VAL)
 #define AVB_LOGRT_INFO(BEGIN, ITEM, END, FMT, TYPE, VAL)	avbLogRT(AVB_LOG_LEVEL_INFO, BEGIN, ITEM, END, FMT, TYPE, VAL)
@@ -224,13 +247,18 @@ void avbLogRT(int level, bool bBegin, bool bItem, bool bEnd, char *pFormat, log_
 #define AVB_LOGF_STATUS(FMT, ...)
 #define AVB_LOGF_DEBUG(FMT, ...)
 #define AVB_LOGF_VERBOSE(FMT, ...)
+#define AVB_LOGF_EXCEPTION(FMT, ...)
+#define AVB_LOGF_DIAGNOSTIC(FMT, ...)
 #define AVB_LOG_DEV(LEVEL, FMT, ...)
 #define AVB_LOG_ERROR(MSG)
 #define AVB_LOG_WARNING(MSG)
 #define AVB_LOG_INFO(MSG)
 #define AVB_LOG_STATUS(MSG)
+#define AVB_LOG_L_STATUS(MSG)
 #define AVB_LOG_DEBUG(MSG)
 #define AVB_LOG_VERBOSE(MSG)
+#define AVB_LOG_EXCEPTION(MSG)
+#define AVB_LOG_DIAGNOSTIC(MSG)
 #define AVB_LOGRT_ERROR(BEGIN, ITEM, END, FMT, TYPE, VAL)
 #define AVB_LOGRT_WARNING(BEGIN, ITEM, END, FMT, TYPE, VAL)
 #define AVB_LOGRT_INFO(BEGIN, ITEM, END, FMT, TYPE, VAL)

@@ -125,6 +125,11 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 		goto error;
 	}
 
+	bool status = avbTLlogConfigure(&x_cfg);
+	if (!status) {
+		AVB_LOGF_ERROR("Error configuring logs section, default logs will be on logcat, status %d",status);
+	}
+
 	endpointRunning = TRUE;
 	int err = pthread_create(&endpointServerHandle, NULL, endpointServerThread, NULL);
 	if (err) {

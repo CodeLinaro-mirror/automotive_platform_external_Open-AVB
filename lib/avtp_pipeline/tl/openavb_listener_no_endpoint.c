@@ -45,6 +45,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_log.h"
 #include "openavb_trace.h"
 
+extern openavb_endpoint_cfg_t 	x_cfg;
+
 bool openavbTLRunListenerInit(int hnd, AVBStreamID_t *streamID)
 {
 	tl_state_t *pTLState = TLHandleListGet(hnd);
@@ -60,6 +62,11 @@ bool openavbTLRunListenerInit(int hnd, AVBStreamID_t *streamID)
 
 	AVB_LOGF_INFO("Dest Addr: "ETH_FORMAT, ETH_OCTETS(pListenerData->destAddr));
 	AVB_LOGF_INFO("Starting stream: "STREAMID_FORMAT, STREAMID_ARGS(streamID));
+
+	if (x_cfg.loglistenerstatus == 1) {
+		AVB_LOG_L_STATUS("RENDERING START");
+	}
+
 	listenerStartStream(pTLState);
 	
 	return TRUE;

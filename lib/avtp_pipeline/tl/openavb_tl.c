@@ -50,6 +50,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 U32 gMaxTL;
 tl_handle_t *gTLHandleList;
 
+extern openavb_endpoint_cfg_t x_cfg;
+
 // We are accessed from multiple threads, so need a mutex
 MUTEX_HANDLE(gTLStateMutex);
 
@@ -541,6 +543,10 @@ extern DLL_EXPORT bool openavbTLStop(tl_handle_t handle)
 		// that the streaming thread is running, so we can shut it down.
 		//pTLState->bStreaming = FALSE;
 		pTLState->bRunning = FALSE;
+
+		if (x_cfg.loglistenerstatus == 1 && pTLState->cfg.role == AVB_ROLE_LISTENER) {
+			AVB_LOG_L_STATUS("RENDERING STOP");
+		}
 
 		THREAD_JOIN(pTLState->TLThread, NULL);
 	}

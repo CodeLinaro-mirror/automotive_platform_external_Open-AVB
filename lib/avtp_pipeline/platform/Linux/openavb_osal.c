@@ -41,7 +41,7 @@ extern DLL_EXPORT bool osalAVBInitialize(const char* ifname,
 {
 	// Unused parameter
 	(void) endpointIniFile;
-	avbLogInit();
+	avbLogInit(AVB_LOG_LOGCAT);
 	if (!osalAVBTimeInit()) {
 		return FALSE;
 	}

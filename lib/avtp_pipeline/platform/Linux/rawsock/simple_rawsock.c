@@ -88,9 +88,13 @@ bool simpleAvbCheckInterface(const char *ifname, if_info_t *info)
 
 	if (!(ifr.ifr_flags&IFF_UP)) {
 		AVB_LOGF_ERROR("Checking interface; interface is not up: %s", ifname);
+		AVB_LOG_EXCEPTION("LINK_DOWN");
 		close(sk);
 		AVB_TRACE_EXIT(AVB_TRACE_RAWSOCK);
 		return FALSE;
+	}
+	else {
+		AVB_LOG_EXCEPTION("LINK_UP");
 	}
 
 	// get index for interface
