@@ -242,7 +242,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
 	snprintf
 		( ptp_device+PTP_DEVICE_IDX_OFFS,
 		  sizeof(ptp_device)-PTP_DEVICE_IDX_OFFS, "%d", phc_index );
-	GPTP_LOG_ERROR("Using clock device: %s", ptp_device);
+	GPTP_LOG_INFO("Using clock device: %s", ptp_device);
 	phc_fd = open( ptp_device, O_RDWR );
 	if( phc_fd == -1 || (_private->clockid = FD_TO_CLOCKID(phc_fd)) == -1 ) {
 		GPTP_LOG_ERROR("Failed to open PTP clock device");

@@ -42,6 +42,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_map_pub.h"
 #include "openavb_rawsock.h"
 #include "openavb_timestamp.h"
+#include "openavb_ap_message.h"
 
 #define ETHERTYPE_AVTP 0x22F0
 #define ETHERTYPE_8021Q 0x8100
@@ -141,7 +142,9 @@ typedef struct
 	int nLost;
 	// Bytes sent or recieved
 	U64 bytes;
-	
+
+	// avnu testmode stats
+	stream_stat_t stream_stats;
 } avtp_stream_t;
 
 

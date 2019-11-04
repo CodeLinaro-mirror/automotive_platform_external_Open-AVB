@@ -41,6 +41,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_avtp.h"
 #include "openavb_listener.h"
 
+#include "openavb_ap_message.h"
+
 // DEBUG Uncomment to turn on logging for just this module.
 //#define AVB_LOG_ON	1
 
@@ -99,6 +101,13 @@ bool listenerStartStream(tl_state_t *pTLState)
 	pTLState->bStreaming = TRUE;
 	if (x_cfg.loglistenerstatus == 1) {
 		gListenerStreaming = pTLState->bStreaming;
+	}
+
+	if (x_cfg.avnuTestmode == TRUE) {
+		// send testmode messages
+		avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
+		avnuStream->stream_stats.MEDIA_LOCKED++;
+		tx_testmode_message(pCfg->role, pListenerData->streamID.uniqueID, &avnuStream->stream_stats);
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
@@ -168,6 +177,11 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 		// Try to receive a frame
 		if (IS_OPENAVB_SUCCESS(openavbAvtpRx(pListenerData->avtpHandle))) {
 			pListenerData->nReportFrames++;
+		}
+
+		if (x_cfg.avnuTestmode == TRUE) {
+			avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
+			avnuStream->stream_stats.FRAMES_RX = pListenerData->nReportFrames;
 		}
 
 		CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);

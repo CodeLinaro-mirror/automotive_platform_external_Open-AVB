@@ -34,6 +34,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 #include <avbts_message.hpp>
 
+#define RTNETLINK_RPLY_BUFF 8000
+#define IFNAMELEN 16
+#define RT_RTM_NEWLINK 16
+#define RT_NLMSG_DONE 3
+
 /** @file **/
 
 #define AP_TEST_STATUS_OFFSET 0									/*!< AP Test Status offset */

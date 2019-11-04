@@ -252,6 +252,25 @@ static int cfgCallback(void *user, const char *section, const char *name, const 
 			return 0;
 		}
 	}
+	else if (MATCH(section, "testmode"))
+	{
+		if (MATCH(name, "avnuTestmode")) {
+			errno = 0;
+			unsigned avnuTestmode = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (avnuTestmode == 1 || avnuTestmode == 0) {
+					pCfg->avnuTestmode = avnuTestmode;
+					valOK = TRUE;
+				}
+			}
+		}
+		else {
+			// unmatched item, fail
+			AVB_LOGF_ERROR("Unrecognized configuration item: section=%s, name=%s", section, name);
+			AVB_TRACE_EXIT(AVB_TRACE_ENDPOINT);
+			return 0;
+		}
+	}
 	else {
 		// unmatched item, fail
 		AVB_LOGF_ERROR("Unrecognized configuration item: section=%s, name=%s", section, name);

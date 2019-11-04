@@ -60,6 +60,7 @@ typedef struct {
 	unsigned	domain_class_b_vid;
 	unsigned	log_mode;
 	unsigned	loglistenerstatus;
+	unsigned	avnuTestmode;
 	bool        noSrp;
 	bool        bypassAsCapableCheck;
 } openavb_endpoint_cfg_t;

@@ -62,6 +62,8 @@
 #include <linux/sockios.h>
 #include <gptp_cfg.hpp>
 
+int rtnetlink_sock = -1;
+
 Timestamp tsToTimestamp(struct timespec *ts)
 {
 	Timestamp ret;
@@ -333,6 +335,10 @@ void LinuxNetworkInterface::watchNetLink( CommonPort *iPort )
 	if (netLinkSocket < 0) {
 		GPTP_LOG_ERROR("NETLINK socket open error");
 		return;
+	}
+
+	if (pPort->getAutomotiveProfile()) {
+		rtnetlink_sock = netLinkSocket;
 	}
 
 	memset((void *) &addr, 0, sizeof (addr));

@@ -53,6 +53,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 // Maximum time that AVTP RX/TX calls should block before returning
 #define AVTP_MAX_BLOCK_USEC (1 * MICROSECONDS_PER_SECOND)
 
+#include "openavb_ap_message.h"
+
 extern openavb_endpoint_cfg_t  x_cfg;
 
 /*
@@ -469,6 +471,9 @@ static void x_avtpRxFrame(avtp_stream_t *pStream, U8 *pFrame, U32 frameLen)
 					pStream->avtp_sequence_num, rxSeq, nLost);
 				if (x_cfg.loglistenerstatus == 1) {
 					AVB_LOG_L_STATUS("ERROR : SEQUENCE_MISMATCH");
+				}
+				if (x_cfg.avnuTestmode == TRUE) {
+					pStream->stream_stats.SEQ_NUM_MISMATCH++;
 				}
 				pStream->nLost += nLost;
 				if (x_cfg.loglistenerstatus == 1 && (pStream->nLost > 0)) {

@@ -30,9 +30,28 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <avbts_ostimer.hpp>
 #include <gptp_log.hpp>
 
-#include <stdio.h>
-#include <string.h>
+#include <pthread.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <fcntl.h>
 #include <math.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <linux/if.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
+#include <netpacket/packet.h>
+#include <linux/ethtool.h>
+#include <linux/rtnetlink.h>
+#include <net/if.h>
+#include <linux/sockios.h>
+#include <unistd.h>
 
 // Octet based data 2 buffer macros
 #define OCT_D2BMEMCP(d, s) memcpy(d, s, sizeof(s)); d += sizeof(s);
@@ -46,6 +65,124 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define BIT_D2BHTONS(d, s, shf) *(uint16_t *)(d) |= PLAT_htons((uint16_t)(s << shf));
 #define BIT_D2BHTONL(d, s, shf) *(uint32_t *)(d) |= PLAT_htonl((uint32_t)(s << shf));
 
+struct rtnl_link_stats rtnlstats;
+extern char *interfaceName;
+extern int rtnetlink_sock;
+
+void getRtnetlinkstats (struct nlmsghdr *rtnlmsg)
+{
+	struct ifinfomsg *infomsg;
+	char ifname[IFNAMELEN];
+	int rtlen;
+	struct rtattr *rtnetlink_attr;
+
+	infomsg = (struct ifinfomsg *)NLMSG_DATA(rtnlmsg);
+	rtlen = rtnlmsg->nlmsg_len - NLMSG_LENGTH(sizeof(*infomsg));
+
+	for (rtnetlink_attr = IFLA_RTA(infomsg); RTA_OK(rtnetlink_attr, rtlen); rtnetlink_attr = RTA_NEXT(rtnetlink_attr, rtlen))
+	{
+		switch(rtnetlink_attr->rta_type)
+		{
+			case IFLA_IFNAME:
+				memcpy(&ifname, (char *) RTA_DATA(rtnetlink_attr), IFNAMELEN);
+				break;
+			case IFLA_STATS:
+				if (interfaceName != NULL) {
+					if (memcmp(interfaceName, ifname, sizeof(IFNAMELEN)) == 0) {
+						memcpy(&rtnlstats, (char *) RTA_DATA(rtnetlink_attr), sizeof(struct rtnl_link_stats));
+					}
+				}
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+int getIfaceStats(void) {
+	static uint32_t nlmsg_seq = 0;
+	int keeprunning = 0;
+	char rplybuff[RTNETLINK_RPLY_BUFF];
+
+	if (rtnetlink_sock < 0) {
+		GPTP_LOG_ERROR("invalid netlink socket");
+		return -1;
+	}
+
+	typedef struct netlink_s netlinkreq_t;
+
+	struct netlink_s {
+		struct nlmsghdr rtnlhdr;
+		struct rtgenmsg rtnlgen;
+	};
+
+	struct iovec inout_vec;
+	netlinkreq_t rtnetlinkreq;
+	struct msghdr rtnetl_msg;
+	struct sockaddr_nl sockaddrkernel;
+
+	memset(&rtnetl_msg, 0, sizeof(rtnetl_msg));
+	memset(&sockaddrkernel, 0, sizeof(sockaddrkernel));
+	memset(&rtnetlinkreq, 0, sizeof(rtnetlinkreq));
+
+	sockaddrkernel.nl_family = AF_NETLINK; /* fill-in kernel address (destination) */
+
+	rtnetlinkreq.rtnlgen.rtgen_family = AF_PACKET; /*  no preferred AF, we will get *all* interfaces */
+	rtnetlinkreq.rtnlhdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtgenmsg));
+	rtnetlinkreq.rtnlhdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+	rtnetlinkreq.rtnlhdr.nlmsg_pid = getpid();
+	rtnetlinkreq.rtnlhdr.nlmsg_type = RTM_GETLINK;
+	rtnetlinkreq.rtnlhdr.nlmsg_seq = nlmsg_seq++;
+
+	inout_vec.iov_base = &rtnetlinkreq;
+	inout_vec.iov_len = rtnetlinkreq.rtnlhdr.nlmsg_len;
+
+	rtnetl_msg.msg_iov = &inout_vec;
+	rtnetl_msg.msg_name = &sockaddrkernel;
+	rtnetl_msg.msg_namelen = sizeof(sockaddrkernel);
+	rtnetl_msg.msg_iovlen = 1;
+
+	sendmsg(rtnetlink_sock, (struct msghdr *) &rtnetl_msg, 0);
+
+	while (!keeprunning)
+	{
+		int readlen;
+		struct nlmsghdr *nlmsgptr;
+		struct iovec iovrply;
+		struct msghdr rtrply;
+
+		memset(&iovrply, 0, sizeof(iovrply));
+		memset(&rtrply, 0, sizeof(rtrply));
+
+		iovrply.iov_base = rplybuff;
+		iovrply.iov_len = RTNETLINK_RPLY_BUFF;
+		rtrply.msg_iov = &iovrply;
+		rtrply.msg_iovlen = 1;
+		rtrply.msg_name = &sockaddrkernel;
+		rtrply.msg_namelen = sizeof(sockaddrkernel);
+
+		readlen = recvmsg(rtnetlink_sock, &rtrply, 0);
+		if (readlen)
+		{
+			for (nlmsgptr = (struct nlmsghdr *) rplybuff; NLMSG_OK(nlmsgptr, (unsigned int)readlen); nlmsgptr = NLMSG_NEXT(nlmsgptr, readlen))
+			{
+				switch(nlmsgptr->nlmsg_type)
+				{
+					case RT_NLMSG_DONE:
+						keeprunning++;
+						break;
+					case RT_RTM_NEWLINK:
+						getRtnetlinkstats(nlmsgptr);
+						break;
+					default:
+						GPTP_LOG_INFO("rtnetlink: message type %d, length %d\n", nlmsgptr->nlmsg_type, nlmsgptr->nlmsg_len);
+						break;
+				}
+			}
+		}
+	}
+	return 0;
+}
 
 APMessageTestStatus::APMessageTestStatus()
 {
@@ -91,14 +228,40 @@ void APMessageTestStatus::sendPort( EtherPort * port )
 	tmp16 = PLAT_htons(0x00);
 	memcpy(buf_ptr + AP_TEST_STATUS_DESCRIPTOR_INDEX(AP_TEST_STATUS_OFFSET), &tmp16, sizeof(tmp16));
 
-	tmp32 = PLAT_htonl(0x07000023);
-	memcpy(buf_ptr + AP_TEST_STATUS_COUNTERS_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+	if (getIfaceStats() != 0) {
+		// To Do: flags for counters
+		// clear countervalid bit for FRAME TX, FRAME RX and FRAME CRC error counters
+		tmp32 = PLAT_htonl(0x07000023);
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTERS_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
-	tmp32 = PLAT_htonl(port->getLinkUpCount());
-	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKUP(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+		tmp32 = PLAT_htonl(port->getLinkUpCount());
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKUP(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
-	tmp32 = PLAT_htonl(port->getLinkDownCount());
-	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKDOWN(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+		tmp32 = PLAT_htonl(port->getLinkDownCount());
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKDOWN(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	}
+	else {
+		// To Do: flags for counters
+		// set countervalid bit for FRAME TX, FRAME RX and FRAME CRC error counters
+		tmp32 = PLAT_htonl(0x0700003F);
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTERS_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+		tmp32 = PLAT_htonl(port->getLinkUpCount());
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKUP(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+		tmp32 = PLAT_htonl(port->getLinkDownCount());
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKDOWN(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+		tmp32 = PLAT_htonl(rtnlstats.tx_packets);
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_FRAMES_TX(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+		tmp32 = PLAT_htonl(rtnlstats.rx_packets);
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_FRAMES_RX(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+		tmp32 = PLAT_htonl(rtnlstats.rx_crc_errors);
+		memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_FRAMES_RX_CRC_ERROR(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+	}
 
 	Timestamp system_time;
 	Timestamp device_time;

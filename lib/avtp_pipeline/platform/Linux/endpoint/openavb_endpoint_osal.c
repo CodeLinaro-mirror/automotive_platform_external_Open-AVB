@@ -39,6 +39,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "mrp_client.h"
 #include "openavb_list.h"
 
+#include "openavb_ap_message.h"
+
 #ifdef USE_GLIB
 #include <glib.h>
 #define strlcpy g_strlcpy
@@ -128,6 +130,15 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 	bool status = avbTLlogConfigure(&x_cfg);
 	if (!status) {
 		AVB_LOGF_ERROR("Error configuring logs section, default logs will be on logcat, status %d",status);
+	}
+
+	if (x_cfg.avnuTestmode == TRUE) {
+		if (init_testmode() != 0) {
+			AVB_LOG_ERROR("Error configuring avnu test mode");
+		}
+		else {
+			AVB_LOG_INFO("AVnu test mode enabled");
+		}
 	}
 
 	endpointRunning = TRUE;

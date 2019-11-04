@@ -48,7 +48,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #include "openavb_debug.h"
 
+#include "openavb_ap_message.h"
 
+extern openavb_endpoint_cfg_t  x_cfg;
 
 bool talkerStartStream(tl_state_t *pTLState)
 {
@@ -132,6 +134,13 @@ bool talkerStartStream(tl_state_t *pTLState)
 
 	// we're good to go!
 	pTLState->bStreaming = TRUE;
+
+	if (x_cfg.avnuTestmode == TRUE) {
+		// send testmode messages
+		avtp_stream_t *avnuStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
+		avnuStream->stream_stats.MEDIA_LOCKED++;
+		tx_testmode_message(pCfg->role, pTalkerData->streamID.uniqueID, &avnuStream->stream_stats);
+	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
 	return TRUE;
@@ -222,6 +231,11 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 		if (pTalkerData->cntWakes++ % pTalkerData->wakeRate == 0) {
 			// time to service the endpoint IPC
 			bRet = TRUE;
+		}
+
+		if (x_cfg.avnuTestmode == TRUE) {
+			avtp_stream_t *avnuStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
+			avnuStream->stream_stats.FRAMES_TX = pTalkerData->cntFrames;
 		}
 
 		CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);

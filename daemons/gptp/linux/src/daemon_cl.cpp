@@ -126,6 +126,7 @@ int watchdog_setup(OSThreadFactory *thread_factory)
 
 static IEEE1588Clock *pClock = NULL;
 static EtherPort *pPort = NULL;
+char *interfaceName =NULL;
 
 int main(int argc, char **argv)
 {
@@ -215,6 +216,11 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	ifname = new InterfaceName( argv[1], strlen(argv[1]) );
+
+	interfaceName = (char*) malloc(strlen(argv[1]+1));
+	if (interfaceName != NULL) {
+		PLAT_strlcpy(interfaceName, argv[1], strlen(argv[1])+1);
+	}
 
 	/* Process optional arguments */
 	for( i = 2; i < argc; ++i ) {
@@ -557,6 +563,10 @@ int main(int argc, char **argv)
 	}
 
 	if( ipc ) delete ipc;
+
+	if (interfaceName) {
+		free(interfaceName);
+	}
 
 	GPTP_LOG_UNREGISTER();
 	return 0;

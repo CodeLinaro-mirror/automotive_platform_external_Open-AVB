@@ -83,6 +83,7 @@ LOCAL_SRC_FILES +=  \
             util/openavb_time.c \
             util/openavb_timestamp.c \
             util/openavb_plugin.c \
+            util/openavb_ap_message.c \
             util/openavb_result_codes.c
 
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
