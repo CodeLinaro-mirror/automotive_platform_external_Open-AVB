@@ -53,6 +53,9 @@ typedef enum {
 #define CLOCK_GETTIME(arg1, arg2) osalClockGettime(arg1, arg2)
 #define CLOCK_GETTIME64(arg1, arg2) osalClockGettime64(arg1, arg2)
 
+// Checks if gptp is in sync state Returns 1 on succes otherwise 0
+bool osalNodeCheckGptpTimeValid(void);
+
 // Initialize the AVB Time system for client usage
 bool osalAVBTimeInit(void);
 
@@ -64,6 +67,5 @@ bool osalClockGettime(openavb_clockId_t openavbClockId, struct timespec *getTime
 
 // Gets current time as U64 nSec. Returns 0 on success otherwise -1
 bool osalClockGettime64(openavb_clockId_t openavbClockId, U64 *timeNsec);
-
 
 #endif // _OPENAVB_TIME_OSAL_PUB_H

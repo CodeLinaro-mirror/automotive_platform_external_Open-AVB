@@ -134,12 +134,18 @@ void openavbAvtpTimeSetToWallTime(avtp_time_t *pAvtpTime)
 		timespec_t tmNow;
 		if (CLOCK_GETTIME(OPENAVB_CLOCK_WALLTIME, &tmNow)) {
 			pAvtpTime->timeNsec = x_getNsTime(&tmNow);
-			pAvtpTime->bTimestampValid = TRUE;
-			pAvtpTime->bTimestampUncertain = FALSE;
+			if (osalNodeCheckGptpTimeValid()) {
+				pAvtpTime->bTimestampValid = TRUE;
+				pAvtpTime->bTimestampUncertain = FALSE;
+			}
+			else {
+				pAvtpTime->bTimestampValid = FALSE;
+				pAvtpTime->bTimestampUncertain = TRUE;
+			}
 		}
 		else {
 			pAvtpTime->bTimestampValid = FALSE;
-			pAvtpTime->bTimestampUncertain = FALSE;
+			pAvtpTime->bTimestampUncertain = TRUE;
 		}
 	}
 	else {

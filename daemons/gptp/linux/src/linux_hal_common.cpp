@@ -995,6 +995,23 @@ bool LinuxSharedMemoryIPC::update(
 	return true;
 }
 
+bool LinuxSharedMemoryIPC::updateSyncStatus(bool is_sync , PortState port_state) {
+       int buf_offset = 0;
+       char *shm_buffer = master_offset_buffer;
+       gPtpTimeData *ptimedata;
+       if (shm_buffer != NULL) {
+               /* lock */
+               pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+               buf_offset += sizeof(pthread_mutex_t);
+               ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+               ptimedata->sync_status = is_sync;
+               ptimedata->port_state = port_state;
+               /* unlock */
+               pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+       }
+       return true;
+}
+
 bool LinuxSharedMemoryIPC::updateGmId(ClockIdentity& id, uint16_t portNumber) {
        int buf_offset = 0;
        char *shm_buffer = master_offset_buffer;

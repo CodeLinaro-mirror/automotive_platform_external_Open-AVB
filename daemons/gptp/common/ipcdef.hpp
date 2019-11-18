@@ -66,6 +66,7 @@
  * @brief Provides a data structure for gPTP time
  */
 typedef struct {
+	bool sync_status;				//!< PTP Sync status
 	int64_t ml_phoffset;			//!< Master to local phase offset
 	int64_t ls_phoffset;			//!< Local to system phase offset
 	FrequencyRatio ml_freqoffset;	//!< Master to local frequency offset

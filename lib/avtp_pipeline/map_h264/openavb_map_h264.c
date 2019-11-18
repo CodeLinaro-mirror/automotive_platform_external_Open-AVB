@@ -282,15 +282,17 @@ tx_cb_ret_t openavbMapH264TxCB(media_q_t *pMediaQ, U8 *pData, U32 *dataLen)
 				openavbAvtpTimeAddUSec(pMediaQItem->pAvtpTime, pPvtData->maxTransitUsec);
 
 				// Set timestamp valid flag
-				if (openavbAvtpTimeTimestampIsValid(pMediaQItem->pAvtpTime))
+				if (openavbAvtpTimeTimestampIsValid(pMediaQItem->pAvtpTime)) {
 					pHdr[HIDX_AVTP_HIDE7_TV1] |= 0x01;      // Set
+				}
 				else {
 					pHdr[HIDX_AVTP_HIDE7_TV1] &= ~0x01;     // Clear
 				}
 
 				// Set timestamp uncertain flag
-				if (openavbAvtpTimeTimestampIsUncertain(pMediaQItem->pAvtpTime))
+				if (openavbAvtpTimeTimestampIsUncertain(pMediaQItem->pAvtpTime)) {
 					pHdr[HIDX_AVTP_HIDE7_TU1] |= 0x01;      // Set
+				}
 				else pHdr[HIDX_AVTP_HIDE7_TU1] &= ~0x01;    // Clear
 
 				// Set the timestamp.

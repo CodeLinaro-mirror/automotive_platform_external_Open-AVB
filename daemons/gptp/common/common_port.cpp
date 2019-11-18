@@ -601,6 +601,7 @@ bool CommonPort::processEvent( Event e )
 		}
 		else if (e == SYNC_RECEIPT_TIMEOUT_EXPIRES) {
 			incCounter_ieee8021AsPortStatRxSyncReceiptTimeouts();
+			clock->setSyncStatus(false, port_state);
 		}
 
 		ret = _processEvent( e );

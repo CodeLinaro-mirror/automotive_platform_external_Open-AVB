@@ -52,7 +52,7 @@
 int gptpinit(int *shm_fd, char **memory_offset_buffer)
 {
 #ifdef ANDROID
-	*shm_fd = open(SHM_NAME, O_RDWR, 0);
+	*shm_fd = open(SHM_NAME, O_RDWR| O_CREAT, 0);
 #else
 	*shm_fd = shm_open(SHM_NAME, O_RDWR, 0);
 #endif

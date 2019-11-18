@@ -136,7 +136,13 @@ public:
       */
     virtual bool updateGmId(ClockIdentity& id, uint16_t portNumber) = 0;
 
-
+	/**
+	* @brief Updates sync status
+	* @param is_sync - Sync status of gPTP slave
+	* @param portNumber Port of the grandmaster
+	* @return Implementation dependent
+	*/
+	virtual bool updateSyncStatus(bool is_sync, PortState port_state) = 0;
 
 	/*
 	 * Destroys IPC

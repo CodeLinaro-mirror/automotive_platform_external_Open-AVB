@@ -730,6 +730,8 @@ void EtherPort::becomeMaster( bool annc ) {
 	// Stop sync receipt timeout timer
 	stopSyncReceiptTimer();
 
+	clock->setSyncStatus(true, PTP_MASTER);
+
 	if( annc ) {
 		if (!automotive_profile) {
 			startAnnounce();
@@ -748,6 +750,8 @@ void EtherPort::becomeSlave( bool restart_syntonization ) {
 	clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES );
 
 	setPortState( PTP_SLAVE );
+
+	clock->setSyncStatus(false, PTP_SLAVE);
 
 	if (!automotive_profile) {
 		clock->addEventTimerLocked

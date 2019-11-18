@@ -299,6 +299,13 @@ public:
   void setGrandmasterClockIdentity(ClockIdentity id, uint16_t portNumber);	
 
   /**
+  * @brief   Update sync status
+  * @param   is_sync Sync status of PTP slave
+  * @return  void
+  */
+  void setSyncStatus(bool is_sync, PortState port_state);
+
+  /**
    * @brief  Gets grandmaster clock quality object
    * @return Clock quality
    */

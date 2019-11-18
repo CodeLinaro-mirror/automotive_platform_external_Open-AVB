@@ -106,6 +106,16 @@ static void processTimestampEval(avtp_stream_t *pStream, U8 *pHdr)
 				*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]) = htonl(tsSmoothed);
 			}
 		}
+
+		if (x_cfg.avnuTestmode == TRUE) {
+			if (tsValid) {
+				pStream->stream_stats.TIMESTAMP_VALID++;
+			}
+			if (tsUncertain) {
+				pStream->stream_stats.TIMESTAMP_NOT_VALID++;
+				pStream->stream_stats.TIMESTAMP_UNCERTAIN++;
+			}
+		}
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_AVTP_DETAIL);

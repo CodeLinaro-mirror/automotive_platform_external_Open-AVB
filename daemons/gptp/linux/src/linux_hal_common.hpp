@@ -716,7 +716,11 @@ public:
     */
     virtual bool updateGmId(ClockIdentity& id, uint16_t portNumber);
 
-
+	/**
+	* @brief Updates sync status
+	* @return TRUE
+	*/
+	virtual bool updateSyncStatus(bool is_sync, PortState port_state);
 
 	/**
 	 * @brief unmaps and unlink shared memory

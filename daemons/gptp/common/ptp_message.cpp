@@ -1138,6 +1138,7 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 			  port->getSyncCount(), port->getPdelayCount(),
 			  port->getPortState(), port->getAsCapable() );
 		port->syncDone();
+		port->getClock()->setSyncStatus(true, PTP_SLAVE);
 		// Restart the SYNC_RECEIPT timer
 		port->startSyncReceiptTimer((unsigned long long)
 			 (SYNC_RECEIPT_TIMEOUT_MULTIPLIER *
