@@ -408,7 +408,7 @@ bool EtherPort::_processEvent( Event e )
 		haltPdelay(false);
 		startPDelay();
 		if (automotive_profile) {
-			GPTP_LOG_EXCEPTION("LINKUP");
+			GPTP_LOG_EXCEPTION("LINK_UP");
 		}
 		else {
 			GPTP_LOG_STATUS("LINKUP");
@@ -480,7 +480,8 @@ bool EtherPort::_processEvent( Event e )
 	case LINKDOWN:
 		stopPDelay();
 		if (automotive_profile) {
-			GPTP_LOG_EXCEPTION("LINK DOWN");
+			GPTP_LOG_EXCEPTION("LINK_DOWN");
+			GPTP_LOG_EXCEPTION("DATA_LOSS");
 		}
 		else {
 			setAsCapable(false);
@@ -503,7 +504,7 @@ bool EtherPort::_processEvent( Event e )
 
 		// Automotive Profile specific action
 		if (e == SYNC_RECEIPT_TIMEOUT_EXPIRES) {
-			GPTP_LOG_EXCEPTION("SYNC receipt timeout");
+			GPTP_LOG_EXCEPTION("LOSS_OF_SYNC");
 
 			startSyncReceiptTimer((unsigned long long)
 						(getsyncReceiptTimeoutMultiplier()*
@@ -652,11 +653,12 @@ bool EtherPort::_processEvent( Event e )
 			GPTP_LOG_EXCEPTION("PDelay Response Receipt Timeout");
 			setAsCapable(false);
 		}
+		GPTP_LOG_EXCEPTION("PDELAY_RESPONSE_TIMEOUT");
 		setPdelayCount( 0 );
 		break;
 
 	case PDELAY_RESP_PEER_MISBEHAVING_TIMEOUT_EXPIRES:
-		GPTP_LOG_EXCEPTION("PDelay Resp Peer Misbehaving timeout expired! Restarting PDelay");
+		GPTP_LOG_INFO("PDelay Resp Peer Misbehaving timeout expired! Restarting PDelay");
 
 		haltPdelay(false);
 		if( getPortState() != PTP_SLAVE &&

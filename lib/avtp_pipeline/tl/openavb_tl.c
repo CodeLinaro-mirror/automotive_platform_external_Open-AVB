@@ -40,7 +40,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_mediaq.h"
 #include "openavb_talker.h"
 #include "openavb_listener.h"
-// #include "openavb_avtp.h"
+#include "openavb_avtp.h"
 #include "openavb_platform.h"
 
 #define	AVB_LOG_COMPONENT	"Talker / Listener"
@@ -544,10 +544,6 @@ extern DLL_EXPORT bool openavbTLStop(tl_handle_t handle)
 		//pTLState->bStreaming = FALSE;
 		pTLState->bRunning = FALSE;
 
-		if (x_cfg.loglistenerstatus == 1 && pTLState->cfg.role == AVB_ROLE_LISTENER) {
-			AVB_LOG_L_STATUS("RENDERING STOP");
-		}
-
 		THREAD_JOIN(pTLState->TLThread, NULL);
 	}
 
@@ -736,5 +732,49 @@ EXTERN_DLL_EXPORT void openavbTLPauseStream(tl_handle_t handle, bool bPause)
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
 }
 
+EXTERN_DLL_EXPORT bool openavbTLLogDiagCounters(tl_handle_t handle)
+{
+	AVB_TRACE_ENTRY(AVB_TRACE_TL);
 
+	tl_state_t *pTLState = (tl_state_t *)handle;
 
+	if (!pTLState) {
+		AVB_LOG_ERROR("Invalid handle.");
+		AVB_TRACE_EXIT(AVB_TRACE_TL);
+		return FALSE;
+	}
+
+	if (pTLState->cfg.role == AVB_ROLE_TALKER) {
+		talker_data_t *pTalkerData = pTLState->pPvtTalkerData;
+		avtp_stream_t *pStream = (avtp_stream_t *)pTalkerData->avtpHandle;
+
+		if (!pTalkerData || !pStream) {
+			AVB_LOG_ERROR("Invalid handle.");
+			AVB_TRACE_EXIT(AVB_TRACE_TL);
+			return FALSE;
+		}
+
+		if (!openavbLogDiagnosticCounters(&pStream->stream_stats, &x_cfg, pTLState->cfg.stream_uid)) {
+			AVB_LOG_ERROR("Failed to log diagnostic counters");
+			return FALSE;
+		}
+	}
+	else if (pTLState->cfg.role == AVB_ROLE_LISTENER) {
+		listener_data_t *pListenerData = pTLState->pPvtListenerData;
+		avtp_stream_t *pStream = (avtp_stream_t *)pListenerData->avtpHandle;
+
+		if (!pListenerData || !pStream) {
+			AVB_LOG_ERROR("Invalid handle.");
+			AVB_TRACE_EXIT(AVB_TRACE_TL);
+			return FALSE;
+		}
+
+		if (!openavbLogDiagnosticCounters(&pStream->stream_stats, &x_cfg, pTLState->cfg.stream_uid)) {
+			AVB_LOG_ERROR("Failed to log diagnostic counters");
+			return FALSE;
+		}
+	}
+
+	AVB_TRACE_EXIT(AVB_TRACE_TL);
+	return TRUE;
+}

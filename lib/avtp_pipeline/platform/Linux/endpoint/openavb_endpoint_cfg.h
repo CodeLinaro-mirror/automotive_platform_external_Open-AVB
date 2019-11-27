@@ -49,6 +49,8 @@ typedef struct {
 	U8			ifmac[ETH_ALEN];
 	char		*ptp_start_opts;
 	char		*listener_status_file;
+	char		*diagnostic_counters_file;
+	char		*exception_file;
 	int			ifindex;
 	unsigned	link_kbit;
 	unsigned	nsr_kbit;
@@ -60,6 +62,8 @@ typedef struct {
 	unsigned	domain_class_b_vid;
 	unsigned	log_mode;
 	unsigned	loglistenerstatus;
+	unsigned	logDiagnosticCounters;
+	unsigned	logExceptions;
 	unsigned	avnuTestmode;
 	bool        noSrp;
 	bool        bypassAsCapableCheck;

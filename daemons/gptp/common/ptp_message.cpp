@@ -156,7 +156,7 @@ PTPMessageCommon *buildPTPMessage
 	}
 
 	if (1 != transportSpecific) {
-		GPTP_LOG_EXCEPTION("*** Received message with unsupported transportSpecific type=%d", transportSpecific);
+		GPTP_LOG_INFO("*** Received message with unsupported transportSpecific type=%d", transportSpecific);
 		goto abort;
 	}
 
@@ -492,7 +492,7 @@ PTPMessageCommon *buildPTPMessage
 
 	default:
 
-		GPTP_LOG_EXCEPTION("Received unsupported message type, %d",
+		GPTP_LOG_INFO("Received unsupported message type, %d",
 		            (int)messageType);
 		port->incCounter_ieee8021AsPortStatRxPTPPacketDiscard();
 
@@ -1149,7 +1149,7 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 	uint16_t lastGmTimeBaseIndicator;
 	lastGmTimeBaseIndicator = port->getLastGmTimeBaseIndicator();
 	if ((lastGmTimeBaseIndicator > 0) && (tlv.getGmTimeBaseIndicator() != lastGmTimeBaseIndicator)) {
-		GPTP_LOG_EXCEPTION("Sync discontinuity");
+		GPTP_LOG_EXCEPTION("SYNC_DISCONTINUITY");
 	}
 	port->setLastGmTimeBaseIndicator(tlv.getGmTimeBaseIndicator());
 
@@ -1466,7 +1466,6 @@ PTPMessagePathDelayRespFollowUp::~PTPMessagePathDelayRespFollowUp()
 	delete requestingPortIdentity;
 }
 
-#define US_PER_SEC 1000000
 void PTPMessagePathDelayRespFollowUp::processMessage
 ( EtherPort *port )
 {

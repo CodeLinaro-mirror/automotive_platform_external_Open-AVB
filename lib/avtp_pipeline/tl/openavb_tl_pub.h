@@ -342,6 +342,13 @@ U64 openavbTLStat(tl_handle_t handle, tl_stat_t stat);
  */
 bool openavbTLReadIniFileOsal(tl_handle_t TLhandle, const char *fileName, openavb_tl_cfg_t *pCfg, openavb_tl_cfg_name_value_t *pNVCfg);
 
+/** logs diagnostic counters in a file specified in endpoint.ini
+ *
+ * \param handle Pointer to handle of talker/listener
+ * \return TRUE if success or FALSE on failure
+ */
+bool openavbTLLogDiagCounters(tl_handle_t handle);
+
 
 /** \example openavb_host.c
  * Talker / Listener example host application.

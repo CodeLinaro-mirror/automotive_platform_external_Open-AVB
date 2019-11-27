@@ -53,9 +53,79 @@ void gptplogUnregister(void)
 #endif
 }
 
+static int requestedLoggingType = GPTP_LOG_LOGCAT;
+static int defaultLoggingType = GPTP_LOG_LOGCAT;
+
+static FILE* gptp_diagnostic_counter_fp = NULL;
+static FILE* gptp_exception_fp = NULL;
+
+
+bool gptpLogModeConfigure(uint8_t reqlogmode )
+{
+	requestedLoggingType = (int) reqlogmode;
+	return true;
+}
+
+bool gptpOpenCountersFile(char *diagnostic_counter_file)
+{
+	bool status = false;
+
+	gptp_diagnostic_counter_fp = fopen(diagnostic_counter_file, "w+");
+	if (gptp_diagnostic_counter_fp != NULL) {
+		status = true;
+	}
+
+	return status;
+}
+
+bool gptpCloseCountersFile()
+{
+	if (gptp_diagnostic_counter_fp) {
+		fflush(gptp_diagnostic_counter_fp);
+		fclose(gptp_diagnostic_counter_fp);
+		gptp_diagnostic_counter_fp = NULL;
+	}
+
+	if (errno == 0) {
+		return true;
+	}
+
+	return false;
+}
+
+bool gptpOpenExceptionsFile(char *exception_fp)
+{
+	bool status = false;
+
+	gptp_exception_fp = fopen(exception_fp, "w+");
+	if (gptp_exception_fp != NULL) {
+		status = true;
+	}
+
+	return status;
+}
+
+bool gptpCloseExceptionsFile()
+{
+	errno = 0;
+
+	if (gptp_exception_fp) {
+		fflush(gptp_exception_fp);
+		fclose(gptp_exception_fp);
+		gptp_exception_fp = NULL;
+	}
+
+	if (errno == 0) {
+		return true;
+	}
+
+	return false;
+}
+
 void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line, const char *fmt, ...)
 {
 	char msg[1024];
+	char custom_file_msg[GPTP_LOG_FULL_MSG_LEN] ="";
 
 	va_list args;
 	va_start(args, fmt);
@@ -69,13 +139,26 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line, 
 	std::chrono::system_clock::duration roundNow = cNow - std::chrono::system_clock::from_time_t(tNow);
 	long int millis = (long int) std::chrono::duration_cast<std::chrono::milliseconds>(roundNow).count();
 
-	if (path) {
-		fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] [%s:%u] %s\n",
-			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, path, line, msg);
-	}
-	else {
-		fprintf(stderr, "%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] %s\n",
-			   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, msg);
+	if (requestedLoggingType != GPTP_LOG_DISABLED) {
+		if (requestedLoggingType == GPTP_LOG_FILE) {
+			if (strncmp(tag, "DIAGNOSTIC",10) == 0) {
+				snprintf(custom_file_msg, GPTP_LOG_FULL_MSG_LEN, "COUNTER : GPTP [%d:%09lu] %s\n", tmNow.tm_sec % 10, (millis *1000000), msg);
+				fputs(custom_file_msg, gptp_diagnostic_counter_fp);
+			}
+			if (strncmp(tag, "EXCEPTION",9) == 0) {
+				snprintf(custom_file_msg, GPTP_LOG_FULL_MSG_LEN, "%s : GPTP [%d:%09lu] %s\n", tag, tmNow.tm_sec % 10, (millis *1000000), msg);
+				fputs(custom_file_msg, gptp_exception_fp);
+			}
+		}
+
+		if (path) {
+			ALOGE("%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] [%s:%u] %s\n",
+				   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, path, line, msg);
+		}
+		else {
+			ALOGE("%s: GPTP [%2.2d:%2.2d:%2.2d:%3.3ld] %s\n",
+				   tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, msg);
+		}
 	}
 #else
 	DltLogLevelType dlt_level; 

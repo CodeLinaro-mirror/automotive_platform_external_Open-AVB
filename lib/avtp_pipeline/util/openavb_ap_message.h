@@ -38,19 +38,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define ETH_ADDR_LEN   6 /* Size of Ethernet address */
 
 typedef struct {
+	uint32_t STREAM_INTERRUPTED;
+	uint32_t SEQ_NUM_MISMATCH;
+	uint32_t FRAMES_RX;
+	uint32_t FRAMES_TX;
 	uint32_t MEDIA_LOCKED;
 	uint32_t MEDIA_UNLOCKED;
-	uint32_t STREAM_RESET;
-	uint32_t SEQ_NUM_MISMATCH;
 	uint32_t MEDIA_RESET;
+	uint32_t UNSUPPORTED_FORMAT;
 	uint32_t TIMESTAMP_UNCERTAIN;
 	uint32_t TIMESTAMP_VALID;
 	uint32_t TIMESTAMP_NOT_VALID;
-	uint32_t UNSUPPORTED_FORMAT;
 	uint32_t LATE_TIMESTAMP;
 	uint32_t EARLY_TIMESTAMP;
-	uint32_t FRAMES_RX;
-	uint32_t FRAMES_TX;
+	uint32_t STREAM_RESET;
 }stream_stat_t;
 
 typedef struct {

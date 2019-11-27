@@ -219,10 +219,10 @@ static int cfgCallback(void *user, const char *section, const char *name, const 
 			errno = 0;
 			unsigned logmode = strtoul(value, &pEnd, 10);
 			if (*pEnd == '\0' && errno == 0) {
-				if (logmode < AVB_LOG_MODE_MAX && logmode != 0) {
+				if (logmode < AVB_LOG_MODE_MAX && logmode > 0) {
 					pCfg->log_mode = logmode;
 				}
-				else if (logmode == 0) {
+				else {
 					pCfg->log_mode = AVB_LOG_LOGCAT;
 				}
 				valOK = TRUE;
@@ -242,6 +242,40 @@ static int cfgCallback(void *user, const char *section, const char *name, const 
 			errno = 0;
 			pCfg->listener_status_file = strdup (value);
 			if (errno == 0 && pCfg->listener_status_file) {
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "logDiagnosticCounters")) {
+			errno = 0;
+			unsigned logDiagnosticCounters = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (logDiagnosticCounters == 1 && pCfg->log_mode == AVB_LOG_FILE) {
+					pCfg->logDiagnosticCounters = logDiagnosticCounters;
+				}
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "diagnostic_counters_file")) {
+			errno = 0;
+			pCfg->diagnostic_counters_file= strdup (value);
+			if (errno == 0 && pCfg->diagnostic_counters_file) {
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "logExceptions")) {
+			errno = 0;
+			unsigned logExceptions = strtoul(value, &pEnd, 10);
+			if (*pEnd == '\0' && errno == 0) {
+				if (logExceptions == 1 && pCfg->log_mode == AVB_LOG_FILE) {
+					pCfg->logExceptions = logExceptions;
+				}
+				valOK = TRUE;
+			}
+		}
+		else if (MATCH(name, "exception_file")) {
+			errno = 0;
+			pCfg->exception_file= strdup (value);
+			if (errno == 0 && pCfg->exception_file) {
 				valOK = TRUE;
 			}
 		}
@@ -331,6 +365,14 @@ void openavbUnconfigure(openavb_endpoint_cfg_t *pCfg)
 		if (pCfg->listener_status_file) {
 			free(pCfg->listener_status_file);
 			pCfg->listener_status_file = NULL;
+		}
+		if (pCfg->diagnostic_counters_file) {
+			free(pCfg->diagnostic_counters_file);
+			pCfg->diagnostic_counters_file = NULL;
+		}
+		if (pCfg->exception_file) {
+			free(pCfg->exception_file);
+			pCfg->exception_file = NULL;
 		}
 	}
 

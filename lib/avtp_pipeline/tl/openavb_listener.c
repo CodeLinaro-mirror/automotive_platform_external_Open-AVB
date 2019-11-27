@@ -52,7 +52,6 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_debug.h"
 
 extern openavb_endpoint_cfg_t  x_cfg;
-bool gListenerStreaming = FALSE;
 
 bool listenerStartStream(tl_state_t *pTLState)
 {
@@ -84,6 +83,8 @@ bool listenerStartStream(tl_state_t *pTLState)
 		return FALSE;
 	}
 
+	avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
+
 	// Setup timers
 	U64 nowNS;
 	CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);
@@ -97,17 +98,36 @@ bool listenerStartStream(tl_state_t *pTLState)
 	// Clear stats
 	openavbListenerClearStats(pTLState);
 
+	//Custom log configurations
+	if (x_cfg.log_mode == AVB_LOG_FILE) {
+		if (x_cfg.loglistenerstatus == 1) {
+			if(!openavbTLCreateListenerStatusFile(pTLState->cfg.stream_uid)) {
+				AVB_LOG_ERROR("Unable to log listener status");
+			}
+		}
+		if(x_cfg.logExceptions == 1) {
+			if (!openavbTLCreateExceptionsFile(pTLState->cfg.stream_uid)) {
+				AVB_LOG_ERROR("Unable to log Exceptions");
+			}
+		}
+	}
+
+	if (x_cfg.loglistenerstatus == 1) {
+		AVB_LOG_L_STATUS("RENDERING START");
+	}
+
+	if (avnuStream != NULL) {
+		avnuStream->stream_stats.MEDIA_LOCKED++;
+	}
+
 	// we're good to go!
 	pTLState->bStreaming = TRUE;
-	if (x_cfg.loglistenerstatus == 1) {
-		gListenerStreaming = pTLState->bStreaming;
-	}
 
 	if (x_cfg.avnuTestmode == TRUE) {
 		// send testmode messages
-		avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
-		avnuStream->stream_stats.MEDIA_LOCKED++;
-		tx_testmode_message(pCfg->role, pListenerData->streamID.uniqueID, &avnuStream->stream_stats);
+		if (avnuStream != NULL) {
+			tx_testmode_message(pCfg->role, pListenerData->streamID.uniqueID, &avnuStream->stream_stats);
+		}
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
@@ -149,7 +169,7 @@ void listenerStopStream(tl_state_t *pTLState)
 	}
 
 	if (x_cfg.loglistenerstatus == 1) {
-		gListenerStreaming = pTLState->bStreaming;
+		AVB_LOG_L_STATUS("RENDERING STOP");
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
@@ -167,7 +187,10 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 
 	openavb_tl_cfg_t *pCfg = &pTLState->cfg;
 	listener_data_t *pListenerData = pTLState->pPvtListenerData;
+	avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
+
 	bool bRet = FALSE;
+	static U8 prevSeq = 0;
 
 	if (pTLState->bStreaming) {
 		U64 nowNS;
@@ -177,11 +200,15 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 		// Try to receive a frame
 		if (IS_OPENAVB_SUCCESS(openavbAvtpRx(pListenerData->avtpHandle))) {
 			pListenerData->nReportFrames++;
-		}
 
-		if (x_cfg.avnuTestmode == TRUE) {
-			avtp_stream_t *avnuStream = (avtp_stream_t *)(pListenerData->avtpHandle);
-			avnuStream->stream_stats.FRAMES_RX = pListenerData->nReportFrames;
+			if (avnuStream->avtp_sequence_num  == prevSeq) {
+				AVB_LOG_EXCEPTION("DUPLICATE_AVTPDU");
+			}
+
+			prevSeq++;
+			if (prevSeq == 255) {
+				prevSeq = 0;
+			}
 		}
 
 		CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);
@@ -203,7 +230,6 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 				AVB_LOGRT_INFO(FALSE, LOG_RT_ITEM, FALSE, "rxbuf=%d, ", LOG_RT_DATATYPE_U32, &rxbuf);
 				AVB_LOGRT_INFO(FALSE, LOG_RT_ITEM, FALSE, "mqbuf=%d, ", LOG_RT_DATATYPE_U32, &mqbuf);
 				AVB_LOGRT_INFO(FALSE, LOG_RT_ITEM, LOG_RT_END, "mqrdy=%d", LOG_RT_DATATYPE_U32, &mqrdy);
-
 				openavbListenerAddStat(pTLState, TL_STAT_RX_CALLS, pListenerData->nReportCalls);
 				openavbListenerAddStat(pTLState, TL_STAT_RX_FRAMES, pListenerData->nReportFrames);
 				openavbListenerAddStat(pTLState, TL_STAT_RX_LOST, lost);
@@ -213,6 +239,24 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 				pListenerData->nReportFrames = 0;
 				pListenerData->nextReportNS += (pCfg->report_seconds * NANOSECONDS_PER_SECOND);  
 			}
+		}
+
+		if (avnuStream != NULL) {
+			avnuStream->stream_stats.FRAMES_RX = pListenerData->nReportFrames;
+		}
+
+		if (avnuStream->nLost > 0) {
+			AVB_LOG_L_STATUS("ERROR : SEQUENCE_MISMATCH");
+			AVB_LOG_EXCEPTION("MISSING_AVTPDU");
+		}
+
+		if (avnuStream->nLost > 0 && avnuStream->bytes == 0) {
+			AVB_LOG_L_STATUS("ERROR : STREAM_INTERRUPTED");
+			avnuStream->stream_stats.STREAM_INTERRUPTED++;
+		}
+
+		if (pListenerData->nReportFrames > 0 && avnuStream->bytes == 0) {
+			avnuStream->stream_stats.MEDIA_UNLOCKED++;
 		}
 
 		if (nowNS > pListenerData->nextSecondNS) {

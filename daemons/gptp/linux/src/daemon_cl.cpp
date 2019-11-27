@@ -154,6 +154,9 @@ int main(int argc, char **argv)
 	memset(config_file_path, 0, 512);
 
 	GPTPPersist *pGPTPPersist = NULL;
+
+	fprintf(stderr,"Logging to LOGCAT\n");
+
 	LinuxThreadFactory *thread_factory = new LinuxThreadFactory();
 
 	// Block SIGUSR1
@@ -168,7 +171,7 @@ int main(int argc, char **argv)
 	}
 
 	GPTP_LOG_REGISTER();
-	GPTP_LOG_INFO("gPTP starting");
+
 	if (watchdog_setup(thread_factory) != 0) {
 		GPTP_LOG_ERROR("Watchdog handler setup error");
 		return -1;
@@ -405,6 +408,24 @@ int main(int argc, char **argv)
 		}
 		else
 		{
+			/* Log section handling */
+			portInit.logmode = iniParser.getlogmode();
+			gptpLogModeConfigure(portInit.logmode);
+
+			GPTP_LOG_INFO("logmode is %d", portInit.logmode);
+
+			portInit.logDiagnosticCounters = iniParser.getlogDiagnosticCounters();
+			GPTP_LOG_INFO("diagnostic counters enable = %d ", portInit.logDiagnosticCounters);
+
+			portInit.gptp_diagnostic_counter_file = iniParser.getDiagnosticCountersFileName();
+			GPTP_LOG_INFO("diagnostic counters file name = %s", portInit.gptp_diagnostic_counter_file);
+
+			portInit.logExceptions = iniParser.getlogExceptions();
+			GPTP_LOG_INFO("log Exceptions enable = %d ", portInit.logExceptions);
+
+			portInit.gptp_exception_file = iniParser.getExceptionsFileName();
+			GPTP_LOG_INFO("Exceptions file name = %s", portInit.gptp_exception_file);
+
 			GPTP_LOG_INFO("priority1 = %d", iniParser.getPriority1());
 			GPTP_LOG_INFO("announceReceiptTimeout: %d", iniParser.getAnnounceReceiptTimeout());
 			GPTP_LOG_INFO("syncReceiptTimeout: %d", iniParser.getSyncReceiptTimeout());
@@ -419,11 +440,11 @@ int main(int argc, char **argv)
 			port_state = iniParser.getPortState();
 			if(port_state == PTP_MASTER) {
 				override_portstate = true;
-				GPTP_LOG_INFO("Configuring port state to master\n");
+				GPTP_LOG_INFO("Configuring port state to master");
 			}
 			else {
 				override_portstate = true;
-				GPTP_LOG_INFO("Configuring port state to Slave\n");
+				GPTP_LOG_INFO("Configuring port state to Slave");
 			}
 			portInit.syncReceiptTimeout = iniParser.getSyncReceiptTimeout();
 			portInit.announceReceiptTimeout = iniParser.getAnnounceReceiptTimeout();
@@ -432,8 +453,8 @@ int main(int argc, char **argv)
 			portInit.automotive_profile = iniParser.getAutomotiveProfile();
 			portInit.isGM = iniParser.getIsGM();
 			portInit.asCapable = iniParser.getAsCapable();
-			GPTP_LOG_INFO("automotive profile %s isGM %s\n",((portInit.automotive_profile)? "True" :"False"),((portInit.isGM)? "True": "False"));
-			GPTP_LOG_INFO("priority1 %d and priority2 %d clockClass %d srt %d art %d\n",priority1,priority2,clockClass, portInit.syncReceiptTimeout,  portInit.announceReceiptTimeout);
+			GPTP_LOG_INFO("automotive profile %s isGM %s",((portInit.automotive_profile)? "True" :"False"),((portInit.isGM)? "True": "False"));
+			GPTP_LOG_INFO("priority1 %d and priority2 %d clockClass %d srt %d art %d",priority1,priority2,clockClass, portInit.syncReceiptTimeout,  portInit.announceReceiptTimeout);
 
 			/* If using config file, set the neighborPropDelayThresh.
 			 * Otherwise it will use its default value (800ns) */
@@ -459,9 +480,18 @@ int main(int argc, char **argv)
 			{
 				ether_phy_delay = iniParser.getPhyDelay();
 			}
-		}
 
+		}
 	}
+
+	if (portInit.logmode == GPTP_LOG_FILE ) {
+		if (portInit.logExceptions) {
+			if (!gptpOpenExceptionsFile(portInit.gptp_exception_file)) {
+				GPTP_LOG_ERROR("Unable to log exceptions");
+			}
+		}
+	}
+
 	pClock = new IEEE1588Clock
 		( false, syntonize, priority1, priority2, clockClass, timerq_factory, ipc,
 		  lock_factory );
@@ -524,6 +554,8 @@ int main(int argc, char **argv)
 		pGPTPPersist->registerWriteCB(gPTPPersistWriteCB);
 	}
 
+	GPTP_LOG_INFO("gPTP starting");
+
 	pPort->processEvent(POWERUP);
 
 	do {
@@ -545,11 +577,30 @@ int main(int argc, char **argv)
 		}
 
 		if (sig == SIGUSR2) {
-			pPort->logIEEEPortCounters();
+			if (portInit.logmode == GPTP_LOG_FILE && portInit.logDiagnosticCounters) {
+				if (gptpOpenCountersFile(portInit.gptp_diagnostic_counter_file)) {
+					pPort->logIEEEPortCounters();
+					if(!gptpCloseCountersFile()) {
+						GPTP_LOG_ERROR("Unable to Close Diagnostic Counters file");
+					}
+				}
+				else {
+					GPTP_LOG_ERROR("Unable to log Diagnostic Counters");
+				}
+			}
 		}
 	} while (sig == SIGHUP || sig == SIGUSR2);
 
-	GPTP_LOG_ERROR("Exiting on %d", sig);
+	GPTP_LOG_INFO("Shuting down gPTP");
+
+	if (portInit.logmode == GPTP_LOG_FILE && portInit.logExceptions) {
+		if (!gptpCloseExceptionsFile()) {
+			GPTP_LOG_ERROR("Unable to Close exceptions files");
+		}
+		else {
+			GPTP_LOG_INFO("Closing exceptions files");
+		}
+	}
 
 	if (pGPTPPersist) {
 		pGPTPPersist->closeStorage();

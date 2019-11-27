@@ -239,7 +239,64 @@ int GptpIniParser::iniCallBack(void *user, const char *section, const char *name
             valOK = true;
             parser->_config.isGm = isGM;
         }
-
+    }
+    else if( parseMatch(section, "log") )
+    {
+        if( parseMatch( name, "logmode") )
+        {
+            errno = 0;
+            char *pEnd;
+            int8_t logmode = (int8_t) strtoul(value, &pEnd, 10);
+            if( *pEnd == '\0' && errno == 0 ) {
+                if (logmode > 0 && logmode < GPTP_LOG_MODE_MAX) {
+                    valOK = true;
+                    parser->_config.logmode = logmode;
+                }
+                else {
+                    parser->_config.logmode = GPTP_LOG_LOGCAT;
+                }
+            }
+        }
+        else if( parseMatch( name, "logDiagnosticCounters") )
+        {
+            errno = 0;
+            char *pEnd;
+            int8_t logDiagnosticCounters = (int8_t) strtoul(value, &pEnd, 10);
+            if( *pEnd == '\0' && errno == 0 ) {
+                if (logDiagnosticCounters == 0 || logDiagnosticCounters == 1) {
+                    valOK = true;
+                    parser->_config.logDiagnosticCounters = logDiagnosticCounters;
+                }
+            }
+        }
+        else if( parseMatch( name, "diagnostic_counters_file") )
+        {
+            errno = 0;
+            parser->_config.gptp_diagnostic_counter_file= strdup (value);
+            if (errno == 0 && parser->_config.gptp_diagnostic_counter_file) {
+                valOK = true;
+            }
+        }
+        else if( parseMatch( name, "logExceptions") )
+        {
+            errno = 0;
+            char *pEnd;
+            int8_t logExceptions = (int8_t) strtoul(value, &pEnd, 10);
+            if( *pEnd == '\0' && errno == 0 ) {
+                if (logExceptions == 0 || logExceptions == 1) {
+                    valOK = true;
+                    parser->_config.logExceptions = logExceptions;
+                }
+            }
+        }
+        else if( parseMatch( name, "exception_file") )
+        {
+            errno = 0;
+            parser->_config.gptp_exception_file= strdup (value);
+            if (errno == 0 && parser->_config.gptp_exception_file) {
+                valOK = true;
+            }
+        }
     }
     else if( parseMatch(section, "eth") )
     {

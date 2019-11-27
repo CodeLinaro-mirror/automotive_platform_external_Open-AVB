@@ -7,6 +7,7 @@ LOCAL_CFLAGS := -DWITHOUT_IFADDRS -Wno-unused-parameter -frtti -Wno-unused-priva
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/common \
                     $(LOCAL_PATH)/linux/src
 
+LOCAL_SHARED_LIBRARIES += liblog libutils
 
 LOCAL_SRC_FILES := linux/src/daemon_cl.cpp \
                    common/ptp_message.cpp \

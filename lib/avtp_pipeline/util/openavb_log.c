@@ -30,6 +30,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #include "openavb_types_pub.h"
 #include "openavb_platform_pub.h"
+#include "openavb_endpoint_cfg.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -73,10 +74,23 @@ typedef struct {
 	bool bEnd;
 } log_rt_queue_item_t;
 
-static FILE *listener_status_file_fp = NULL;
+//static FILE *listener_status_file_fp = NULL;
+static FILE *diagnostic_counter_fp = NULL;
+//static FILE *exception_fp = NULL;
+
+typedef struct {
+	pid_t tID;
+	FILE *plogfile_excep;
+	FILE *plogfile_lisstatus;
+}logmode_fdlist_t;
+
+logmode_fdlist_t fdlist[MAX_AVB_STREAMS];
+static int logFileIndex = -1;
+
+extern openavb_endpoint_cfg_t 	x_cfg;
+
 static avb_log_mode defaultLoggingType;
 static avb_log_mode requestedLoggingType;
-static char custom_file_msg[LOG_FULL_MSG_LEN] ="";
 
 static openavb_queue_t logQueue;
 static openavb_queue_t logRTQueue;
@@ -100,34 +114,20 @@ static MUTEX_HANDLE_ALT(gLogMutex);
 #define LOG_LOCK() MUTEX_LOCK_ALT(gLogMutex)
 #define LOG_UNLOCK() MUTEX_UNLOCK_ALT(gLogMutex)
 
-bool avbTLlogConfigure(openavb_endpoint_cfg_t *logcfg) {
+bool openavbTLlogConfigure(unsigned log_mode) {
 	bool status = FALSE;
-	if (logcfg->log_mode == AVB_LOG_FILE) {
-		if (logcfg->listener_status_file && logcfg->loglistenerstatus == 1) {
-			listener_status_file_fp = fopen(logcfg->listener_status_file, "w+");
-			if (listener_status_file_fp != NULL) {
-				AVB_LOG_INFO("Log mode is FILE, Creating listener status file");
-				AVB_LOG_INFO("logs will be on file and on logcat");
-				requestedLoggingType = AVB_LOG_FILE;
-				status = TRUE;
-			}
-			else {
-				AVB_LOG_ERROR("Error creating listener status file");
-				status = FALSE;
-			}
-		}
-		else {
-			AVB_LOG_ERROR("Unable to set log mode as FILE, Log mode will default to LOGCAT");
-			requestedLoggingType = AVB_LOG_LOGCAT;
-			status = FALSE;
-		}
+
+	if (log_mode == AVB_LOG_FILE) {
+		AVB_LOG_INFO("Log mode is FILE, logs will be on specified file and on logcat");
+		requestedLoggingType = AVB_LOG_FILE;
+		status = TRUE;
 	}
-	else if (logcfg->log_mode == AVB_LOG_DISABLED) {
+	else if (log_mode == AVB_LOG_DISABLED) {
 		AVB_LOG_INFO("Log mode is disabled, no logs will be produced");
 		requestedLoggingType = AVB_LOG_DISABLED;
 		status = TRUE;
 	}
-	else if (logcfg->log_mode == AVB_LOG_LOGCAT) {
+	else if (log_mode == AVB_LOG_LOGCAT) {
 		AVB_LOG_INFO("Log mode is LOGCAT, logs will be on logcat");
 		requestedLoggingType = AVB_LOG_LOGCAT;
 		status = TRUE;
@@ -137,6 +137,133 @@ bool avbTLlogConfigure(openavb_endpoint_cfg_t *logcfg) {
 		AVB_LOG_INFO("Log mode is default to LOGCAT");
 		requestedLoggingType = AVB_LOG_LOGCAT;
 		status = TRUE;
+	}
+
+	return status;
+}
+
+bool openavbTLCreateListenerStatusFile(S32 stream_uid)
+{
+	bool status = FALSE;
+	logFileIndex++;
+
+	if (logFileIndex > MAX_AVB_STREAMS) {
+		AVB_LOG_ERROR("Max stream count reached, cannot open new listener status file");
+		return FALSE;
+	}
+
+	if (x_cfg.listener_status_file) {
+		char cstream_uid[8];
+		char listener_status_file[LOGMODE_FILE_LEN];
+
+		memset(&cstream_uid, 0x0, sizeof(cstream_uid));
+		memset(&listener_status_file, 0x0, sizeof(listener_status_file));
+		memcpy(&listener_status_file, x_cfg.listener_status_file, sizeof(listener_status_file));
+
+		snprintf(cstream_uid, sizeof(cstream_uid), "_uid_%d", stream_uid);
+		strlcat(listener_status_file, cstream_uid, LOGMODE_FILE_LEN);
+
+		fdlist[logFileIndex].plogfile_lisstatus = fopen(listener_status_file, "w+");
+
+		if (fdlist[logFileIndex].plogfile_lisstatus != NULL) {
+			fdlist[logFileIndex].tID = gettid();
+			status = TRUE;
+		}
+	}
+	else {
+		status = FALSE;
+	}
+
+	return status;
+}
+
+bool openavbTLCreateExceptionsFile(S32 stream_uid)
+{
+	bool status = FALSE;
+	logFileIndex++;
+
+	if (logFileIndex > MAX_AVB_STREAMS) {
+		AVB_LOG_ERROR("Max stream count reached, cannot open new exception file");
+		return FALSE;
+	}
+
+	if (x_cfg.exception_file) {
+		char cstream_uid[8];
+		char exception_file[LOGMODE_FILE_LEN];
+
+		memset(&cstream_uid, 0x0, sizeof(cstream_uid));
+		memset(&exception_file, 0x0, sizeof(exception_file));
+		memcpy(&exception_file, x_cfg.exception_file, sizeof(exception_file));
+
+		snprintf(cstream_uid, sizeof(cstream_uid), "_uid_%d", stream_uid);
+		strlcat(exception_file, cstream_uid, LOGMODE_FILE_LEN);
+
+		fdlist[logFileIndex].plogfile_excep = fopen(exception_file, "w+");
+
+		if (fdlist[logFileIndex].plogfile_excep != NULL) {
+			fdlist[logFileIndex].tID = gettid();
+			status = TRUE;
+		}
+	}
+	else {
+		status = FALSE;
+	}
+
+	return status;
+}
+
+bool openavbLogDiagnosticCounters(stream_stat_t *pTLStreamStats, openavb_endpoint_cfg_t *tlcfg, S32 stream_uid)
+{
+	bool status = FALSE;
+
+	if (tlcfg->log_mode == AVB_LOG_FILE) {
+		if (tlcfg->diagnostic_counters_file && tlcfg->logDiagnosticCounters == 1) {
+			char cstream_uid[8];
+			char diagnostic_counters_file[LOGMODE_FILE_LEN];
+
+			memset(&cstream_uid, 0x0, sizeof(cstream_uid));
+			memset(&diagnostic_counters_file, 0x0, sizeof(diagnostic_counters_file));
+			memcpy(&diagnostic_counters_file, tlcfg->diagnostic_counters_file, sizeof(diagnostic_counters_file));
+
+			snprintf(cstream_uid, sizeof(cstream_uid), "_uid_%d", stream_uid);
+			strlcat(diagnostic_counters_file, cstream_uid, LOGMODE_FILE_LEN);
+
+			diagnostic_counter_fp = fopen(diagnostic_counters_file, "w+");
+			if (diagnostic_counter_fp != NULL) {
+				status = TRUE;
+				AVB_LOGF_DIAGNOSTIC("STREAM_INTERRUPTED : %d", pTLStreamStats->STREAM_INTERRUPTED);
+				AVB_LOGF_DIAGNOSTIC("SEQ_NUM_MISMATCH : %d",   pTLStreamStats->SEQ_NUM_MISMATCH);
+				AVB_LOGF_DIAGNOSTIC("FRAMES_RX : %d",          pTLStreamStats->FRAMES_RX);
+				AVB_LOGF_DIAGNOSTIC("FRAMES_TX : %d",          pTLStreamStats->FRAMES_TX);
+				AVB_LOGF_DIAGNOSTIC("MEDIA_LOCKED : %d",       pTLStreamStats->MEDIA_LOCKED);
+				AVB_LOGF_DIAGNOSTIC("MEDIA_UNLOCKED : %d",     pTLStreamStats->MEDIA_UNLOCKED);
+				AVB_LOGF_DIAGNOSTIC("MEDIA_RESET : %d",        pTLStreamStats->MEDIA_RESET);
+				AVB_LOGF_DIAGNOSTIC("UNSUPPORTED_FORMAT : %d", pTLStreamStats->UNSUPPORTED_FORMAT);
+				AVB_LOGF_DIAGNOSTIC("TIMESTAMP_UNCERTAIN : %d",pTLStreamStats->TIMESTAMP_UNCERTAIN);
+				AVB_LOGF_DIAGNOSTIC("TIMESTAMP_VALID : %d",    pTLStreamStats->TIMESTAMP_VALID);
+				AVB_LOGF_DIAGNOSTIC("TIMESTAMP_NOT_VALID : %d",pTLStreamStats->TIMESTAMP_NOT_VALID);
+				AVB_LOGF_DIAGNOSTIC("LATE_TIMESTAMP : %d",     pTLStreamStats->LATE_TIMESTAMP);
+				AVB_LOGF_DIAGNOSTIC("EARLY_TIMESTAMP : %d",    pTLStreamStats->EARLY_TIMESTAMP);
+				}
+			else {
+				AVB_LOG_ERROR("Failed to open Disgnostic_counter file");
+				status = FALSE;
+			}
+		}
+		else {
+			AVB_LOG_ERROR("Failed to log diagnostic counters, verify endpoint INI configurations");
+			status = FALSE;
+		}
+	}
+	else {
+		AVB_LOG_ERROR("log mode should be file");
+		status = FALSE;
+	}
+
+	if (diagnostic_counter_fp) {
+		fflush(diagnostic_counter_fp);
+		fclose(diagnostic_counter_fp);
+		diagnostic_counter_fp = NULL;
 	}
 
 	return status;
@@ -305,10 +432,26 @@ extern void DLL_EXPORT avbLogExit()
 		THREAD_JOIN(loggingThread, NULL);
 	}
 
-	if (listener_status_file_fp) {
-		fflush(listener_status_file_fp);
-		listener_status_file_fp = NULL;
+	if (diagnostic_counter_fp) {
+		fflush(diagnostic_counter_fp);
+		fclose(diagnostic_counter_fp);
+		diagnostic_counter_fp = NULL;
 	}
+
+	/* close FILEMODE FDs */
+	for (int indxfd = 0; indxfd < MAX_AVB_STREAMS; indxfd++) {
+		if (fdlist[indxfd].plogfile_excep) {
+			fflush(fdlist[indxfd].plogfile_excep);
+			fclose(fdlist[indxfd].plogfile_excep);
+			fdlist[indxfd].plogfile_excep = NULL;
+		}
+		if (fdlist[indxfd].plogfile_lisstatus) {
+			fflush(fdlist[indxfd].plogfile_lisstatus);
+			fclose(fdlist[indxfd].plogfile_lisstatus);
+			fdlist[indxfd].plogfile_lisstatus = NULL;
+		}
+	}
+
 }
 
 extern void DLL_EXPORT avbLogFn(
@@ -326,6 +469,8 @@ extern void DLL_EXPORT avbLogFn(
 		va_start(args, fmt);
 
 		LOG_LOCK();
+
+		char custom_file_msg[LOG_FULL_MSG_LEN] ="";
 
 		vsnprintf(msg, LOG_MSG_LEN, fmt, args);
 
@@ -367,6 +512,23 @@ extern void DLL_EXPORT avbLogFn(
 			/* S32 full_msg_len = */ snprintf(full_msg, LOG_FULL_MSG_LEN, "[%s%s%s%s %s %s%s] %s: %s", time_msg, timestamp_msg, proc_msg, thread_msg, company, component, file_msg, tag, msg);
 		}
 
+		// curtomer specific changes
+		if (requestedLoggingType == AVB_LOG_FILE ) {
+			struct timespec filenowTS;
+			CLOCK_GETTIME(OPENAVB_CLOCK_REALTIME, &filenowTS);
+			memset(&custom_file_msg, 0x0,sizeof(custom_file_msg));
+
+			if (strncmp(tag, "L_STATUS",8) == 0) {
+				snprintf(custom_file_msg, LOG_FULL_MSG_LEN, "%s : [%ld:%09lu] %s\n",tag,filenowTS.tv_sec % 10, filenowTS.tv_nsec,msg);
+			}
+			if (strncmp(tag, "DIAGNOSTIC",10) == 0) {
+				snprintf(custom_file_msg, LOG_FULL_MSG_LEN, "COUNTER : %s [%ld:%09lu] %s\n",LOG_TAG,filenowTS.tv_sec % 10, filenowTS.tv_nsec,msg);
+			}
+			if (strncmp(tag, "EXCEPTION",9) == 0) {
+				snprintf(custom_file_msg, LOG_FULL_MSG_LEN, "%s : [%ld:%09lu] %s\n",tag,filenowTS.tv_sec % 10, filenowTS.tv_nsec,msg);
+			}
+		}
+
 		if (!OPENAVB_LOG_FROM_THREAD && !OPENAVB_LOG_PULL_MODE) {
 			if (requestedLoggingType != AVB_LOG_DISABLED) {
 				if (defaultLoggingType == AVB_LOG_LOGCAT) {
@@ -377,8 +539,27 @@ extern void DLL_EXPORT avbLogFn(
 				}
 
 				if (requestedLoggingType == AVB_LOG_FILE) {
-					if (listener_status_file_fp != NULL) {
-						fputs(custom_file_msg,listener_status_file_fp);
+					if(strncmp(tag, "L_STATUS",8) == 0) {
+						for(int indxfd = 0; indxfd < MAX_AVB_STREAMS; indxfd++) {
+							if(fdlist[indxfd].tID == gettid()) {
+								if (fdlist[indxfd].plogfile_lisstatus != NULL) {
+									fputs(custom_file_msg, fdlist[indxfd].plogfile_lisstatus);
+								}
+							}
+						}
+					}
+					if(strncmp(tag, "EXCEPTION",9) == 0) {
+						for(int indxfd = 0; indxfd < MAX_AVB_STREAMS; indxfd++) {
+							if(fdlist[indxfd].tID == gettid()) {
+								if (fdlist[indxfd].plogfile_excep != NULL) {
+									fputs(custom_file_msg, fdlist[indxfd].plogfile_excep);
+								}
+							}
+						}
+					}
+
+					if (diagnostic_counter_fp != NULL && (strncmp(tag, "DIAGNOSTIC",10) == 0)) {
+						fputs(custom_file_msg, diagnostic_counter_fp);
 					}
 				}
 			}
@@ -388,14 +569,29 @@ extern void DLL_EXPORT avbLogFn(
 				if (requestedLoggingType != AVB_LOG_DISABLED) {
 					// curtomer specific changes
 					if (requestedLoggingType == AVB_LOG_FILE ) {
-						if (listener_status_file_fp != NULL && (strncmp(tag, "L_STATUS",8) == 0)) {
-							struct timespec filenowTS;
-							CLOCK_GETTIME(OPENAVB_CLOCK_REALTIME, &filenowTS);
-							snprintf(custom_file_msg, LOG_FULL_MSG_LEN, "%s : [%ld:%09lu] %s\n",tag,filenowTS.tv_sec % 10, filenowTS.tv_nsec,msg);
-							fputs(custom_file_msg, listener_status_file_fp);
+						if(strncmp(tag, "L_STATUS",8) == 0) {
+							for(int indxfd = 0; indxfd < MAX_AVB_STREAMS; indxfd++) {
+								if(fdlist[indxfd].tID == gettid()) {
+									if (fdlist[indxfd].plogfile_lisstatus != NULL) {
+										fputs(custom_file_msg, fdlist[indxfd].plogfile_lisstatus);
+									}
+								}
+							}
+						}
+						if(strncmp(tag, "EXCEPTION",9) == 0) {
+							for(int indxfd = 0; indxfd < MAX_AVB_STREAMS; indxfd++) {
+								if(fdlist[indxfd].tID == gettid()) {
+									if (fdlist[indxfd].plogfile_excep != NULL) {
+										fputs(custom_file_msg, fdlist[indxfd].plogfile_excep);
+									}
+								}
+							}
+						}
+
+						if (diagnostic_counter_fp != NULL && (strncmp(tag, "DIAGNOSTIC",10) == 0)) {
+							fputs(custom_file_msg, diagnostic_counter_fp);
 						}
 					}
-
 					if (defaultLoggingType == AVB_LOG_LOGCAT) {
 						ALOGE("%s",full_msg);
 					}

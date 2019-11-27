@@ -71,6 +71,13 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
 	pdelay_count = 0;
 	asCapable = false;
 	link_speed = INVALID_LINKSPEED;
+
+	/* Log section handling */
+	logmode = portInit->logmode;
+	logDiagnosticCounters = portInit->logDiagnosticCounters;
+	logExceptions = portInit->logExceptions;
+	gptp_diagnostic_counter_file = portInit->gptp_diagnostic_counter_file;
+	gptp_exception_file = portInit->gptp_exception_file;
 }
 
 CommonPort::~CommonPort()

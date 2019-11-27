@@ -52,6 +52,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_log_pub.h"
 
 bool bRunning = TRUE;
+bool bLogdiags = FALSE;
 
 /***********************************************
  * Signal handler - used to respond to signals.
@@ -67,6 +68,10 @@ static void openavbTLSigHandler(int signal)
 	}
 	else if (signal == SIGUSR1) {
 		AVB_LOG_DEBUG("Waking up streaming thread");
+	}
+	else if (signal == SIGUSR2) {
+		bLogdiags = TRUE;
+		AVB_LOG_INFO("logging Diagnostic counters");
 	}
 	else {
 		AVB_LOG_ERROR("Unexpected signal");
@@ -156,6 +161,7 @@ int main(int argc, char *argv[])
 	sa.sa_flags = 0; // not SA_RESTART
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGUSR1, &sa, NULL);
+	sigaction(SIGUSR2, &sa, NULL);
 
 	// Process command line
 	programName = strrchr(argv[0], '/');
@@ -318,6 +324,14 @@ int main(int argc, char *argv[])
 		}
 
 		while (bRunning) {
+			// handle sigusr events
+			if(bLogdiags) {
+				bLogdiags = FALSE; /* ensure it runs only once per signal*/
+				for (i1 = 0; i1 < tlCount; i1++) {
+					openavbTLLogDiagCounters(tlHandleList[i1]);
+				}
+			}
+
 			sleep(1);
 		}
 
@@ -333,6 +347,15 @@ int main(int argc, char *argv[])
 
 		openavbTlHarnessMenu();
 		while (bRunning) {
+			// handle sigusr events
+			if(bLogdiags) {
+				bLogdiags = FALSE; /* ensure it runs only once per signal*/
+				for (i1 = 0; i1 < tlCount; i1++) {
+					AVB_LOG_INFO("logging counters");
+					openavbTLLogDiagCounters(tlHandleList[i1]);
+				}
+			}
+
 			char buf[16];
 			printf("> ");
 			if (fgets(buf, sizeof(buf), stdin) == NULL) {
@@ -451,7 +474,6 @@ int main(int argc, char *argv[])
 					}
 					break;
 			}
-
 		}
 	}
 

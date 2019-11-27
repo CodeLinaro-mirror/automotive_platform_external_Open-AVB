@@ -127,7 +127,7 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 		goto error;
 	}
 
-	bool status = avbTLlogConfigure(&x_cfg);
+	bool status = openavbTLlogConfigure(x_cfg.log_mode);
 	if (!status) {
 		AVB_LOGF_ERROR("Error configuring logs section, default logs will be on logcat, status %d",status);
 	}

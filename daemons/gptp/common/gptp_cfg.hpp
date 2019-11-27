@@ -70,6 +70,13 @@ class GptpIniParser
             uint8_t priority2;
             uint8_t clockClass;
 
+            /*log section*/
+            uint8_t logmode;
+            uint8_t logDiagnosticCounters;
+            uint8_t logExceptions;
+            char    *gptp_diagnostic_counter_file;
+            char    *gptp_exception_file;
+
             /*port data set*/
             unsigned int announceReceiptTimeout;
             unsigned int syncReceiptTimeout;
@@ -228,6 +235,53 @@ class GptpIniParser
 		PortState getPortState(void)
 		{
 			return _config.port_state;
+		}
+
+		/* log section */
+
+		/**
+		* @brief  Reads the log mode from the configuration file
+		* @return log mode value from the .ini file
+		*/
+		uint8_t getlogmode(void)
+		{
+			return _config.logmode;
+		}
+
+		/**
+		 * @brief  Reads the logDiagnosticCounters from the configuration file
+		* @return logDiagnosticCounters value from the .ini file
+		*/
+		uint8_t getlogDiagnosticCounters(void)
+		{
+			return _config.logDiagnosticCounters;
+		}
+
+		/**
+		 * @brief  Reads the logExceptions from the configuration file
+		* @return logExceptions value from the .ini file
+		*/
+		uint8_t getlogExceptions(void)
+		{
+			return _config.logExceptions;
+		}
+
+		/**
+		 * @brief  Reads the DiagnosticCountersFileName from the configuration file
+		* @return gptp_diagnostic_counter_file value from the .ini file
+		*/
+		char* getDiagnosticCountersFileName(void)
+		{
+			return _config.gptp_diagnostic_counter_file;
+		}
+
+		/**
+		 * @brief  Reads the ExceptionsFileName from the configuration file
+		* @return gptp_exception_file value from the .ini file
+		*/
+		char* getExceptionsFileName(void)
+		{
+			return _config.gptp_exception_file;
 		}
 
 	/**

@@ -48,6 +48,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include <string.h>
 
 #include "openavb_types_pub.h"
+#include "openavb_ap_message.h"
 
 // Uncomment AVB_LOG_ON to enable logging.
 #define AVB_LOG_ON	1
@@ -107,6 +108,9 @@ typedef enum {
 
 // Log format options and sizes. Uncomment to include the formatted info.
 #define LOG_MSG_LEN 1024
+
+// Logmode FILE, max file name lenght
+#define LOGMODE_FILE_LEN 100
 
 // The length of the full message
 #define LOG_FULL_MSG_LEN 1024
@@ -188,7 +192,10 @@ typedef enum {
 #define STREAMID_FORMAT    "%02x:%02x:%02x:%02x:%02x:%02x/%d"
 #define STREAMID_ARGS(s)   (s)->addr[0],(s)->addr[1],(s)->addr[2],(s)->addr[3],(s)->addr[4],(s)->addr[5],(s)->uniqueID
 
-bool avbTLlogConfigure(openavb_endpoint_cfg_t *);
+bool openavbTLlogConfigure(unsigned log_mode);
+bool openavbTLCreateExceptionsFile(S32);
+bool openavbTLCreateListenerStatusFile(S32);
+bool openavbLogDiagnosticCounters(stream_stat_t *, openavb_endpoint_cfg_t *, S32);
 
 void avbLogInit(avb_log_mode loggingType);
 
@@ -219,6 +226,7 @@ void avbLogRT(int level, bool bBegin, bool bItem, bool bEnd, char *pFormat, log_
 #define AVB_LOGF_WARNING(FMT, ...)    avbLogFn2(AVB_LOG_LEVEL_WARNING, "WARNING", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_INFO(FMT, ...)       avbLogFn2(AVB_LOG_LEVEL_INFO,    "INFO",    AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_STATUS(FMT, ...)     avbLogFn2(AVB_LOG_LEVEL_STATUS,  "STATUS",  AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
+#define AVB_LOGF_L_STATUS(FMT, ...)   avbLogFn2(AVB_LOG_LEVEL_STATUS,  "L_STATUS",  AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_DEBUG(FMT, ...)      avbLogFn2(AVB_LOG_LEVEL_DEBUG,   "DEBUG",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_VERBOSE(FMT, ...)    avbLogFn2(AVB_LOG_LEVEL_VERBOSE, "VERBOSE", AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)
 #define AVB_LOGF_EXCEPTION(FMT, ...)  avbLogFn2(AVB_LOG_LEVEL_EXCEPTION, "EXCEPTION",   AVB_LOG_COMPANY, AVB_LOG_COMPONENT, __FILE__, __LINE__, FMT, __VA_ARGS__)

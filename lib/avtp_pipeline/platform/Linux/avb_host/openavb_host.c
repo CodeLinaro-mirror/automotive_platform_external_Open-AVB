@@ -50,6 +50,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define DEFAULT_NICE -20
 
 bool bRunning = TRUE;
+bool bLogdiags = FALSE;
 
 /***********************************************
  * Signal handler - used to respond to signals.
@@ -65,6 +66,10 @@ static void openavbTLSigHandler(int signal)
 	}
 	else if (signal == SIGUSR1) {
 		AVB_LOG_DEBUG("Waking up streaming thread");
+	}
+	else if (signal == SIGUSR2) {
+		bLogdiags = TRUE;
+		AVB_LOG_INFO("logging Diagnostic counters");
 	}
 	else {
 		AVB_LOG_ERROR("Unexpected signal");
@@ -211,6 +216,13 @@ int main(int argc, char *argv[])
 		osalAVBFinalize();
 		exit(-1);
 	}
+	err = sigaction(SIGUSR2, &sa, NULL);
+	if (err)
+	{
+		AVB_LOG_ERROR("Failed to setup SIGUSR2 handler");
+		osalAVBFinalize();
+		exit(-1);
+	}
 
 	tlHandleList = calloc(1, sizeof(tl_handle_t) * tlCount);
 	if (tlHandleList == NULL) {
@@ -268,6 +280,15 @@ int main(int argc, char *argv[])
 	}
 
 	while (bRunning) {
+		// handle sigusr events
+		if(bLogdiags) {
+			// ensure it runs only once per signal
+			bLogdiags = FALSE;
+			for (i1 = 0; i1 < tlCount; i1++) {
+				openavbTLLogDiagCounters(tlHandleList[i1]);
+			}
+		}
+
 		sleep(1);
 	}
 

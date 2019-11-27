@@ -167,20 +167,47 @@ void tx_testmode_message(avb_role_t eprole, U16 descriptorIndex, stream_stat_t *
 	memcpy(buf_ptr + AP_TEST_STATUS_DESCRIPTOR_INDEX(AP_TEST_STATUS_OFFSET), &tmp16, sizeof(tmp16));
 
 	//To Do: make flags for counters
-	tmp32 = AP_htonl(0x00001849);
+	tmp32 = AP_htonl(0x00001FFF);
 	memcpy(buf_ptr + AP_TEST_STATUS_COUNTERS_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->MEDIA_LOCKED);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_MEDIA_LOCKED(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->MEDIA_UNLOCKED);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_MEDIA_UNLOCKED(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->STREAM_RESET);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_STREAM_RESET(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->SEQ_NUM_MISMATCH);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_SEQ_NUM_MISMATCH(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->MEDIA_RESET);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_MEDIA_RESET(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->TIMESTAMP_UNCERTAIN);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_TIMESTAMP_UNCERTAIN(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->TIMESTAMP_VALID);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_TIMESTAMP_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->TIMESTAMP_NOT_VALID);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_TIMESTAMP_NOT_VALID(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->UNSUPPORTED_FORMAT);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_UNSUPPORTED_FORMAT(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->LATE_TIMESTAMP);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LATE_TIMESTAMP(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
+
+	tmp32 = AP_htonl(tlStreamStats->EARLY_TIMESTAMP);
+	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_EARLY_TIMESTAMP(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
 	tmp32 = AP_htonl(tlStreamStats->FRAMES_RX);
 	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_AVTP_FRAMES_RX(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
 	tmp32 = AP_htonl(tlStreamStats->FRAMES_TX);
 	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_AVTP_FRAMES_TX(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
-
-	tmp32 = AP_htonl(tlStreamStats->MEDIA_LOCKED);
-	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_MEDIA_LOCKED(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
-
-	tmp32 = AP_htonl(tlStreamStats->SEQ_NUM_MISMATCH);
-	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_SEQ_NUM_MISMATCH(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
 	struct timespec nowTS;
 	CLOCK_GETTIME(OPENAVB_CLOCK_WALLTIME, &nowTS);

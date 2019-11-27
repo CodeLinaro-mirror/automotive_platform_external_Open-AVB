@@ -135,11 +135,24 @@ bool talkerStartStream(tl_state_t *pTLState)
 	// we're good to go!
 	pTLState->bStreaming = TRUE;
 
+	//Custom log configurations
+	if (x_cfg.log_mode == AVB_LOG_FILE) {
+		if(x_cfg.logExceptions == 1) {
+			if (!openavbTLCreateExceptionsFile(pTLState->cfg.stream_uid)) {
+				AVB_LOG_ERROR("Unable to log Exceptions");
+			}
+		}
+	}
+
+	if (pStream != NULL) {
+		pStream->stream_stats.MEDIA_LOCKED++;
+	}
+
 	if (x_cfg.avnuTestmode == TRUE) {
 		// send testmode messages
-		avtp_stream_t *avnuStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
-		avnuStream->stream_stats.MEDIA_LOCKED++;
-		tx_testmode_message(pCfg->role, pTalkerData->streamID.uniqueID, &avnuStream->stream_stats);
+		if (pStream != NULL) {
+			tx_testmode_message(pCfg->role, pTalkerData->streamID.uniqueID, &pStream->stream_stats);
+		}
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_TL);
@@ -202,6 +215,8 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 
 	openavb_tl_cfg_t *pCfg = &pTLState->cfg;
 	talker_data_t *pTalkerData = pTLState->pPvtTalkerData;
+	avtp_stream_t *avnuStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
+
 	bool bRet = FALSE;
 
 	if (pTLState->bStreaming) {
@@ -233,8 +248,7 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 			bRet = TRUE;
 		}
 
-		if (x_cfg.avnuTestmode == TRUE) {
-			avtp_stream_t *avnuStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
+		if (avnuStream != NULL) {
 			avnuStream->stream_stats.FRAMES_TX = pTalkerData->cntFrames;
 		}
 

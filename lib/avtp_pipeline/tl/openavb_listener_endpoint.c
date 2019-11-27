@@ -126,9 +126,6 @@ void openavbEptClntNotifyLstnrOfSrpCb(int endpointHandle,
 
 			// We should start streaming
 			AVB_LOGF_INFO("Starting stream: "STREAMID_FORMAT, STREAMID_ARGS(streamID));
-			if (x_cfg.loglistenerstatus == 1) {
-				AVB_LOG_L_STATUS("RENDERING START");
-			}
 			listenerStartStream(pTLState);
 		}
 		else {

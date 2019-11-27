@@ -94,6 +94,7 @@ static openavbRC openAvtpSock(avtp_stream_t *pStream)
 static void processTimestampEval(avtp_stream_t *pStream, U8 *pHdr)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_AVTP_DETAIL);
+	timespec_t tmNow;
 
 	if (pStream->tsEval) {
 		bool tsValid =  (pHdr[HIDX_AVTP_HIDE7_TV1] & 0x01) ? TRUE : FALSE;
@@ -105,16 +106,25 @@ static void processTimestampEval(avtp_stream_t *pStream, U8 *pHdr)
 			if (tsSmoothed != ts) {
 				*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]) = htonl(tsSmoothed);
 			}
+
+			if (CLOCK_GETTIME(OPENAVB_CLOCK_WALLTIME, &tmNow)) {
+				U64 nsNow = ((U64)tmNow.tv_sec * (U64)NANOSECONDS_PER_SECOND) + (U64)tmNow.tv_nsec;
+				U32 ts = ntohl(*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]));
+				if (ts < (nsNow + (pStream->max_transit_usec*NANOSECONDS_PER_USEC))) {
+					pStream->stream_stats.LATE_TIMESTAMP++;
+				}
+				if (ts > (nsNow + (pStream->max_transit_usec*NANOSECONDS_PER_USEC) + NANOSECONDS_PER_SECOND)) {
+					pStream->stream_stats.EARLY_TIMESTAMP++;
+				}
+			}
 		}
 
-		if (x_cfg.avnuTestmode == TRUE) {
-			if (tsValid) {
-				pStream->stream_stats.TIMESTAMP_VALID++;
-			}
-			if (tsUncertain) {
-				pStream->stream_stats.TIMESTAMP_NOT_VALID++;
-				pStream->stream_stats.TIMESTAMP_UNCERTAIN++;
-			}
+		if (tsValid) {
+			pStream->stream_stats.TIMESTAMP_VALID++;
+		}
+		if (tsUncertain) {
+			pStream->stream_stats.TIMESTAMP_NOT_VALID++;
+			pStream->stream_stats.TIMESTAMP_UNCERTAIN++;
 		}
 	}
 
@@ -455,7 +465,6 @@ static void x_avtpRxFrame(avtp_stream_t *pStream, U8 *pFrame, U32 frameLen)
 	AVB_LOGF_DEBUG("pFrame=%p, len=%u", pFrame, frameLen);
 	U8 subtype, flags, flags2, rxSeq, nLost, avtpVersion;
 	U8 *pRead = pFrame;
-
 	// AVTP Header
 	//
 	// Check control/data bit.  We only expect data packets.
@@ -479,17 +488,20 @@ static void x_avtpRxFrame(avtp_stream_t *pStream, U8 *pFrame, U32 frameLen)
 					+ (rxSeq < pStream->avtp_sequence_num ? 256 : 0);
 				AVB_LOGF_DEBUG("AVTP sequence mismatch: expected: %u,\tgot: %u,\tlost %d",
 					pStream->avtp_sequence_num, rxSeq, nLost);
-				if (x_cfg.loglistenerstatus == 1) {
-					AVB_LOG_L_STATUS("ERROR : SEQUENCE_MISMATCH");
-				}
-				if (x_cfg.avnuTestmode == TRUE) {
-					pStream->stream_stats.SEQ_NUM_MISMATCH++;
-				}
+
+				pStream->stream_stats.SEQ_NUM_MISMATCH++;
+
 				pStream->nLost += nLost;
-				if (x_cfg.loglistenerstatus == 1 && (pStream->nLost > 0)) {
-					AVB_LOG_L_STATUS("ERROR : STREAM_INTERRUPTED");
-				}
 			}
+
+			if (flags & 0x08 == 1) {
+				pStream->stream_stats.MEDIA_RESET++;
+			}
+
+			if (pStream->subtype != subtype) {
+				pStream->stream_stats.UNSUPPORTED_FORMAT++;
+			}
+
 			pStream->avtp_sequence_num = rxSeq + 1;
 
 			pStream->bytes += frameLen;
@@ -712,6 +724,7 @@ void openavbAvtpShutdown(void *pv)
 		if (pStream->ifname)
 			free(pStream->ifname);
 
+		pStream->stream_stats.STREAM_RESET++;
 		// free the malloc'd stream info
 		free(pStream);
 	}

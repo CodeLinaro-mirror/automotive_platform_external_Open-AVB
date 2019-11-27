@@ -267,6 +267,13 @@ typedef struct {
 
 	/* neighbor delay threshold */
 	int64_t neighborPropDelayThreshold;
+
+	/* Log section */
+	uint8_t logmode;
+	uint8_t logDiagnosticCounters;
+	uint8_t logExceptions;
+	char    *gptp_diagnostic_counter_file;
+	char    *gptp_exception_file;
 } PortInit_t;
 
 
@@ -355,6 +362,13 @@ private:
 	OSLock *syncReceiptTimerLock;
 	OSLock *syncIntervalTimerLock;
 	OSLock *announceIntervalTimerLock;
+
+	/* log section */
+	uint8_t logmode;
+	uint8_t logDiagnosticCounters;
+	uint8_t logExceptions;
+	char    *gptp_diagnostic_counter_file;
+	char    *gptp_exception_file;
 
 protected:
 	static const int64_t INVALID_LINKDELAY = 3600000000000;
@@ -794,77 +808,55 @@ public:
 	 */
 	void logIEEEPortCounters( void )
 	{
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxSyncCount : %u",
-			  counters.ieee8021AsPortStatRxSyncCount );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxFollowUpCount : %u",
-			  counters.ieee8021AsPortStatRxFollowUpCount );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxPdelayRequest : %u",
-			  counters.ieee8021AsPortStatRxPdelayRequest );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxPdelayResponse : %u",
-			  counters.ieee8021AsPortStatRxPdelayResponse );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxPdelayResponseFollowUp "
-			  ": %u", counters.
-			  ieee8021AsPortStatRxPdelayResponseFollowUp );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxAnnounce : %u",
-			  counters.ieee8021AsPortStatRxAnnounce );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxPTPPacketDiscard : %u",
-			  counters.
-			  ieee8021AsPortStatRxPTPPacketDiscard );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatRxSyncReceiptTimeouts "
-			  ": %u", counters.
-			  ieee8021AsPortStatRxSyncReceiptTimeouts );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatAnnounceReceiptTimeouts "
-			  ": %u", counters.
-			  ieee8021AsPortStatAnnounceReceiptTimeouts );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatPdelayAllowed"
-			  "LostResponsesExceeded : %u", counters.
-			  ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
-				);
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxSyncCount : %u",
-			  counters.ieee8021AsPortStatTxSyncCount );
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxFollowUpCount : %u", counters.
-			  ieee8021AsPortStatTxFollowUpCount);
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxPdelayRequest : %u",
-			  counters.ieee8021AsPortStatTxPdelayRequest);
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxPdelayResponse : %u", counters.
-			  ieee8021AsPortStatTxPdelayResponse);
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxPdelayResponseFollowUp : %u",
-			  counters.ieee8021AsPortStatTxPdelayResponseFollowUp
-				);
-		GPTP_LOG_STATUS
-			( "IEEE Port Counter "
-			  "ieee8021AsPortStatTxAnnounce : %u",
-			  counters.ieee8021AsPortStatTxAnnounce);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxSyncCount : %u",
+				  counters.ieee8021AsPortStatRxSyncCount );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxFollowUpCount : %u",
+				  counters.ieee8021AsPortStatRxFollowUpCount );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxPdelayRequest : %u",
+				  counters.ieee8021AsPortStatRxPdelayRequest );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxPdelayResponse : %u",
+				  counters.ieee8021AsPortStatRxPdelayResponse );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxPdelayResponseFollowUp "
+				  ": %u", counters.ieee8021AsPortStatRxPdelayResponseFollowUp );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxAnnounce : %u",
+				  counters.ieee8021AsPortStatRxAnnounce );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxPTPPacketDiscard : %u",
+				  counters.ieee8021AsPortStatRxPTPPacketDiscard );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatRxSyncReceiptTimeouts "
+				  ": %u", counters.ieee8021AsPortStatRxSyncReceiptTimeouts );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatAnnounceReceiptTimeouts "
+				  ": %u", counters.ieee8021AsPortStatAnnounceReceiptTimeouts );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatPdelayAllowed"
+				  "LostResponsesExceeded : %u", counters.ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+					);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxSyncCount : %u",
+				  counters.ieee8021AsPortStatTxSyncCount );
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxFollowUpCount : %u", counters.ieee8021AsPortStatTxFollowUpCount);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxPdelayRequest : %u",
+				  counters.ieee8021AsPortStatTxPdelayRequest);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxPdelayResponse : %u", counters.ieee8021AsPortStatTxPdelayResponse);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxPdelayResponseFollowUp : %u",
+				  counters.ieee8021AsPortStatTxPdelayResponseFollowUp
+					);
+			GPTP_LOG_DIAGNOSTIC_COUNT
+				( "ieee8021AsPortStatTxAnnounce : %u",
+				  counters.ieee8021AsPortStatTxAnnounce);
+
 	}
 
 	/**
