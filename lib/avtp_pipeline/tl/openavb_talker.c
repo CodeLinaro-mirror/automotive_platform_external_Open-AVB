@@ -232,24 +232,27 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 			// send the frames for this interval
 			int i;
 			for (i = pTalkerData->wakeFrames; i > 0; i--) {
-					if (IS_OPENAVB_SUCCESS(openavbAvtpTx(pTalkerData->avtpHandle, i == 1, pCfg->tx_blocking_in_intf)))
-					pTalkerData->cntFrames++;
-				else break;
+					if (IS_OPENAVB_SUCCESS(openavbAvtpTx(pTalkerData->avtpHandle, i == 1, pCfg->tx_blocking_in_intf))) {
+						pTalkerData->cntFrames++;
+						if (avnuStream != NULL) {
+							avnuStream->stream_stats.FRAMES_TX++;
+						}
+					}
+					else break;
 				}
 			}
 		else {
 			// Interface module block option
 			if (IS_OPENAVB_SUCCESS(openavbAvtpTx(pTalkerData->avtpHandle, TRUE, pCfg->tx_blocking_in_intf)))
 				pTalkerData->cntFrames++;
+				if (avnuStream != NULL) {
+					avnuStream->stream_stats.FRAMES_TX++;
+				}
 		}
 
 		if (pTalkerData->cntWakes++ % pTalkerData->wakeRate == 0) {
 			// time to service the endpoint IPC
 			bRet = TRUE;
-		}
-
-		if (avnuStream != NULL) {
-			avnuStream->stream_stats.FRAMES_TX = pTalkerData->cntFrames;
 		}
 
 		CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);

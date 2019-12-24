@@ -201,7 +201,11 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 		if (IS_OPENAVB_SUCCESS(openavbAvtpRx(pListenerData->avtpHandle))) {
 			pListenerData->nReportFrames++;
 
-			if (avnuStream->avtp_sequence_num  == prevSeq) {
+			if (avnuStream != NULL) {
+				avnuStream->stream_stats.FRAMES_RX++;
+			}
+
+			if (avnuStream->avtp_sequence_num == prevSeq) {
 				AVB_LOG_EXCEPTION("DUPLICATE_AVTPDU");
 			}
 
@@ -239,10 +243,6 @@ static inline bool listenerDoStream(tl_state_t *pTLState)
 				pListenerData->nReportFrames = 0;
 				pListenerData->nextReportNS += (pCfg->report_seconds * NANOSECONDS_PER_SECOND);  
 			}
-		}
-
-		if (avnuStream != NULL) {
-			avnuStream->stream_stats.FRAMES_RX = pListenerData->nReportFrames;
 		}
 
 		if (avnuStream->nLost > 0) {

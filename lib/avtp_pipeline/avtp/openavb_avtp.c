@@ -368,6 +368,18 @@ openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf)
 			if (pStream->tsEval) {
 				processTimestampEval(pStream, pAvtpFrame);
 			}
+			else {
+				bool tsValid = (pAvtpFrame[HIDX_AVTP_HIDE7_TV1] & 0x01) ? TRUE : FALSE;
+				bool tsUncertain = (pAvtpFrame[HIDX_AVTP_HIDE7_TU1] & 0x01) ? TRUE : FALSE;
+
+				if (tsValid) {
+					pStream->stream_stats.TIMESTAMP_VALID++;
+				}
+				if (tsUncertain) {
+					pStream->stream_stats.TIMESTAMP_NOT_VALID++;
+					pStream->stream_stats.TIMESTAMP_UNCERTAIN++;
+				}
+			}
 
 			// Increment the sequence number now that we are sure this is a good packet.
 			pStream->avtp_sequence_num++;
@@ -516,6 +528,33 @@ static void x_avtpRxFrame(avtp_stream_t *pStream, U8 *pFrame, U32 frameLen)
 
 			if (pStream->tsEval) {
 				processTimestampEval(pStream, pFrame);
+			}
+			else {
+				timespec_t tmNow;
+
+				bool tsValid = (pFrame[HIDX_AVTP_HIDE7_TV1] & 0x01) ? TRUE : FALSE;
+				bool tsUncertain = (pFrame[HIDX_AVTP_HIDE7_TU1] & 0x01) ? TRUE : FALSE;
+
+				if (tsValid && !tsUncertain) {
+					if (CLOCK_GETTIME(OPENAVB_CLOCK_WALLTIME, &tmNow)) {
+						U64 nsNow = ((U64)tmNow.tv_sec * (U64)NANOSECONDS_PER_SECOND) + (U64)tmNow.tv_nsec;
+						U32 ts = ntohl(*(U32 *)(&pFrame[HIDX_AVTP_TIMESPAMP32]));
+						if (ts < (nsNow + (pStream->max_transit_usec*NANOSECONDS_PER_USEC))) {
+							pStream->stream_stats.LATE_TIMESTAMP++;
+						}
+						if (ts > (nsNow + (pStream->max_transit_usec*NANOSECONDS_PER_USEC) + NANOSECONDS_PER_SECOND)) {
+							pStream->stream_stats.EARLY_TIMESTAMP++;
+						}
+					}
+				}
+
+				if (tsValid) {
+					pStream->stream_stats.TIMESTAMP_VALID++;
+				}
+				if (tsUncertain) {
+					pStream->stream_stats.TIMESTAMP_NOT_VALID++;
+					pStream->stream_stats.TIMESTAMP_UNCERTAIN++;
+				}
 			}
 
 			pStream->pMapCB->map_rx_cb(pStream->pMediaQ, pFrame, frameLen);
