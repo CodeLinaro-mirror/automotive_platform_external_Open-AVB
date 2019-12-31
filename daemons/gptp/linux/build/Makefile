@@ -112,6 +112,13 @@ else
 	HEADER_FILES += $(SRC_DIR)/linux_hal_generic.hpp
 endif
 
+ifeq ($(SYSTEMD_SUPPORT_INCLUDED),1)
+	CFLAGS_G += -DSYSTEMD
+endif
+
+ifeq ($(GPTP_AUTO_START),1)
+	CFLAGS_G += -DGPTP_AUTO_START
+endif
 
 LDFLAGS_G += -lpthread -lrt
 

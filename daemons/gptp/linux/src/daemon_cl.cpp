@@ -57,6 +57,13 @@
 #include <unistd.h>
 #include <string.h>
 #include <linux/ptp_clock.h>
+#ifdef GPTP_AUTO_START
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <sys/epoll.h>
+#include <poll.h>
+#include <pthread.h>
+#endif
 
 #ifdef SYSTEMD_WATCHDOG
 #include <watchdog.hpp>
@@ -68,9 +75,26 @@
 #define PHY_DELAY_MB_RX_I20 2133//100M delay
 
 #define PTP_DEVICE_PATHNAME "/dev/ptp0"
+#ifdef GPTP_AUTO_START
+#ifdef SYSTEMD
+#define ADDRESS     "/dev/socket/gptp/gptp_socket"
+#else
+#define ADDRESS     "/tmp/gptp_socket"
+#endif
+#define MAX_CLIENTS_COUNT 5
+#define MAX_EVENTS 1
+#endif
 
 void gPTPPersistWriteCB(char *bufPtr, uint32_t bufSize);
 
+#ifdef GPTP_AUTO_START
+static int sock = 0;
+static pthread_t thread_id = 0;
+struct sockaddr_un sock_addr_un;
+static struct sockaddr cli_addr;
+static socklen_t cli_len = sizeof(cli_addr);
+static int gptp_client[MAX_CLIENTS_COUNT] = {-1};
+#endif
 
 #define MAX_NSEC 1000000000
 /* Return *a - *b */
@@ -156,6 +180,150 @@ int watchdog_setup(OSThreadFactory *thread_factory)
 	return 0;
 #endif
 }
+
+#ifdef GPTP_AUTO_START
+
+static void *wait_for_epoll_event(void *arg)
+{
+    int j = 0;
+    int epoll_fd, cli_fd;
+    struct epoll_event ev;
+    struct epoll_event *epoll_events;
+    socklen_t cli_len = sizeof(cli_addr);
+
+    epoll_fd = epoll_create(1);
+
+    if (epoll_fd == -1){
+        GPTP_LOG_ERROR("epoll_create() failed : %s\n",strerror(errno));
+        return NULL;
+    }
+
+    GPTP_LOG_INFO("gptpDaemonServInit: wait_for_epoll_event successful\n");
+    ev.data.fd = sock;
+    ev.events = EPOLLIN|EPOLLET;
+
+    if ((epoll_ctl (epoll_fd, EPOLL_CTL_ADD, sock, &ev)) == -1){
+        GPTP_LOG_ERROR("epoll_ctl() failed : %s\n",strerror(errno));
+        return NULL;
+    }
+
+    GPTP_LOG_INFO("Added fd : %d to the epoll\n",sock);
+    epoll_events = (struct epoll_event *) calloc(MAX_EVENTS, sizeof(ev));
+
+    while (1){
+        int n, i;
+
+        n = epoll_wait (epoll_fd, epoll_events, MAX_EVENTS, -1);
+
+        for (i = 0; i < n; i++){
+            if ((epoll_events[i].events & EPOLLERR) || (epoll_events[i].events & EPOLLHUP)) {
+                GPTP_LOG_INFO("Received EPOLLERR or EPOLLHUP event from client with fd : %d\n",
+                                epoll_events[i].data.fd);
+                for (j = 0; j < MAX_CLIENTS_COUNT; j++) {
+                    if (epoll_events[i].data.fd == gptp_client[j]) {
+                        GPTP_LOG_INFO("close client socket j index %d \n",j);
+                        gptp_client[j] = -1;
+                        break;
+                    }
+                }
+                close(epoll_events[i].data.fd);
+            }
+
+            if (sock == epoll_events[i].data.fd){
+                cli_fd = accept (sock, (struct sockaddr *) &cli_addr, &cli_len);
+                GPTP_LOG_INFO("Accepted socket connection from client with fd %d \n",cli_fd);
+
+                if (cli_fd == -1){
+                    GPTP_LOG_ERROR("Accept socket connection error from client\n");
+                    break;
+                }
+
+                for (j=0; j<MAX_CLIENTS_COUNT; j++) {
+                    if(gptp_client[j] == -1) {
+                        GPTP_LOG_INFO("accept socket j index %d \n",j);
+                        gptp_client[j] = cli_fd;
+                        break;
+                    }
+                }
+
+                ev.data.fd = cli_fd;
+                ev.events = EPOLLIN|EPOLLET;
+
+                if ((epoll_ctl (epoll_fd, EPOLL_CTL_ADD, cli_fd, &ev)) ==  -1){
+                    GPTP_LOG_ERROR("New connection epoll_ctl() failed : %s\n",strerror(errno));
+                    break;
+                }
+                GPTP_LOG_INFO("Added client with fd : %d to the epoll\n",cli_fd);
+            }
+        }
+    }
+
+    free(epoll_events);
+    return NULL;
+}
+
+static void gptpDaemonServDeInit(void)
+{
+
+    int ret = 0;
+
+    close(sock);
+    ret = pthread_detach(thread_id);
+
+    if(ret != 0){
+        GPTP_LOG_ERROR("gptpDaemonServDeInit: failed %s\n", strerror(errno));
+    }
+    return;
+}
+
+static void gptpDaemonServInit(void)
+{
+    socklen_t len = 0;
+    int ret = 0;
+
+    /* Create gptp daemon socket */
+
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock == -1) {
+        GPTP_LOG_ERROR("Socket creation failed : %s\n",strerror(errno));
+        exit(1);
+    }
+
+    GPTP_LOG_INFO("Socket creation successful\n");
+
+    fcntl(sock, F_SETFL, (fcntl (sock, F_GETFL, 0) | O_NONBLOCK));
+    memset(&sock_addr_un, 0, sizeof(sockaddr_un));
+    sock_addr_un.sun_family = AF_UNIX;
+    snprintf(sock_addr_un.sun_path, (sizeof(sock_addr_un.sun_path) - 1), ADDRESS);
+    len = sizeof(sock_addr_un);
+    unlink(ADDRESS);
+
+    if ((bind(sock, (struct sockaddr*) &sock_addr_un, len))== -1) {
+        GPTP_LOG_ERROR("bind() failed : %s\n",strerror(errno));
+        close(sock);
+        exit(1);
+    }
+
+    GPTP_LOG_INFO("Socket bind successful\n");
+
+    if ((listen (sock, MAX_CLIENTS_COUNT)) == -1) {
+        GPTP_LOG_ERROR("listen() failed : %s",strerror(errno));
+        close(sock);
+        exit(1);
+    }
+
+    GPTP_LOG_INFO("Socket listen successful\n");
+
+    ret = pthread_create(&thread_id, NULL, wait_for_epoll_event, NULL);
+
+    if(ret != 0){
+        GPTP_LOG_ERROR("Failed to create wait_for_epoll_event: %s\n", strerror(errno));
+        close(sock);
+        exit(1);
+    }
+    return;
+}
+#endif
 
 static IEEE1588Clock *pClock = NULL;
 static EtherPort *pPort = NULL;
@@ -607,7 +775,9 @@ int main(int argc, char **argv)
 	}
 
 	change_ptp_dev_perm();
-
+#ifdef GPTP_AUTO_START
+        gptpDaemonServInit();
+#endif
 	pPort->processEvent(POWERUP);
 
 	do {
@@ -645,7 +815,9 @@ int main(int argc, char **argv)
 			GPTP_LOG_ERROR("Failed to stop pulse per second I/O");
 		}
 	}
-
+#ifdef GPTP_AUTO_START
+        gptpDaemonServDeInit();
+#endif
 	if( ipc ) delete ipc;
 
 	GPTP_LOG_UNREGISTER();

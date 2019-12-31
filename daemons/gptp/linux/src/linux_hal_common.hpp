@@ -612,7 +612,7 @@ public:
 	friend class LinuxSharedMemoryIPC;
 };
 
-#define DEFAULT_GROUPNAME "ptp"		/*!< Default groupname for the shared memory interface*/
+#define DEFAULT_GROUPNAME "vnw"		/*!< Default groupname for the shared memory interface*/
 
 /**
  * @brief Linux shared memory interface
