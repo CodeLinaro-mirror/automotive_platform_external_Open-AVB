@@ -168,6 +168,9 @@ int main(int argc, char *argv[])
     uint64_t test_vec_time;
     uint64_t test_gptp_time;
     bool gptp_scaling_available = false;
+#ifdef GPTP_AUTO_START
+    struct timespec ts = { 0, 1000000 };
+#endif
 
     gptp_scaling_available = gptpInit();
 
@@ -178,6 +181,21 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+#ifdef GPTP_AUTO_START
+    while(1){
+        test_vec_time = systemTime(CLOCK_REALTIME);
+
+        if (gptpGetTime(&test_gptp_time, test_vec_time)){
+            printf("real_time %" PRIu64 ".%" PRIu64 "  gptp_time %" PRIu64 ".%" PRIu64 "\n",
+                    test_vec_time/1000000000UL, test_vec_time%1000000000UL,
+                    test_gptp_time/1000000000UL, test_gptp_time%1000000000UL);
+            break;
+        } else {
+            printf("Real time test failed\n");
+        }
+        nanosleep(&ts,NULL);
+    }
+#else
     test_vec_time = systemTime(CLOCK_REALTIME);
     if (gptpGetTime(&test_gptp_time, test_vec_time)) {
             printf("real_time %" PRIu64 ".%" PRIu64 "  gptp_time %" PRIu64 ".%" PRIu64 "\n",
@@ -187,7 +205,7 @@ int main(int argc, char *argv[])
     } else {
         printf("Real time test failed\n");
     }
-
+#endif
     test_vec_time = getQtimerTime();
     if (gptpGetPtpTimeFromQTimeNs(&test_gptp_time, test_vec_time)) {
             printf("qtimer_time %" PRIu64 ".%" PRIu64 "  gptp_time %" PRIu64 ".%" PRIu64 "\n",

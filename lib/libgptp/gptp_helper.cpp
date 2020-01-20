@@ -70,6 +70,10 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include <inttypes.h>
 #include <fcntl.h>           /* For O_* constants */
 #include <linux_ipc.hpp>
+#ifdef GPTP_AUTO_START
+#include <signal.h>
+#include <sys/un.h>
+#endif
 #include "gptp_helper.h"
 
 pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -79,14 +83,26 @@ pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
 #define CLOCKFD 3
 #define FD_TO_CLOCKID(fd)	((~(clockid_t) (fd) << 3) | CLOCKFD)
 
-bool bInitialized = false;
-int gPtpShmFd = -1;
-char *gPtpMmap = NULL;
-gPtpTimeData gPtpTD;
-int gptpPhcFd = -1;
-clockid_t gPtpClockid = -1;
+#ifdef GPTP_AUTO_START
+#ifdef SYSTEMD
+#define ADDRESS     "/dev/socket/gptp/gptp_socket"
+#else
+#define ADDRESS     "/tmp/gptp_socket"
+#endif
+#define CONNECT_RETRY_PERIOD_us  1000
+#endif
 
+static bool bInitialized = false;
+static int gPtpShmFd = -1;
+static char *gPtpMmap = NULL;
+static gPtpTimeData gPtpTD;
+static int gptpPhcFd = -1;
+static clockid_t gPtpClockid = -1;
 
+#ifdef GPTP_AUTO_START
+static pthread_t thread_id;
+static int sock = 0;
+#endif
 
 static int gptpClkInit(int *gptp_phc_fd)
 {
@@ -145,8 +161,10 @@ static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
 /* gptp core function to deinit gptp scaling */
 static void gptpMemDeinit(int gptp_shm_fd, char *gptp_mmap)
 {
-	if (gptp_mmap != NULL)
+	if (gptp_mmap != NULL){
 		munmap(gptp_mmap, SHM_SIZE);
+		gptp_mmap = NULL;
+    }
 
 	if (gptp_shm_fd != -1)
 		close(gptp_shm_fd);
@@ -155,7 +173,7 @@ static void gptpMemDeinit(int gptp_shm_fd, char *gptp_mmap)
 /* gptp core function to copy gptp offset data from shared memory */
 static int gptpScaling(gPtpTimeData * td, char *memory_offset_buffer)
 {
-	if (td == NULL)
+	if ((td == NULL)||(memory_offset_buffer == NULL))
 		return false;
 
 	pthread_mutex_lock((pthread_mutex_t *) memory_offset_buffer);
@@ -223,6 +241,79 @@ static bool gptpTimeInit(void) {
 	return true;
 }
 
+#ifdef GPTP_AUTO_START
+static void *gptpDaemonSrvConnect(void *arg)
+{
+    int ret = -1;
+    int len = 0;
+    struct sockaddr_un saun;
+    int bytes_read = 0;
+    int retry_count = 0;
+    int gptp_state = 0;
+
+    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+        printf("gptpDaemonSrvConnect: socket create failed\n");
+        return NULL;
+    }
+
+    memset(&saun, 0, sizeof(sockaddr_un));
+    saun.sun_family = AF_UNIX;
+    snprintf(saun.sun_path, (sizeof(saun.sun_path) - 1), ADDRESS);
+    fcntl(sock, F_SETFL, O_NONBLOCK);
+    len = sizeof(saun.sun_family) + strlen(saun.sun_path);
+
+    while (1) {
+        ret = connect(sock, (struct sockaddr*) &saun, len);
+
+        /* EISCONN -- Transport endpoint is already connected */
+        if((ret == 0)||((ret == -1)&&(errno == EISCONN))){
+            LOCK();
+            if (!bInitialized) {
+                if (gptpTimeInit()){
+                    printf("gptpDaemonSrvConnect: success\n");
+                    bInitialized = true;
+                }
+            }
+            UNLOCK();
+        }else if(ret == -1){
+            LOCK();
+            gptpMemDeinit(gPtpShmFd, gPtpMmap);
+            gptpClkDeInit(gptpPhcFd);
+            memset(&gPtpTD, 0, sizeof(gPtpTimeData));
+            bInitialized = false;
+            printf("gptpDaemonSrvConnect: failed %s\n", strerror(errno));
+            UNLOCK();
+        }
+
+        usleep(CONNECT_RETRY_PERIOD_us);
+    }
+    return NULL;
+}
+
+static void gptpDaemonClientInit(void) {
+    int ret = 0;
+
+    ret = pthread_create(&thread_id, NULL, gptpDaemonSrvConnect, NULL);
+
+    if(ret != 0){
+        printf("gptpDaemonClientInit: failed -->%s\n", strerror(errno));
+    }
+    return;
+}
+
+static void gptpDaemonClientDeInit(void) {
+    int ret = 0;
+
+    close(sock);
+    ret = pthread_detach(thread_id);
+
+    if(ret != 0){
+        printf("gptpDaemonClientDeInit: failed -->%s\n", strerror(errno));
+    }
+    return;
+}
+
+#endif
 
 /* public API to query gptp time */
 bool gptpGetPtpTimeFromMonoTime(uint64_t *gptp_time_sys, uint64_t time_mono_ns) {
@@ -232,6 +323,9 @@ bool gptpGetPtpTimeFromMonoTime(uint64_t *gptp_time_sys, uint64_t time_mono_ns) 
 	int64_t delta_local = 0;
 	uint64_t time_mono_qtime_ns  = 0;
 
+	if (!bInitialized) {
+		return false;
+	}
 	if (!gptpScaling(&gPtpTD, gPtpMmap))
 		return false;
 
@@ -261,6 +355,9 @@ bool gptpGetPtpTimeFromQTimeNs(uint64_t *gptp_time_qt, uint64_t time_qtimer_ns) 
 	int64_t delta_local = 0;
 	uint64_t time_ns = time_qtimer_ns;
 
+	if (!bInitialized) {
+		return false;
+	}
 	if (!gptpScaling(&gPtpTD, gPtpMmap))
 		return false;
 
@@ -309,6 +406,9 @@ bool gptpGetTime(uint64_t *gptp_time_sys, uint64_t time_sys_ns) {
 	int64_t delta_local = 0;
 	uint64_t time_ns = time_sys_ns;
 
+	if (!bInitialized)
+		return false;
+
 	if (!gptpScaling(&gPtpTD, gPtpMmap))
 		return false;
 
@@ -354,6 +454,10 @@ bool gptpGetCurPtpTime(uint64_t *gptp_time_cur) {
 
 /* public API to init gptp time scaling */
 bool gptpInit(void) {
+#ifdef GPTP_AUTO_START
+	gptpDaemonClientInit();
+	return true;
+#else
 	LOCK();
 	if (!bInitialized) {
 		if (gptpTimeInit())
@@ -361,11 +465,16 @@ bool gptpInit(void) {
 	}
 	UNLOCK();
 	return bInitialized;
+#endif
 }
 
 /* public API to deinit gptp time scaling */
 bool gptpDeinit(void) {
 	gptpMemDeinit(gPtpShmFd, gPtpMmap);
 	gptpClkDeInit(gptpPhcFd);
+#ifdef GPTP_AUTO_START
+	gptpDaemonClientDeInit();
+#endif
+	bInitialized = false;
 	return true;
 }

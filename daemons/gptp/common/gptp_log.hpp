@@ -31,6 +31,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#ifdef GPTP_AUTO_START
+#include <syslog.h>
+#endif
 
 #ifdef GENIVI_DLT
 #include "dlt.h"
@@ -67,49 +70,81 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line, 
 #define GPTP_LOG_UNREGISTER() gptplogUnregister()
 
 #ifdef GPTP_LOG_CRITICAL_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_CRITICAL(fmt,...) syslog (LOG_CRIT, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_CRITICAL(fmt,...) gptpLog(GPTP_LOG_LVL_CRITICAL, "CRITICAL ", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_CRITICAL(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_ERROR_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_ERROR(fmt,...) syslog (LOG_ERR, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_ERROR(fmt,...) gptpLog(GPTP_LOG_LVL_ERROR, "ERROR    ", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_ERROR(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_EXCEPTION_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_EXCEPTION(fmt,...) syslog (LOG_WARNING, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_EXCEPTION(fmt,...) gptpLog(GPTP_LOG_LVL_EXCEPTION, "EXCEPTION", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_EXCEPTION(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_WARNING_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_WARNING(fmt,...) syslog (LOG_WARNING, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_WARNING(fmt,...) gptpLog(GPTP_LOG_LVL_WARNING, "WARNING  ", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_WARNING(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_INFO_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_INFO(fmt,...) syslog (LOG_INFO, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_INFO(fmt,...) gptpLog(GPTP_LOG_LVL_INFO, "INFO     ", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_INFO(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_STATUS_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_STATUS(fmt,...) syslog (LOG_INFO, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_STATUS(fmt,...) gptpLog(GPTP_LOG_LVL_STATUS, "STATUS   ", NULL, 0, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_STATUS(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_DEBUG_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_DEBUG(fmt,...) syslog (LOG_DEBUG, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_DEBUG(fmt,...) gptpLog(GPTP_LOG_LVL_DEBUG, "DEBUG    ", __FILE__, __LINE__, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_DEBUG(fmt,...)
 #endif
 
 #ifdef GPTP_LOG_VERBOSE_ON
+#ifdef GPTP_AUTO_START
+#define GPTP_LOG_VERBOSE(fmt,...) syslog (LOG_DEBUG, fmt, ## __VA_ARGS__)
+#else
 #define GPTP_LOG_VERBOSE(fmt,...) gptpLog(GPTP_LOG_LVL_VERBOSE, "VERBOSE  ", __FILE__, __LINE__, fmt, ## __VA_ARGS__)
+#endif
 #else
 #define GPTP_LOG_VERBOSE(fmt,...)
 #endif
