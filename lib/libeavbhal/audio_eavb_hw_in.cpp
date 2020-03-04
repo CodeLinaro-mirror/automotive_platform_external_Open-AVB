@@ -103,13 +103,14 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
             goto next_pair;
         }
 
-        if (strncmp(kvpair, KVPAIR_KEY_SOCKET_PATH, strlen(KVPAIR_KEY_SOCKET_PATH))) {
-            strlcpy(&in->eavbCtx.eavbSocketPath[0], eq, MAX_PATH_LEN);
+        if (0 == strncmp(kvpair, KVPAIR_KEY_SOCKET_PATH, strlen(KVPAIR_KEY_SOCKET_PATH))) {
+            snprintf(in->eavbCtx.eavbSocketPath, MAX_PATH_LEN, "/data/misc/eavb/.%s", eq);
         }
 
     next_pair:
         kvpair = strtok_r(NULL, ";", &saveptr);
     }
+	ALOGE("in socket path (%s)",in->eavbCtx.eavbSocketPath);
 
     free(str);
     return 0;
@@ -163,7 +164,6 @@ int in_stream_init(eavb_stream_in *in, struct audio_config *config) {
 
     // initialize stream context
     return eavb_stream_ctx_init(&in->eavbCtx, config);
-
 }
 
 void in_stream_close(eavb_stream_in *in) {
