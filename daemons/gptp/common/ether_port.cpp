@@ -145,6 +145,8 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
 
 	setPdelayCount(0);
 	setSyncCount(0);
+	/*Implementation of INTIAL_SEND_PDELAY_REQ state of MDPdelayReq state machine*/
+	resetCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
 
 	if (automotive_profile) {
 		if (isGM) {
@@ -458,6 +460,8 @@ bool EtherPort::_processEvent( Event e )
 			// Reset Sync count and pdelay count
 			setPdelayCount(0);
 			setSyncCount(0);
+			/*Implementation of INTIAL_SEND_PDELAY_REQ state of MDPdelayReq state machine*/
+			resetCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
 
 			// Start AVB SYNC at 2. It will decrement after each sync. When it reaches 0 the Test Status message
 			// can be sent
@@ -651,9 +655,19 @@ bool EtherPort::_processEvent( Event e )
 	case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
 		if (!automotive_profile) {
 			GPTP_LOG_EXCEPTION("PDelay Response Receipt Timeout");
-			setAsCapable(false);
 		}
 		GPTP_LOG_EXCEPTION("PDELAY_RESPONSE_TIMEOUT");
+		//Implementation of RESET state of MDPdelayReq state machine
+		if (getCounter_ieee8021AsPortStatRxPdelayResponse() > 0 &&
+			 getCounter_ieee8021AsPortStatRxPdelayResponseFollowUp() > 0) {
+			//Default value of allowedLostResponses is 3
+			if (getCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded() <= 3) {
+				incCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
+			}
+			else{
+				setAsCapable(false);
+			}
+		}
 		setPdelayCount( 0 );
 		break;
 

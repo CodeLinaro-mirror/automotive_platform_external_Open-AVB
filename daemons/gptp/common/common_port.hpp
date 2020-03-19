@@ -679,6 +679,16 @@ public:
 	}
 
 	/**
+	 * @brief  returns IEEE Port counter:
+	 *         ieee8021AsPortStatRxPdelayResponse
+	 * @return value of ieee8021AsPortStatRxPdelayResponse
+	 */
+	int32_t getCounter_ieee8021AsPortStatRxPdelayResponse( void )
+	{
+		return counters.ieee8021AsPortStatRxPdelayResponse;
+	}
+
+	/**
 	 * @brief  Increment IEEE Port counter:
 	 *         ieee8021AsPortStatRxPdelayResponseFollowUp
 	 * @return void
@@ -686,6 +696,16 @@ public:
 	void incCounter_ieee8021AsPortStatRxPdelayResponseFollowUp( void )
 	{
 		counters.ieee8021AsPortStatRxPdelayResponseFollowUp++;
+	}
+
+	/**
+	 * @brief  returns IEEE Port counter:
+	 *         ieee8021AsPortStatRxPdelayResponseFollowUp
+	 * @return value of ieee8021AsPortStatRxPdelayResponseFollowUp
+	 */
+	int32_t getCounter_ieee8021AsPortStatRxPdelayResponseFollowUp( void )
+	{
+		return counters.ieee8021AsPortStatRxPdelayResponseFollowUp;
 	}
 
 	/**
@@ -734,12 +754,32 @@ public:
 	 *         ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
 	 * @return void
 	 */
-	// TODO: Not called
 	void incCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
 	( void )
 	{
-		counters.
-			ieee8021AsPortStatPdelayAllowedLostResponsesExceeded++;
+		counters.ieee8021AsPortStatPdelayAllowedLostResponsesExceeded++;
+	}
+
+	/**
+	 *  @brief  returns IEEE Port counter:
+	 *          ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+	 *  @return value of ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+	 */
+	int32_t getCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+	( void )
+	{
+		return counters.ieee8021AsPortStatPdelayAllowedLostResponsesExceeded;
+	}
+
+	/**
+	 * @brief  resets IEEE Port counter:
+	 *         ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+	 * @return void
+	 */
+	void resetCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded
+	( void )
+	{
+		counters.ieee8021AsPortStatPdelayAllowedLostResponsesExceeded = 0;
 	}
 
 	/**

@@ -1618,7 +1618,8 @@ void PTPMessagePathDelayRespFollowUp::processMessage
 	}
 
 	port->incPdelayCount();
-
+	/*Implementation of WAITING_FOR_PDELAY_INTERVAL_TIMER after rcvdPdelayRespFollowUp is received of MDPdelayReq state machine*/
+	port->resetCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
 
 	link_delay =
 		((response_rx_timestamp.seconds_ms * 1LL -
