@@ -164,8 +164,9 @@ U16 openavbQmgrAddStream(SRClassIdx_t nClass, unsigned classRate, unsigned maxIn
 				qmgr_streams[idx].maxFrameSize = maxFrameSize;
 				// and class
 				qmgr_classes[nClass].classBytesPerSec += streamBytesPerSec;
-
-				AVB_LOGF_DEBUG("Added stream; classBPS=%u, streamBPS=%u", qmgr_classes[nClass].classBytesPerSec, qmgr_streams[idx].streamBytesPerSec);
+				AVB_LOGF_INFO("Added stream: class=%d, rate=%u, frames=%u, size=%u(%u), bytes/sec=%lu, classBPS=%u, streamBPS=%u",
+							   nClass, classRate, maxIntervalFrames, maxFrameSize, fullFrameSize, streamBytesPerSec,
+							   qmgr_classes[nClass].classBytesPerSec, qmgr_streams[idx].streamBytesPerSec);
 			}
 		}
 	}
@@ -244,7 +245,7 @@ bool openavbQmgrInitialize(int mode, int ifindex, const char* ifname, unsigned m
 		qdisc_data.mode = AVB_DEFAULT_QDISC_MODE;
 
 
-	AVB_LOGF_DEBUG("Initializing QMgr; mode=%d, idx=%d, mtu=%u, link_kbit=%u, nsr_kbit=%u",
+	AVB_LOGF_INFO("Initializing QMgr; mode=%d, idx=%d, mtu=%u, link_kbit=%u, nsr_kbit=%u",
 				   qdisc_data.mode, ifindex, mtu, link_kbit, nsr_kbit);
 
 	// Initialize data for classes and streams
