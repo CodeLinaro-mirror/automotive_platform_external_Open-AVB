@@ -138,6 +138,8 @@ int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 	U8 destAddr[ETH_ALEN] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00};
 	char *optIfnameGlobal = NULL;
 	char *endpointIniFile = NULL;
+	struct sched_param param;
+	int useRTprio = 0;
 
 	// Talker listener vars
 	int iniIdx = 0;
@@ -168,7 +170,7 @@ int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 
 	bool optDone = FALSE;
 	while (!optDone) {
-		int opt = getopt(argc, argv, "a:his:d:I:e:");
+		int opt = getopt(argc, argv, "a:his:d:I:e:r");
 		if (opt != EOF) {
 			switch (opt) {
 				case 'a':
@@ -191,6 +193,9 @@ int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 				case 'e':
 					endpointIniFile = strdup(optarg);
 					break;
+				case 'r':
+					useRTprio = 1;
+					break;
 				case '?':
 				default:
 					openavbTlHarnessUsage(programName);
@@ -199,6 +204,17 @@ int __attribute__ ((visibility ("default"))) main(int argc, char *argv[])
 		}
 		else {
 			optDone = TRUE;
+		}
+	}
+	if (useRTprio) {
+		param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+		errno = 0;
+		if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+			printf("Failed to increase priority to RT. errno = %d (%s) \n",
+					errno, strerror(errno));
+			exit(-1);
+		} else {
+			printf("Process marked as RT with priority %d \n", param.sched_priority);
 		}
 	}
 
