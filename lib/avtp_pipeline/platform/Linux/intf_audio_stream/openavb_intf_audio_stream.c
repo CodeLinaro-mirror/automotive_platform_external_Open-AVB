@@ -56,7 +56,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define SOCK_SEND_TIMEOUT_MS 20 /* Timeout for sending */
 #define SOCK_RECV_TIMEOUT_MS 10 /* Timeout for receiving */
-#define SOCKET_POLL_TIMEOUT -1 /* Timeout for connecting */
+#define SOCKET_POLL_TIMEOUT 10 /* Timeout for connecting */
 #define SOCKET_BUFFER_SIZE (28 * 1024)
 #define AUDIO_BUFF_SIZE 10*SOCKET_BUFFER_SIZE
 #define MAX_PATH_LEN 512
@@ -124,6 +124,8 @@ static int accept_server_socket(int sfd) {
   } while (poll_ret == -1 && errno == EINTR);
 
   if (poll_ret == 0) {
+    // allow some sleep time
+    usleep(10000);
     AVB_LOG_DEBUG("accept poll timeout");
     return -1;
   }
@@ -251,7 +253,7 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
     if (pPvtData->pHalSocket < 0) {
         pPvtData->pHalSocket = accept_server_socket(pPvtData->pServerSocket);
         if (pPvtData->pHalSocket < 0) {
-            AVB_LOG_WARNING("No hal socket opened");
+            AVB_LOG_DEBUG("No hal socket opened");
             return -1;
         }
     }
@@ -279,7 +281,7 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
 
     if (sent == -1) {
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        AVB_LOGF_ERROR("write failed with error(%s)", strerror(errno));
+        AVB_LOGF_DEBUG("write failed with error(%s)", strerror(errno));
         return -1;
       }
       if (ms_timeout >= WRITE_POLL_MS) {
@@ -287,7 +289,7 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
         ms_timeout -= WRITE_POLL_MS;
         continue;
       }
-      AVB_LOGF_ERROR("write timeout exceeded, sent %zu bytes", count);
+      AVB_LOGF_DEBUG("write timeout exceeded, sent %zu bytes", count);
       close(pPvtData->pHalSocket);
       pPvtData->pHalSocket = -1;
       return -1;
@@ -644,7 +646,7 @@ static bool consumeAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
 {
     // Check buffer full
     if ((pPvtData->audioBufferPos + buflen) > AUDIO_BUFF_SIZE) {
-        AVB_LOG_ERROR("consumeAudio - out of buff space");
+        AVB_LOG_WARNING("consumeAudio - out of buff space");
         pPvtData->audioBufferPos = 0;
     }
 
@@ -656,7 +658,7 @@ static bool consumeAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
     if (pPvtData->audioBufferPos > SOCKET_BUFFER_SIZE) {
         int writen = skt_write(pPvtData, pPvtData->audioBuffer, SOCKET_BUFFER_SIZE);
         if (writen <= 0) {
-            AVB_LOGF_ERROR("consumeAudio - skt_write() error: %d, %s",
+            AVB_LOGF_DEBUG("consumeAudio - skt_write() error: %d, %s",
                 writen, strerror(writen));
             return FALSE;
         }
