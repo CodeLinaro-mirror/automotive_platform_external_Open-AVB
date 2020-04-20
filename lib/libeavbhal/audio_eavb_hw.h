@@ -32,6 +32,7 @@
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
 #include <system/audio.h>
+#include <semaphore.h>
 
 #include <unistd.h>
 #include <pthread.h>
@@ -39,6 +40,8 @@
 #ifndef PTHREAD_MUTEX_RECURSIVE
 #define PTHREAD_MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE_NP
 #endif
+
+#define DEFAULT_READ_SIZE 320
 
 #define KVPAIR_KEY_SOCKET_PATH "skt_name"
 #define MAX_PATH_LEN 512
@@ -57,9 +60,22 @@ typedef struct {
     //std::recursive_mutex* mutex;
 } eavb_audio_device;
 
+#ifdef USE_ECNR_THREAD
+typedef struct
+{
+    void *buffer;
+    void *buffer_end;
+    size_t total_buffer_size;
+    size_t count;
+    size_t elem_size;
+    void *head;
+    void *tail;
+} circular_buffer_t;
+#endif
+
 typedef struct {
     //std::recursive_mutex* mutex;
-    int eavbFd;
+    int eavbFd =-1;
     int printErrorOnce;
     uint32_t rate;
     audio_format_t format;
@@ -67,6 +83,14 @@ typedef struct {
     uint32_t channels;
     size_t bufferSize;
     char eavbSocketPath[MAX_PATH_LEN];
+#ifdef USE_ECNR_THREAD
+    bool halPollingThreadRunning;
+    pthread_t halPollingThread;
+    circular_buffer_t circ_buff;
+    sem_t circ_buff_count_sem;
+    sem_t circ_buff_space_left_sem;
+    pthread_mutex_t circ_buff_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 } eavb_stream_ctx;
 
 typedef struct {
@@ -92,5 +116,10 @@ int eavb_stream_ctx_init(eavb_stream_ctx *ctx, struct audio_config *config);
 int eavb_stream_write(eavb_stream_ctx *ctx, const void* buffer, size_t bytes);
 int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes);
 void eavb_stream_ctx_destroy(eavb_stream_ctx *ctx);
+
+#ifdef USE_ECNR_THREAD
+void *in_eavbHalPollingThreadFn(void *pv);
+void eavb_halPollThread_init(eavb_stream_ctx *halctx);
+#endif
 
 #endif

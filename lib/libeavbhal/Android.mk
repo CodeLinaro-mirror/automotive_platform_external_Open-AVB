@@ -4,6 +4,7 @@ include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -Wall -Wextra -Wno-unused-parameter
 LOCAL_LDFLAGS += -Wl,--export-dynamic
+LOCAL_CFLAGS += -UUSE_ECNR_THREAD
 
 LOCAL_SRC_FILES:= \
     audio_eavb_hw_dev.cpp \

@@ -42,6 +42,8 @@
 #include "audio_eavb_hw.h"
 
 #define USEC_PER_SEC 1000000L
+#define NANOSECONDS_PER_MSEC (1000000L)
+#define DEFAULT_SEM_WAIT_TIMEOUT_MSEC 50
 
 #define SOCK_SEND_TIMEOUT_MS 2000 /* Timeout for sending */
 #define SOCK_RECV_TIMEOUT_MS 5000 /* Timeout for receiving */
@@ -50,6 +52,70 @@
 // sockets
 #define WRITE_POLL_MS 20
 
+#ifdef USE_ECNR_THREAD
+int circ_buff_init(circular_buffer_t *circ_buff, size_t total_buffer_size, size_t elem_size) {
+    if (circ_buff->buffer == NULL) {
+        ALOGI("allocating memory for circular buffer");
+        circ_buff->buffer = malloc(total_buffer_size * elem_size);
+        if (circ_buff->buffer == NULL) {
+            ALOGE("error allocating memory for circular buffer");
+            return -1;
+        }
+    }
+    circ_buff->buffer_end = (char *)circ_buff->buffer + total_buffer_size * elem_size;
+    circ_buff->total_buffer_size = total_buffer_size;
+    circ_buff->count = 0;
+    circ_buff->elem_size = elem_size;
+    circ_buff->head = circ_buff->buffer;
+    circ_buff->tail = circ_buff->buffer;
+    return 0;
+}
+
+void circ_buff_free(circular_buffer_t *circ_buff) {
+    circ_buff->head = NULL;
+    circ_buff->tail = NULL;
+    circ_buff->buffer_end = NULL;
+
+    free(circ_buff->buffer);
+    circ_buff->buffer = NULL;
+}
+
+void circ_buff_push(circular_buffer_t *circ_buff, const void *element) {
+    if (circ_buff->count == circ_buff->total_buffer_size){
+        ALOGI("buffer overflow, doing reset");
+        circ_buff->count = 0;
+        circ_buff->head = circ_buff->buffer;
+        circ_buff->tail = circ_buff->buffer;
+    }
+
+    memcpy(circ_buff->head, element, circ_buff->elem_size);
+
+    circ_buff->head = (char*)circ_buff->head + circ_buff->elem_size;
+    if (circ_buff->head == circ_buff->buffer_end) {
+        circ_buff->head = circ_buff->buffer;
+    }
+
+    circ_buff->count++;
+}
+
+int circ_buff_pop(circular_buffer_t *circ_buff, void *element) {
+    if (circ_buff->count == 0 || circ_buff->buffer == NULL){
+        ALOGE("buffer underflow");
+        memset(element, 0, circ_buff->elem_size);
+        return -1;
+    }
+
+    memcpy(element, circ_buff->tail, circ_buff->elem_size);
+    circ_buff->tail = (char*)circ_buff->tail + circ_buff->elem_size;
+
+    if (circ_buff->tail == circ_buff->buffer_end) {
+        circ_buff->tail = circ_buff->buffer;
+    }
+
+    circ_buff->count--;
+    return circ_buff->elem_size;
+}
+#endif
 
 static size_t audio_eavb_hw_stream_compute_buffer_size(int sampleRate,
         int format, int channels) {
@@ -172,7 +238,7 @@ static int skt_connect(const char* path, size_t buffer_sz) {
         ALOGE("setsockopt failed (%s)", strerror(errno));
     }
 
-    ALOGD("connected to server socket (%d), path (%s)",skt_fd, path);
+    ALOGI("connected to server socket (%d), path (%s)",skt_fd, path);
 
     return skt_fd;
 }
@@ -181,7 +247,7 @@ static int skt_read(int fd, void* p, size_t len) {
     ssize_t read = -1;
 
     do {
-        read = recv(fd, p, len, MSG_NOSIGNAL);
+        read = recv(fd, p, len, MSG_NOSIGNAL | MSG_WAITALL);
     } while (read == -1 && errno == EINTR);
 
     if (read == -1) {
@@ -286,6 +352,7 @@ finish:
 }
 
 int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
+#ifndef USE_ECNR_THREAD
     int read = -1;
     if (ctx->eavbFd <= 0) {
         while (ctx->eavbFd <= 0) {
@@ -296,14 +363,31 @@ int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
 
     read = skt_read(ctx->eavbFd, buffer, bytes);
 
-    //ALOGE("got %d bytes from listener skt path (%s), skt fd (%d)",read, ctx->eavbSocketPath, ctx->eavbFd);
-
     if (read == -1) {
         ALOGE("read failed");
         memset(buffer, 0, bytes);
     }
 
     return bytes;
+#else
+    struct timespec semwait_timeout;
+
+    if (clock_gettime(CLOCK_REALTIME, &semwait_timeout) == -1) {
+        ALOGE("clock_gettime error");
+        return 0;
+    }
+    semwait_timeout.tv_nsec += NANOSECONDS_PER_MSEC*DEFAULT_SEM_WAIT_TIMEOUT_MSEC;
+    if (sem_timedwait(&ctx->circ_buff_count_sem, &semwait_timeout) < 0) {
+        memset(buffer, 0, bytes);
+        sem_post(&ctx->circ_buff_space_left_sem);
+        return 0;
+    }
+    pthread_mutex_lock(&ctx->circ_buff_mutex);
+    bytes = circ_buff_pop(&ctx->circ_buff, buffer);
+    pthread_mutex_unlock(&ctx->circ_buff_mutex);
+    sem_post(&ctx->circ_buff_space_left_sem);
+    return bytes;
+#endif
 }
 
 int eavb_stream_ctx_init(eavb_stream_ctx *ctx, struct audio_config *config) {
@@ -332,4 +416,91 @@ int eavb_stream_ctx_init(eavb_stream_ctx *ctx, struct audio_config *config) {
 
 void eavb_stream_ctx_destroy(eavb_stream_ctx *ctx) {
     ALOGD("eavb_stream_ctx_destroy - ctx=%p", ctx);
+#ifdef USE_ECNR_THREAD
+    // exit ECNR Poll thread
+    ctx->halPollingThreadRunning = false;
+    usleep(1000);
+#endif
 }
+
+#ifdef USE_ECNR_THREAD
+void eavb_halPollThread_init(eavb_stream_ctx *halctx) {
+    pthread_create(&halctx->halPollingThread, NULL, in_eavbHalPollingThreadFn, halctx);
+
+    // make thread running
+    halctx->halPollingThreadRunning = true;
+
+    return;
+}
+
+void *in_eavbHalPollingThreadFn(void *pv) {
+    eavb_stream_ctx *pctx = (eavb_stream_ctx *) pv;
+    size_t len = -1;
+    void *buffer;
+    struct timespec semwait_timeout;
+
+    while (pctx->eavbFd <= 0) {
+        pctx->eavbFd = skt_connect(pctx->eavbSocketPath, AUDIO_STREAM_INPUT_BUFFER_SZ);
+        usleep(20);
+    }
+
+    // read new data
+    buffer = (void*) malloc(DEFAULT_READ_SIZE);
+    if (!buffer){
+        goto cleanup;
+    }
+
+    if (circ_buff_init(&pctx->circ_buff, AUDIO_STREAM_INPUT_BUFFER_SZ, DEFAULT_READ_SIZE) < 0) {
+        goto cleanup;
+	}
+    sem_init(&pctx->circ_buff_count_sem, 0, 0);
+    sem_init(&pctx->circ_buff_space_left_sem, 0, 1);
+
+    ALOGI("creating ECNR poll thread");
+
+    // keep polling until avb stream is stopped
+    while (pctx->halPollingThreadRunning) {
+        if (pctx->eavbFd > 0) {
+            len = skt_read(pctx->eavbFd, buffer, DEFAULT_READ_SIZE);
+            if (len <= 0) {
+                continue;
+            }
+
+            if (len > 0) {
+                if (clock_gettime(CLOCK_REALTIME, &semwait_timeout) == -1) {
+                    ALOGE("clock_gettime error");
+                    continue;
+                }
+                semwait_timeout.tv_nsec += NANOSECONDS_PER_MSEC;
+                if (sem_timedwait(&pctx->circ_buff_space_left_sem, &semwait_timeout) < 0) {
+                    continue;
+                }
+                pthread_mutex_lock(&pctx->circ_buff_mutex);
+                circ_buff_push(&pctx->circ_buff, buffer);
+                pthread_mutex_unlock(&pctx->circ_buff_mutex);
+                sem_post(&pctx->circ_buff_count_sem);
+                usleep(1000);
+            }
+        }
+    }
+
+    if (pctx->circ_buff.buffer != NULL) {
+        circ_buff_free(&pctx->circ_buff);
+    }
+
+cleanup:
+    ALOGI("closing ECNR poll thread");
+
+    pctx->eavbFd = -1;
+    close(pctx->eavbFd);
+    if (buffer) {
+        free(buffer);
+    }
+
+    sem_destroy(&pctx->circ_buff_space_left_sem);
+    sem_destroy(&pctx->circ_buff_count_sem);
+
+    pthread_exit(NULL);
+    return NULL;
+}
+#endif

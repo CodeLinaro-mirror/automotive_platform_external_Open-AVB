@@ -105,6 +105,10 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
 
         if (0 == strncmp(kvpair, KVPAIR_KEY_SOCKET_PATH, strlen(KVPAIR_KEY_SOCKET_PATH))) {
             snprintf(in->eavbCtx.eavbSocketPath, MAX_PATH_LEN, "/data/misc/eavb/.%s", eq);
+#ifdef USE_ECNR_THREAD
+            // create hal poll thread
+            eavb_halPollThread_init(&in->eavbCtx);
+#endif
         }
 
     next_pair:
@@ -127,7 +131,7 @@ static int in_set_gain(struct audio_stream_in *stream, float gain) {
 
 static ssize_t in_read(struct audio_stream_in *stream, void* buffer, size_t bytes) {
     eavb_stream_in* in = (eavb_stream_in*) stream;
-    ALOGD("in_read: in=%p, in->ctx=%p, bytes: %zu", in, &in->eavbCtx, bytes);
+    ALOGI("in_read: in=%p, in->ctx=%p, bytes: %zu", in, &in->eavbCtx, bytes);
     return eavb_stream_read(&in->eavbCtx, buffer, bytes);
 }
 
