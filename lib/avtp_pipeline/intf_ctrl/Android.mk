@@ -13,4 +13,6 @@ LOCAL_MODULE := libopenavb_intf_ctrl
 
 LOCAL_SHARED_LIBRARIES := libopenavb
 
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
+
 include $(BUILD_SHARED_LIBRARY)

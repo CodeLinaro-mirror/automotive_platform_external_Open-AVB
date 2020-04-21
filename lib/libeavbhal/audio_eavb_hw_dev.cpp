@@ -58,6 +58,7 @@ static int adev_open_input_stream(struct audio_hw_device *device,
 
     int err = in_stream_init(in, config);
     if (0 == err) {
+        ALOGD("adev_open_input_stream - success - in=%p, in->stream=%p", in, &in->stream);
         *stream_in = &in->stream;
     } else {
         free(in);
@@ -77,7 +78,6 @@ static void adev_close_input_stream(struct audio_hw_device *device,
     in_stream_close(in);
     in_stream_destroy(in);
     free(in);
-
     return;
 }
 

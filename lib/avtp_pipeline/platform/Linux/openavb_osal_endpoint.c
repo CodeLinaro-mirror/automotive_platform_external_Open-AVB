@@ -38,9 +38,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #include "openavb_log.h"
 
 extern DLL_EXPORT bool osalAVBInitialize(const char* ifname,
-					 const char* endpointIniFile)
+					 const char* endpointIniFile, int loggingType)
 {
-	avbLogInit();
+	avbLogInit(loggingType);
 	if (!osalAVBTimeInit()) {
 		return FALSE;
 	}

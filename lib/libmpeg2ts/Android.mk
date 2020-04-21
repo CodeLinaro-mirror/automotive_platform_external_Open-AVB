@@ -3,10 +3,10 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:=         \
-	AvbMpeg2tsStream.cpp \
+	#AvbMpeg2tsStream.cpp \
 
 LOCAL_SHARED_LIBRARIES := \
-        libstagefright liblog libutils libbinder libgui \
+        #libstagefright liblog libutils libbinder libgui \
         libstagefright_foundation libmedia libcutils libui
 
 LOCAL_C_INCLUDES:= \
@@ -24,6 +24,8 @@ endif
 #LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE:= libmpeg2ts
+
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
 
 include $(BUILD_SHARED_LIBRARY)
 

@@ -35,7 +35,6 @@
 #include <log/log.h>
 #include <utils/Timers.h>
 
-
 #include <hardware/audio.h>
 #include <hardware/hardware.h>
 #include <system/audio.h>
@@ -76,15 +75,14 @@ static size_t audio_eavb_hw_stream_compute_buffer_size(int sampleRate,
                sampleRate * channels * (bitdepth / 8)) /
               1000;
 
-    ALOGD("audio_eavb_hw_stream_compute_buffer_size - divisor=%zu, buffer_sz=%zu",
-        divisor, buffer_sz);
-
-
     // Adjust the buffer size so it can be divided by the divisor
     const size_t remainder = buffer_sz % divisor;
     if (remainder != 0) {
         buffer_sz += divisor - remainder;
     }
+
+    ALOGD("audio_eavb_hw_stream_compute_buffer_size - remainder = %zu, divisor=%zu, buffer_sz=%zu, channels =%d, sampleRate =%d, bitdepth =%d, format =%d",
+        remainder, divisor, buffer_sz, channels, sampleRate, bitdepth, format);
 
     return buffer_sz;
 }
@@ -123,12 +121,12 @@ static int calc_audiotime_usec(eavb_stream_ctx* ctx, int bytes) {
 }
 
 static int skt_connect(const char* path, size_t buffer_sz) {
-    int ret;
-    int skt_fd;
+    int ret = 0;
+    int skt_fd = -1;
     int len;
 
     if (strlen(path) == 0) {
-        ALOGE("Error: Socket path not set");
+        //ALOGE("Error: Socket path (%s) not set",path);
         return -1;
     }
 
@@ -174,7 +172,7 @@ static int skt_connect(const char* path, size_t buffer_sz) {
         ALOGE("setsockopt failed (%s)", strerror(errno));
     }
 
-    ALOGD("connected to stack fd = %d", skt_fd);
+    ALOGD("connected to server socket (%d), path (%s)",skt_fd, path);
 
     return skt_fd;
 }
@@ -187,7 +185,7 @@ static int skt_read(int fd, void* p, size_t len) {
     } while (read == -1 && errno == EINTR);
 
     if (read == -1) {
-        ALOGE("read failed with errno=%d\n", errno);
+        ALOGE("read failed with len = %zu errno=%d, errno=(%s) socketfd=(%d)\n", len, errno, strerror(errno), fd);
     }
 
     return (int)read;
@@ -289,22 +287,16 @@ finish:
 
 int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
     int read = -1;
-
-    if (ctx->eavbFd < 0) {
-        ctx->eavbFd = skt_connect(ctx->eavbSocketPath, AUDIO_STREAM_OUTPUT_BUFFER_SZ);
-        if (ctx->eavbFd < 0) {
-            if (ctx->printErrorOnce == 0) {
-                ALOGE("Error opening data socket - check if openavb is running");
-                ctx->printErrorOnce = 1;
-            }
-            return 0;
-        } else {
-            // reset once successfully connected
-            ctx->printErrorOnce = 0;
+    if (ctx->eavbFd <= 0) {
+        while (ctx->eavbFd <= 0) {
+           ctx->eavbFd = skt_connect(ctx->eavbSocketPath, AUDIO_STREAM_INPUT_BUFFER_SZ);
+           usleep(20);
         }
     }
 
     read = skt_read(ctx->eavbFd, buffer, bytes);
+
+    //ALOGE("got %d bytes from listener skt path (%s), skt fd (%d)",read, ctx->eavbSocketPath, ctx->eavbFd);
 
     if (read == -1) {
         ALOGE("read failed");

@@ -5,7 +5,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
 
 LOCAL_SRC_FILES:= \
-    AvbMjpegSink.cpp \
+    #AvbMjpegSink.cpp \
     GlSink.cpp \
     main.cpp \
     MjpegFrame.cpp
@@ -28,7 +28,7 @@ endif
 LOCAL_CFLAGS += -Wall -Werror -Wunused -Wunreachable-code
 
 LOCAL_SHARED_LIBRARIES := \
-    libcutils \
+    #libcutils \
     libutils \
     libEGL \
     libGLESv1_CM \
@@ -37,11 +37,12 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(call is-platform-sdk-version-at-least,28),true)
 #workaround to link to libskia
-LOCAL_SHARED_LIBRARIES += libhwui libui
+LOCAL_SHARED_LIBRARIES += #libhwui libui
 else
-LOCAL_SHARED_LIBRARIES += libskia
+LOCAL_SHARED_LIBRARIES += #libskia
 endif
 
 LOCAL_MODULE:= libmjpegavbsink
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
 
 include $(BUILD_SHARED_LIBRARY)

@@ -15,4 +15,6 @@ LOCAL_CFLAGS := -Wno-unused-parameter -Wno-unused-variable
 LOCAL_SHARED_LIBRARIES += \
      libcutils \
 
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
+
 include $(BUILD_EXECUTABLE)

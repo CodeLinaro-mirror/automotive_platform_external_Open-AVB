@@ -3,10 +3,10 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-        Avbh264Stream.cpp\
+        #Avbh264Stream.cpp\
 
 LOCAL_SHARED_LIBRARIES := \
-        libstagefright liblog libutils libbinder libstagefright_foundation \
+        #libstagefright liblog libutils libbinder libstagefright_foundation \
         libmedia libgui libcutils libui
 
 LOCAL_C_INCLUDES:= \
@@ -31,6 +31,7 @@ endif
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE:= libh264sink
+LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64
 
 include $(BUILD_SHARED_LIBRARY)
 

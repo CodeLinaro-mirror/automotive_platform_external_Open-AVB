@@ -33,10 +33,20 @@
 #include <hardware/hardware.h>
 #include <system/audio.h>
 
+#include <unistd.h>
+#include <pthread.h>
+
+#ifndef PTHREAD_MUTEX_RECURSIVE
+#define PTHREAD_MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE_NP
+#endif
+
 #define KVPAIR_KEY_SOCKET_PATH "skt_name"
 #define MAX_PATH_LEN 512
 #define AUDIO_STREAM_OUTPUT_BUFFER_SZ (28 * 1024)
 #define AUDIO_STREAM_OUTPUT_BUFFER_PERIODS 2
+
+#define AUDIO_STREAM_INPUT_BUFFER_SZ (28 * 1024)
+#define AUDIO_BUFF_SIZE 10*AUDIO_STREAM_INPUT_BUFFER_SZ
 
 #define DEFAULT_AUDIO_FORMAT AUDIO_FORMAT_PCM_16_BIT
 #define DEFAULT_SAMPLE_RATE 48000

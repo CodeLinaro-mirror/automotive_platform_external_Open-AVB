@@ -177,7 +177,7 @@ static int skt_connect(const char* path, size_t buffer_sz) {
         return -1;
     }
 
-    AVB_LOGF_DEBUG("connected to stack fd = %d", skt_fd);
+    AVB_LOGF_INFO("connected to stack fd = %d, path (%s)", skt_fd, path);
 
     return skt_fd;
 }
@@ -241,7 +241,7 @@ static int skt_read(pvt_data_t *pPvtData, uint8_t* p, size_t len) {
 
 
 static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
-    ssize_t sent;
+    ssize_t sent = 0;
 
     if (pPvtData->pServerSocket < 0) {
         AVB_LOG_ERROR("invalid socket");
@@ -288,6 +288,8 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
         continue;
       }
       AVB_LOGF_ERROR("write timeout exceeded, sent %zu bytes", count);
+      close(pPvtData->pHalSocket);
+      pPvtData->pHalSocket = -1;
       return -1;
     }
     count += sent;
@@ -619,15 +621,21 @@ bool openavbIntfAudioStreamTxCB(media_q_t *pMediaQ) {
 // a listener. Any listener initialization can be done in this function.
 void openavbIntfAudioStreamRxInitCB(media_q_t *pMediaQ) {
     AVB_TRACE_ENTRY(AVB_TRACE_INTF);
-
     if (pMediaQ) {
         pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
         if (!pPvtData) {
             AVB_LOG_ERROR("Private interface module data not allocated.");
             return;
         }
-
         // Open data socket
+        pPvtData->pServerSocket = skt_connect(pPvtData->socketPath, SOCKET_BUFFER_SIZE);
+        if (pPvtData->pServerSocket < 0) {
+             AVB_LOG_ERROR("Failed to create data socket");
+             return;
+        }
+        else {
+            AVB_LOGF_INFO("connected to pServerSocket %d, socketPath %s",pPvtData->pServerSocket,pPvtData->socketPath);
+        }
     }
     AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
@@ -652,6 +660,7 @@ static bool consumeAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
                 writen, strerror(writen));
             return FALSE;
         }
+        //AVB_LOGF_INFO("consumeAudio -written %d bytes socket %s, server %d, Hal %d",writen,pPvtData->socketPath,pPvtData->pServerSocket, pPvtData->pHalSocket);
         // Move remaining data in buffer to beginning of buf.
         memmove(pPvtData->audioBuffer, pPvtData->audioBuffer+writen, pPvtData->audioBufferPos - writen);
         pPvtData->audioBufferPos -= writen;

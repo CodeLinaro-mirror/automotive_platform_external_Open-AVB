@@ -87,6 +87,7 @@ void openavbTlHarnessUsage(char *programName)
 		"  -d val     Last byte of destination address from static pool. Full address will be 91:e0:f0:00:fe:val.\n"
 		"  -I val     Use given (val) interface globally, can be overriden by giving the ifname= option to the config line.\n"
 		"  -e val     Read the endpoint configuration parameters from the given (val) file.\n"
+		"  -l         output logging to logcat (default: shell) \n"
 		"\n"
 		"Examples:\n"
 		"  %s talker.ini\n"
@@ -138,6 +139,7 @@ int main(int argc, char *argv[])
 	U8 destAddr[ETH_ALEN] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00};
 	char *optIfnameGlobal = NULL;
 	char *endpointIniFile = NULL;
+	log_out_t loggingType = LOG_OUT_SHELL;
 
 	// Talker listener vars
 	int iniIdx = 0;
@@ -168,7 +170,7 @@ int main(int argc, char *argv[])
 
 	bool optDone = FALSE;
 	while (!optDone) {
-		int opt = getopt(argc, argv, "a:his:d:I:e:");
+		int opt = getopt(argc, argv, "a:his:d:I:e:l");
 		if (opt != EOF) {
 			switch (opt) {
 				case 'a':
@@ -191,6 +193,13 @@ int main(int argc, char *argv[])
 				case 'e':
 					endpointIniFile = strdup(optarg);
 					break;
+				case 'l':
+#ifdef ANDROID
+					loggingType = LOG_OUT_LOGCAT;
+#else
+					AVB_LOG_ERROR("Unsupported on current platform");
+#endif
+					break;
 				case '?':
 				default:
 					openavbTlHarnessUsage(programName);
@@ -202,7 +211,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (!osalAVBInitialize(optIfnameGlobal, endpointIniFile)) {
+	if (!osalAVBInitialize(optIfnameGlobal, endpointIniFile, loggingType)) {
 		AVB_LOG_ERROR("Failed to initialize AVB");
 		osalAVBFinalize();
 		exit(-1);
