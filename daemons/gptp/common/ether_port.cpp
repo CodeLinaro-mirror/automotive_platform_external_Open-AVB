@@ -653,10 +653,6 @@ bool EtherPort::_processEvent( Event e )
 		pdelay_rx_lock->unlock();
 		break;
 	case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
-		if (!automotive_profile) {
-			GPTP_LOG_EXCEPTION("PDelay Response Receipt Timeout");
-		}
-		GPTP_LOG_EXCEPTION("PDELAY_RESPONSE_TIMEOUT");
 		//Implementation of RESET state of MDPdelayReq state machine
 		if (getCounter_ieee8021AsPortStatRxPdelayResponse() > 0 &&
 			 getCounter_ieee8021AsPortStatRxPdelayResponseFollowUp() > 0) {
@@ -665,7 +661,12 @@ bool EtherPort::_processEvent( Event e )
 				incCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
 			}
 			else{
-				setAsCapable(false);
+				//DUT tolerate 3 consecutive late responses before logging PDELAY_RESPONSE_TIMEOUT
+				if (!automotive_profile) {
+					GPTP_LOG_EXCEPTION("PDelay Response Receipt Timeout");
+					setAsCapable(false);
+				}
+				GPTP_LOG_EXCEPTION("PDELAY_RESPONSE_TIMEOUT");
 			}
 		}
 		setPdelayCount( 0 );
