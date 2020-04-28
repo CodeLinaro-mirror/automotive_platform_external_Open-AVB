@@ -888,7 +888,11 @@ void PTPMessageSync::processMessage( EtherPort *port )
 	}
 
 	port->incCounter_ieee8021AsPortStatRxSyncCount();
-
+	// Restart the SYNC_RECEIPT timer
+	port->startSyncReceiptTimer((unsigned long long)
+		 (SYNC_RECEIPT_TIMEOUT_MULTIPLIER *
+		  ((double) pow((double)2, port->getSyncInterval()) *
+		   1000000000.0)));
 #if CHECK_ASSIST_BIT
 	if( flags[PTP_ASSIST_BYTE] & (0x1<<PTP_ASSIST_BIT)) {
 #endif
