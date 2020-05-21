@@ -462,7 +462,7 @@ void openavbIntfAlsa2CfgCB(media_q_t *pMediaQ, const char *name, const char *val
 		else if (strcmp(name, "intf_nv_audio_channels") == 0) {
 			val = strtol(value, &pEnd, 10);
 			// TODO: Should check for specific values
-			if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_8) {
+			if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_32) {
 				pPvtData->audioChannels = val;
 			}
 			else {

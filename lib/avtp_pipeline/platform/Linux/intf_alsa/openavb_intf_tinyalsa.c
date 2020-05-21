@@ -199,8 +199,46 @@ typedef struct {
 
 	// The number of frames that have been passed to ALSA by the listener.
 	U32 framesConsumed;
+
+	U32 alsaPeriodSize;
+	U32 alsaPeriodCount;
+
+	U32 deviceId;
+	U32 cardId;
+
+	U32 alsaStartThreshold;
+	U32 alsaStopThreshold;
 } pvt_data_t;
 
+
+static void parsePcmDeviceName(char *pDeviceName, U32 *cardID, U32 *deviceID)
+{
+    U32 card = 0;
+    U32 device = 0;
+
+    if((!pDeviceName) || (!cardID)|| (!deviceID)) {
+        AVB_LOGF_ERROR("%s: Invalid format ", __func__);
+        return;
+    }
+    /*Default values*/
+    *cardID = 0;
+    *deviceID = 0;
+
+    if ((pDeviceName[0] != 'h')
+        || (pDeviceName[1] != 'w')
+        || (pDeviceName[2] != ':')) {
+        AVB_LOGF_ERROR("%s: Invalid format ", __func__);
+        return;
+    } else if (sscanf(&pDeviceName[3], "%u,%u", &card, &device) != 2) {
+        AVB_LOGF_ERROR("%s: Invalid format ", __func__);
+        return;
+    }
+
+    *cardID = card;
+    *deviceID = device;
+
+    return;
+}
 
 // Each configuration name value pair for this mapping will result in this callback being called.
 void openavbIntfTinyalsaCfgCB(media_q_t *pMediaQ, const char *name, const char *value)
@@ -237,6 +275,8 @@ void openavbIntfTinyalsaCfgCB(media_q_t *pMediaQ, const char *name, const char *
 				free(pPvtData->pDeviceName);
 			}
 			pPvtData->pDeviceName = strdup(value);
+			parsePcmDeviceName(pPvtData->pDeviceName, &pPvtData->cardId, &pPvtData->deviceId);
+			AVB_LOGF_INFO("PCM: card=%u device=%u", pPvtData->cardId, pPvtData->deviceId);
 		}
 
 		else if (strcmp(name, "intf_nv_audio_rate") == 0) {
@@ -337,7 +377,7 @@ void openavbIntfTinyalsaCfgCB(media_q_t *pMediaQ, const char *name, const char *
 		else if (strcmp(name, "intf_nv_audio_channels") == 0) {
 			val = strtol(value, &pEnd, 10);
 			// TODO: Should check for specific values
-			if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_8) {
+			if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_32) {
 				pPvtData->audioChannels = val;
 			}
 			else {
@@ -405,6 +445,34 @@ void openavbIntfTinyalsaCfgCB(media_q_t *pMediaQ, const char *name, const char *
 			pPvtData->clockRecoveryAdjustmentRange = strtol(value,
 				&pEnd, 10);
 			AVB_LOGF_INFO("intf_nv_clock_recovery_adjustment_range = %d", pPvtData->clockRecoveryAdjustmentRange);
+		}
+
+		else if (strcmp(name, "intf_nv_alsa_period_size") ==
+			 0) {
+			pPvtData->alsaPeriodSize = strtol(value,
+				&pEnd, 10);
+			AVB_LOGF_INFO("intf_nv_alsaPeriodSize = %d", pPvtData->alsaPeriodSize);
+		}
+
+		else if (strcmp(name, "intf_nv_alsa_period_count") ==
+			 0) {
+			pPvtData->alsaPeriodCount = strtol(value,
+				&pEnd, 10);
+			AVB_LOGF_INFO("intf_nv_alsa_period_count = %d", pPvtData->alsaPeriodCount);
+		}
+
+		else if (strcmp(name, "intf_nv_alsa_start_threshold") ==
+			 0) {
+			pPvtData->alsaStartThreshold = strtol(value,
+				&pEnd, 10);
+			AVB_LOGF_INFO("intf_nv_alsa_start_threshold = %d", pPvtData->alsaStartThreshold);
+		}
+
+		else if (strcmp(name, "intf_nv_alsa_stop_threshold") ==
+			 0) {
+			pPvtData->alsaStopThreshold = strtol(value,
+				&pEnd, 10);
+			AVB_LOGF_INFO("intf_nv_alsa_stop_threshold = %d", pPvtData->alsaStopThreshold);
 		}
 	}
 
@@ -498,10 +566,10 @@ void openavbIntfTinyalsaTxInitCB(media_q_t *pMediaQ)
 		memset(&pPvtData->config, 0, sizeof(pPvtData->config));
 		pPvtData->config.channels = pPvtData->audioChannels;
 		pPvtData->config.rate = pPvtData->audioRate;
-		pPvtData->config.period_size = PERIOD_SIZE;
-		pPvtData->config.period_count = PERIOD_COUNT;
-		pPvtData->config.start_threshold = 0;
-		pPvtData->config.stop_threshold = 0;
+		pPvtData->config.period_size = pPvtData->alsaPeriodSize;
+		pPvtData->config.period_count = pPvtData->alsaPeriodCount;
+		pPvtData->config.start_threshold = pPvtData->alsaStartThreshold;
+		pPvtData->config.stop_threshold = pPvtData->alsaStopThreshold;
 		pPvtData->config.silence_threshold = 0;
 		switch (pPvtData->audioBitDepth) {
 			case AVB_AUDIO_BIT_DEPTH_16BIT:
@@ -517,11 +585,15 @@ void openavbIntfTinyalsaTxInitCB(media_q_t *pMediaQ)
 				pPvtData->config.format = PCM_FORMAT_S16_LE;
 				break;
 		}
-		pPvtData->pcmHandle = pcm_open(0,0,PCM_IN,&pPvtData->config);
+		AVB_LOGF_INFO("%s: pcm_open cardId=%u deviceId=%u ", __func__, pPvtData->cardId, pPvtData->deviceId);
+		pPvtData->pcmHandle = pcm_open(pPvtData->cardId, pPvtData->deviceId,PCM_IN,&pPvtData->config);
 		if (!pPvtData->pcmHandle || !pcm_is_ready(pPvtData->pcmHandle)) {
 			fprintf(stderr, "Unable to open PCM device (%s)\n",
 			pcm_get_error(pPvtData->pcmHandle));
 				return ;
+		} else {
+			AVB_LOGF_INFO("Period size %d Period count %d",pPvtData->alsaPeriodSize, pPvtData->alsaPeriodCount);
+			AVB_LOGF_INFO("Start threshold %u Stop threshold %u",pPvtData->alsaStartThreshold, pPvtData->alsaStopThreshold);
 		}
 
 		pPvtData->pcm_size = pcm_frames_to_bytes(pPvtData->pcmHandle, pcm_get_buffer_size(pPvtData->pcmHandle));
@@ -762,10 +834,10 @@ void openavbIntfTinyalsaRxInitCB(media_q_t *pMediaQ)
 
 		pPvtData->config.channels = pPvtData->audioChannels;
 		pPvtData->config.rate = pPvtData->audioRate;
-		pPvtData->config.period_size = PERIOD_SIZE;
-		pPvtData->config.period_count = PERIOD_COUNT;
-		pPvtData->config.start_threshold = 0;
-		pPvtData->config.stop_threshold = 0;
+		pPvtData->config.period_size = pPvtData->alsaPeriodSize;
+		pPvtData->config.period_count = pPvtData->alsaPeriodCount;
+		pPvtData->config.start_threshold = pPvtData->alsaStartThreshold;
+		pPvtData->config.stop_threshold = pPvtData->alsaStopThreshold;
 		pPvtData->config.silence_threshold = 0;
 		switch(pPvtData->audioBitDepth) {
 			case AVB_AUDIO_BIT_DEPTH_16BIT:
@@ -783,11 +855,16 @@ void openavbIntfTinyalsaRxInitCB(media_q_t *pMediaQ)
 		}
 
 		//card = 0, device = 0
-		pPvtData->pcmHandle = pcm_open(0, 0, PCM_OUT, &pPvtData->config);
+		AVB_LOGF_INFO("%s: pcm_open cardId=%u deviceId=%u ", __func__, pPvtData->cardId, pPvtData->deviceId);
+		pPvtData->pcmHandle = pcm_open(pPvtData->cardId, pPvtData->deviceId, PCM_OUT, &pPvtData->config);
 		if (!pPvtData->pcmHandle || !pcm_is_ready(pPvtData->pcmHandle)) {
 			fprintf(stderr, "Unable to open PCM device %u (%s)\n",
 					0, pcm_get_error(pPvtData->pcmHandle));
 			return;
+		} else {
+
+			AVB_LOGF_INFO("Period size %d Period count %d",pPvtData->alsaPeriodSize, pPvtData->alsaPeriodCount);
+			AVB_LOGF_INFO("Start threshold %u Stop threshold %u",pPvtData->alsaStartThreshold, pPvtData->alsaStopThreshold);
 		}
 		pPvtData->pcm_size = pcm_frames_to_bytes(pPvtData->pcmHandle, pcm_get_buffer_size(pPvtData->pcmHandle));
 	}
@@ -801,11 +878,17 @@ static void consumeAudio(pvt_data_t *pPvtData, void *data, U32 dataLen)
 	rslt = pcm_write(pPvtData->pcmHandle, data, dataLen);
 	if (rslt) {
 		AVB_LOGF_ERROR("pcm_write: %d %d  %s %d", rslt, errno, pcm_get_error(pPvtData->pcmHandle), dataLen);
-		pcm_close(pPvtData->pcmHandle);
-		pPvtData->pcmHandle = pcm_open(0, 0, PCM_OUT, &pPvtData->config);
-		if (!pPvtData->pcmHandle || !pcm_is_ready(pPvtData->pcmHandle)) {
-			fprintf(stderr, "Unable to open PCM device %u (%s)\n",
-					0, pcm_get_error(pPvtData->pcmHandle));
+		if(errno == EPIPE) {
+			pcm_close(pPvtData->pcmHandle);
+			AVB_LOGF_INFO("%s: pcm_open cardId=%u deviceId=%u", __func__, pPvtData->cardId, pPvtData->deviceId);
+			AVB_LOGF_INFO("Period size %d Period count %d",pPvtData->alsaPeriodSize, pPvtData->alsaPeriodCount);
+			AVB_LOGF_INFO("Start threshold %u Stop threshold %u",pPvtData->alsaStartThreshold, pPvtData->alsaStopThreshold);
+
+			pPvtData->pcmHandle = pcm_open(pPvtData->cardId, pPvtData->deviceId, PCM_OUT, &pPvtData->config);
+			if (!pPvtData->pcmHandle || !pcm_is_ready(pPvtData->pcmHandle)) {
+				fprintf(stderr, "Unable to open PCM device %u (%s)\n",
+									0, pcm_get_error(pPvtData->pcmHandle));
+			}
 		}
 	}
 
@@ -928,6 +1011,10 @@ extern DLL_EXPORT bool openavbIntfTinyalsaInitialize(media_q_t *pMediaQ, openavb
 		pPvtData->clockSourceTimestampThrowaway = 10;
 		pPvtData->clockRecoveryAdjustmentRange = 500;
 
+		pPvtData->alsaPeriodCount = PERIOD_COUNT;
+		pPvtData->alsaPeriodSize = PERIOD_SIZE;
+		pPvtData->alsaStartThreshold = 0;
+		pPvtData->alsaStopThreshold = 0;
 		MUTEX_ATTR_HANDLE(mta);
 		MUTEX_ATTR_INIT(mta);
 		MUTEX_ATTR_SET_TYPE(mta, MUTEX_ATTR_TYPE_DEFAULT);

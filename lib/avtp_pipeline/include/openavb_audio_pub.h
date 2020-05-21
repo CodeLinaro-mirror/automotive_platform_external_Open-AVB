@@ -140,7 +140,55 @@ typedef enum {
 	/// 7 channels
 	AVB_AUDIO_CHANNELS_7		= 7,
 	/// 8 channels
-	AVB_AUDIO_CHANNELS_8		= 8
+	AVB_AUDIO_CHANNELS_8		= 8,
+	/// 9 channels
+	AVB_AUDIO_CHANNELS_9		= 9,
+	/// 10 channels
+	AVB_AUDIO_CHANNELS_10		= 10,
+	/// 11 channels
+	AVB_AUDIO_CHANNELS_11		= 11,
+	/// 12 channels
+	AVB_AUDIO_CHANNELS_12		= 12,
+	/// 13 channels
+	AVB_AUDIO_CHANNELS_13		= 13,
+	/// 14 channels
+	AVB_AUDIO_CHANNELS_14		= 14,
+	/// 15 channels
+	AVB_AUDIO_CHANNELS_15		= 15,
+	/// 16 channels
+	AVB_AUDIO_CHANNELS_16		= 16,
+	/// 17 channels
+	AVB_AUDIO_CHANNELS_17		= 17,
+	/// 18 channels
+	AVB_AUDIO_CHANNELS_18		= 18,
+	/// 19 channels
+	AVB_AUDIO_CHANNELS_19		= 19,
+	/// 20 channels
+	AVB_AUDIO_CHANNELS_20		= 20,
+	/// 21 channels
+	AVB_AUDIO_CHANNELS_21		= 21,
+	/// 22 channels
+	AVB_AUDIO_CHANNELS_22		= 22,
+	/// 23 channels
+	AVB_AUDIO_CHANNELS_23		= 23,
+	/// 24 channels
+	AVB_AUDIO_CHANNELS_24		= 24,
+	/// 25 channels
+	AVB_AUDIO_CHANNELS_25		= 25,
+	/// 26 channels
+	AVB_AUDIO_CHANNELS_26		= 26,
+	/// 27 channels
+	AVB_AUDIO_CHANNELS_27		= 27,
+	/// 28 channels
+	AVB_AUDIO_CHANNELS_28		= 28,
+	/// 29 channels
+	AVB_AUDIO_CHANNELS_29		= 29,
+	/// 30 channels
+	AVB_AUDIO_CHANNELS_30		= 30,
+	/// 31 channels
+	AVB_AUDIO_CHANNELS_31		= 31,
+	/// 32 channels
+	AVB_AUDIO_CHANNELS_32		= 32
 } avb_audio_channels_t;
 
 /** Media Clock Recovery.
