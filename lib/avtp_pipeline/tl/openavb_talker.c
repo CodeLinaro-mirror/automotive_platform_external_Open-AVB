@@ -103,31 +103,35 @@ bool talkerStartStream(tl_state_t *pTLState)
 
 	/* if wakeup_on_pps is enabled, initialise emac PPS feature */
 	if (pTLState->cfg.enable_wakeup_on_pps) {
-		pTLState->pEventConfigData = (eventConfigData_t *) calloc(1, sizeof(eventConfigData_t));
-		if (!pTLState->pEventConfigData) {
+		if (pTLState->pEventConfigData = (eventConfigData_t *) calloc(1, sizeof(eventConfigData_t))) {
+			pEventConfigData = (eventConfigData_t *)pTLState->pEventConfigData;
+			if (pEventConfigData->ifacename = (char *) malloc (sizeof(char) * IFNAMSIZE)) {
+				memcpy(pEventConfigData->ifacename,pTLState->cfg.ifname,strlen(pTLState->cfg.ifname)+1);
+				pEventConfigData->sr_class = pTLState->cfg.sr_class;
+				pEventConfigData->wakeRate = pTalkerData->wakeRate;
+
+				if (!eventConfigure(pEventConfigData) && !pTLState->cfg.enable_wakeup_on_pps) {
+					pTLState->cfg.enable_wakeup_on_pps = 0;
+				}
+
+				if (!eventInit(pEventConfigData) && !pTLState->cfg.enable_wakeup_on_pps) {
+					pTLState->cfg.enable_wakeup_on_pps = 0;
+				}
+
+				if (pTLState->cfg.enable_wakeup_on_pps) {
+					AVB_LOGF_INFO("Event based AVB pkts transmission Enabled, event wakeup status: %d",pTLState->cfg.enable_wakeup_on_pps);
+				} else {
+					AVB_LOGF_INFO("Legacy AVB pkts transmission Enabled, event wakeup status: %d",pTLState->cfg.enable_wakeup_on_pps);
+				}
+			} else {
+				AVB_LOG_WARNING("Failed to allocate memory for interface name ");
+				free(pTLState->pEventConfigData);
+				pTLState->pEventConfigData = NULL;
+				pTLState->cfg.enable_wakeup_on_pps = 0;
+			}
+		} else {
 			AVB_LOG_WARNING("Failed to allocate event data ");
-		}
-
-		pEventConfigData = (eventConfigData_t *)pTLState->pEventConfigData;
-		pEventConfigData->ifacename = (char *) malloc (sizeof(char) * IFNAMSIZE);
-		memcpy(pEventConfigData->ifacename,pTLState->cfg.ifname,strlen(pTLState->cfg.ifname)+1);
-
-		pEventConfigData->sr_class = pTLState->cfg.sr_class;
-		pEventConfigData->wakeRate = pTalkerData->wakeRate;
-
-		if (!eventConfigure(pEventConfigData) && !pTLState->cfg.enable_wakeup_on_pps) {
 			pTLState->cfg.enable_wakeup_on_pps = 0;
-		}
-
-		if (!eventInit(pEventConfigData) && !pTLState->cfg.enable_wakeup_on_pps) {
-			pTLState->cfg.enable_wakeup_on_pps = 0;
-		}
-
-		if (pTLState->cfg.enable_wakeup_on_pps) {
-			AVB_LOGF_INFO("Event based AVB pkts transmission Enabled, event wakeup status: %d",pTLState->cfg.enable_wakeup_on_pps);
-		}
-		else {
-			AVB_LOGF_INFO("Legacy AVB pkts transmission Enabled, event wakeup status: %d",pTLState->cfg.enable_wakeup_on_pps);
 		}
 	}
 

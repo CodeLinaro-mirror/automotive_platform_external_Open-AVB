@@ -281,6 +281,7 @@ static void gptpDaemonServInit(void)
     socklen_t len = 0;
     int ret = 0;
 
+    umask(S_IRGRP|S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH);
     /* Create gptp daemon socket */
 
     sock = socket(AF_UNIX, SOCK_STREAM, 0);

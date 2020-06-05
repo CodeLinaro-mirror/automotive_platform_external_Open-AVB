@@ -351,7 +351,7 @@ void openavbIntfWavFileCfgCB(media_q_t *pMediaQ, const char *name, const char *v
         }
         else if (strcmp(name, "intf_nv_audio_channels") == 0) {
             val = strtol(value, &pEnd, 10);
-            if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_8) {
+            if (val >= AVB_AUDIO_CHANNELS_1 && val <= AVB_AUDIO_CHANNELS_32) {
                 pPvtData->audioChannels = val;
             }
             else {
