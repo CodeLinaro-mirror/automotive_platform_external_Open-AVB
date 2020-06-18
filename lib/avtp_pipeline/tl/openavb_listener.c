@@ -79,6 +79,9 @@ bool listenerStartStream(tl_state_t *pTLState)
 		return FALSE;
 	}
 
+	avtp_stream_t *pStream = (avtp_stream_t *)(pListenerData->avtpHandle);
+	pStream->enable_debug_of_gptp_timestamps = pCfg->enable_debug_of_gptp_timestamps;
+
 	// Setup timers
 	U64 nowNS;
 	CLOCK_GETTIME64(OPENAVB_TIMER_CLOCK, &nowNS);

@@ -188,7 +188,17 @@ bool osalClockGettime64(openavb_clockId_t openavbClockId, U64 *timeNsec) {
 	else if (openavbClockId == OPENAVB_CLOCK_WALLTIME) {
 		AVB_TRACE_EXIT(AVB_TRACE_TIME);
 		return x_getPTPTime(timeNsec);
+	} else {
+		uint64_t now_system;
+		if (!gptp_hw_curr_time(&now_system, timeNsec)) {
+			AVB_LOG_ERROR("Get gptp hw_time failed!");
+			AVB_TRACE_EXIT(AVB_TRACE_TIME);
+			return FALSE;
+		}
+		AVB_TRACE_EXIT(AVB_TRACE_TIME);
+		return TRUE;
 	}
+
 	AVB_TRACE_EXIT(AVB_TRACE_TIME);
 	return FALSE;
 }

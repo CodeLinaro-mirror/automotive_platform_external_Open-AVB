@@ -141,7 +141,10 @@ typedef struct
 	int nLost;
 	// Bytes sent or recieved
 	U64 bytes;
-	
+
+	// Debug flag for gptp timestamps
+	bool enable_debug_of_gptp_timestamps;
+
 } avtp_stream_t;
 
 
