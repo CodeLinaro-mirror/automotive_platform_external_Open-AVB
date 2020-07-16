@@ -162,6 +162,7 @@ private:
 
     OSLock *timerq_lock;
 
+public:
 	/**
 	 * @brief  Add a new event to the timer queue
 	 * @param  target EtherPort target
@@ -179,7 +180,7 @@ private:
 	 * @return void
 	 */
 	void deleteEventTimer( CommonPort *target, Event e );
-public:
+
   /**
    * @brief Instantiates a IEEE 1588 Clock
    * @param forceOrdinarySlave Forces it to be an ordinary slave
