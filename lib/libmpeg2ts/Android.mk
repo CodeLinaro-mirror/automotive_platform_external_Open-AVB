@@ -23,6 +23,11 @@ else ifeq ($(call is-platform-sdk-version-at-least,28),true)
 LOCAL_CFLAGS += -DSURFACE_NO_GLOBAL_TRANSACTION -DOMX_SPLIT
 endif
 
+#Android R
+ifneq ( ,$(filter R 11, $(PLATFORM_VERSION)))
+LOCAL_CFLAGS += -DANDROID_R
+endif
+
 #LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE:= libmpeg2ts

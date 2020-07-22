@@ -49,10 +49,19 @@
 #define strlcat g_strlcat
 #endif
 
+#if AVB_FEATURE_GVM_MODE
+#define GVM_SHM_NAME "/dev/gptp_shm"
+#define GPTP_IPC_GVM_MODE
+#define GPTP_GVM_SHM_SIZE 0x1000
+#define HYP_HOST_MUTEX_SIZE 8
+#endif
+
 int gptpinit(int *shm_fd, char **memory_offset_buffer)
 {
 #ifdef ANDROID
 	*shm_fd = open(SHM_NAME, O_RDWR, 0);
+#elif defined(GPTP_IPC_GVM_MODE)
+	*shm_fd = open(GVM_SHM_NAME, O_RDWR);
 #else
 	*shm_fd = shm_open(SHM_NAME, O_RDWR, 0);
 #endif
@@ -60,13 +69,22 @@ int gptpinit(int *shm_fd, char **memory_offset_buffer)
 		perror("shm_open()");
 		return false;
 	}
+
+#ifdef GPTP_IPC_GVM_MODE
+	*memory_offset_buffer =
+            (char *)mmap(NULL, GPTP_GVM_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
+                         *shm_fd, 0);
+#else
 	*memory_offset_buffer =
 	    (char *)mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
 			 *shm_fd, 0);
+#endif
 	if (*memory_offset_buffer == (char *)-1) {
 		perror("mmap()");
 		*memory_offset_buffer = NULL;
 #ifdef ANDROID
+		close(*shm_fd);
+#elif defined(GPTP_IPC_GVM_MODE)
 		close(*shm_fd);
 #else
 		shm_unlink(SHM_NAME);
@@ -91,9 +109,13 @@ int gptpscaling(gPtpTimeData * td, char *memory_offset_buffer)
 	if (td == NULL)
 		return true;
 
+#ifndef GPTP_IPC_GVM_MODE
 	pthread_mutex_lock((pthread_mutex_t *) memory_offset_buffer);
 	memcpy(td, memory_offset_buffer + sizeof(pthread_mutex_t), sizeof(*td));
 	pthread_mutex_unlock((pthread_mutex_t *) memory_offset_buffer);
+#else
+	memcpy(td, memory_offset_buffer + HYP_HOST_MUTEX_SIZE, sizeof(*td));
+#endif
 
 	return true;
 }

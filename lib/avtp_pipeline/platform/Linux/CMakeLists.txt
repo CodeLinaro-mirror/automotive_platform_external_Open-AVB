@@ -108,6 +108,9 @@ endif ()
 
 
 # Export feature flags for sub-builds
+if (AVB_FEATURE_GVM_MODE)
+  set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAVB_FEATURE_GVM_MODE=1" )
+endif ()
 if (AVB_FEATURE_FQTSS)
   set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAVB_FEATURE_FQTSS=1" )
 endif ()
