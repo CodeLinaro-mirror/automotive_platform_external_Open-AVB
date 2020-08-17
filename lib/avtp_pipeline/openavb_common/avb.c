@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <linux/ptp_clock.h>
 
 #include <arpa/inet.h>
 
@@ -142,6 +143,73 @@ bool gptplocaltime(const gPtpTimeData * td, uint64_t* now_local)
 	*now_local = td->local_time + delta_local;
 
 	return true;
+}
+
+// Use HW
+//#define LLONG_MAX ((long long)(~0ULL>>1))
+#define MAX_NSEC 1000000000
+#define CPTP_DEVICE "/dev/ptp0"
+static inline struct ptp_clock_time cpct_diff( struct ptp_clock_time *a, struct ptp_clock_time *b )
+{
+	struct ptp_clock_time result;
+	if( a->nsec >= b->nsec ) {
+		result.nsec = a->nsec - b->nsec;
+	} else {
+		--a->sec;
+		result.nsec = (MAX_NSEC - b->nsec) + a->nsec;
+	}
+	result.sec = a->sec - b->sec;
+
+	return result;
+}
+
+static inline int64_t cpctns(struct ptp_clock_time t)
+{
+	return t.sec * 1000000000LL + t.nsec;
+}
+
+bool gptp_hw_curr_time(uint64_t *system_time, uint64_t *device_time)
+{
+	unsigned int i;
+	int fd;
+	char *device = CPTP_DEVICE;
+
+	struct ptp_clock_time *pct;
+	struct ptp_clock_time *system_time_l = NULL, *device_time_l = NULL;
+	int64_t interval = LLONG_MAX;
+	struct ptp_sys_offset offset;
+
+	fd = open(device, O_RDWR);
+	if (fd < 0) {
+		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
+		return false;
+	}
+	memset( &offset, 0, sizeof(offset));
+	offset.n_samples = PTP_MAX_SAMPLES;
+	if( ioctl(fd, PTP_SYS_OFFSET, &offset ) == -1 ) {
+		close(fd);
+		return false;
+	}
+	pct = &offset.ts[0];
+	for( i = 0; i < offset.n_samples; ++i ) {
+		int64_t interval_t;
+		interval_t = cpctns(cpct_diff( pct+2*i+2, pct+2*i ));
+		if( interval_t < interval ) {
+			system_time_l = pct+2*i;
+			device_time_l = pct+2*i+1;
+			interval = interval_t;
+		}
+	}
+
+	if (device_time_l != NULL && system_time_l != NULL) {
+		*device_time = device_time_l->sec * 1000000000LL + device_time_l->nsec;
+		*system_time = system_time_l->sec * 1000000000LL + system_time_l->nsec;
+		close(fd);
+		return true;
+	} else {
+		close(fd);
+		return false;
+	}
 }
 
 /* setters & getters for seventeen22_header */

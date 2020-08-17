@@ -303,6 +303,9 @@ if ( AVB_FEATURE_PCAP )
    target_link_libraries ( openavb ${PCAP_LIBRARY} )
 endif ()
 
+# adding rt library linkage forcely
+target_link_libraries ( openavb rt )
+
 # avb_host (openavb_host and openavb_harness)
 add_subdirectory ( ${AVB_OSAL_DIR}/avb_host )
 

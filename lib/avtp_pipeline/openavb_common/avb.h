@@ -114,6 +114,8 @@ typedef struct {
 typedef enum { false = 0, true = 1 } bool;
 #endif
 
+bool gptp_hw_curr_time(uint64_t *system_time, uint64_t *device_time);
+
 int gptpscaling(gPtpTimeData * td, char *memory_offset_buffer);
 
 bool gptplocaltime(const gPtpTimeData * td, uint64_t* now_local);

@@ -133,6 +133,8 @@ typedef struct {
 	bool wait_for_gptp;
 	/// enable pps based wakeup instead of software based timers to transfer AVB pkts
 	bool enable_wakeup_on_pps;
+	/// enable print gptp timestamp for AVB pkts
+	bool enable_debug_of_gptp_timestamps;
 
 	/// Initialization function in mapper
 	openavb_map_initialize_fn_t pMapInitFn;
