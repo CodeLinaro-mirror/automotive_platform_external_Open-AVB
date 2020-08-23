@@ -108,6 +108,9 @@ endif ()
 
 
 # Export feature flags for sub-builds
+if (AVB_FEATURE_GVM_MODE)
+  set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAVB_FEATURE_GVM_MODE=1" )
+endif ()
 if (AVB_FEATURE_FQTSS)
   set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DAVB_FEATURE_FQTSS=1" )
 endif ()
@@ -299,6 +302,9 @@ install ( TARGETS openavb ARCHIVE DESTINATION LIBRARY DESTINATION ${AVB_INSTALL_
 if ( AVB_FEATURE_PCAP )
    target_link_libraries ( openavb ${PCAP_LIBRARY} )
 endif ()
+
+# adding rt library linkage forcely
+target_link_libraries ( openavb rt )
 
 # avb_host (openavb_host and openavb_harness)
 add_subdirectory ( ${AVB_OSAL_DIR}/avb_host )

@@ -25,9 +25,15 @@
 #include <sys/types.h>
 #include <pthread.h>
 #include <semaphore.h>
+
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
+#ifndef ANDROID_R
 #include <media/ICrypto.h>
+#else
+#include <mediadrm/ICrypto.h>
+#include <media/hardware/CryptoAPI.h>
+#endif
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -41,7 +47,12 @@
 #include <gui/ISurfaceComposer.h>
 #include <gui/SurfaceComposerClient.h>
 #include <gui/Surface.h>
+
+#ifndef ANDROID_R
 #include <ui/DisplayInfo.h>
+#else
+#include <ui/DisplayConfig.h>
+#endif
 
 #include "Avbh264Stream.h"
 
@@ -323,11 +334,17 @@ Display::Display() {
 	sp<IBinder> display(SurfaceComposerClient::getBuiltInDisplay(
                          ISurfaceComposer::eDisplayIdMain));
 #endif
+#ifndef ANDROID_R
     DisplayInfo info;
     SurfaceComposerClient::getDisplayInfo(display, &info);
     ssize_t displayWidth = info.w;
     ssize_t displayHeight = info.h;
-
+#else
+    DisplayConfig config;
+    SurfaceComposerClient::getActiveDisplayConfig(display, &config);
+    ssize_t displayWidth = config.resolution.width;
+    ssize_t displayHeight = config.resolution.height;
+#endif
     ALOGI("display is %zd x %zd", displayWidth, displayHeight);
 
     mControl = mComposerClient->createSurface(

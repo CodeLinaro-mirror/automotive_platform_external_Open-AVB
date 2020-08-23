@@ -29,6 +29,11 @@ ifeq ($(call is-platform-sdk-version-at-least,29),true)
 	LOCAL_CFLAGS += -DPHYS_DISPLAY
 endif
 
+#Android R
+ifneq ( ,$(filter R 11, $(PLATFORM_VERSION)))
+LOCAL_CFLAGS += -DANDROID_R
+endif
+
 LOCAL_CFLAGS += -Wall -Werror -Wunused -Wunreachable-code
 
 LOCAL_SHARED_LIBRARIES := \

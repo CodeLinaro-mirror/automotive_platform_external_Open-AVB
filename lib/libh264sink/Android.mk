@@ -19,6 +19,12 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wall
 LOCAL_CLANG := true
 
+#Android R
+ifneq ( ,$(filter R 11, $(PLATFORM_VERSION)))
+LOCAL_HEADER_LIBRARIES := libmediadrm_headers libmediametrics_headers
+LOCAL_CFLAGS += -DANDROID_R
+endif
+
 ifeq ($(call is-platform-sdk-version-at-least,25),true)
 LOCAL_CFLAGS += -DUSE_MEDIA_CODEC_BUFFER
 endif

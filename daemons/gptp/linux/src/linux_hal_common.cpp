@@ -492,16 +492,16 @@ OSTimerQueue *LinuxTimerQueueFactory::createOSTimerQueue
 		return NULL;
 	}
 
+	ret->key = 0;
+	ret->stop = false;
+	ret->lock = clock->timerQLock();
+
 	if( pthread_create
 		( &(ret->_private->signal_thread),
 		  NULL, LinuxTimerQueueHandler, ret ) != 0 ) {
 		delete ret;
 		return NULL;
 	}
-
-	ret->stop = false;
-	ret->key = 0;
-	ret->lock = clock->timerQLock();
 
 	return ret;
 }

@@ -53,6 +53,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 // Maximum time that AVTP RX/TX calls should block before returning
 #define AVTP_MAX_BLOCK_USEC (1 * MICROSECONDS_PER_SECOND)
 
+// Debug function for getting hardware ptp time
+#define OPENAVB_CLOCK_HWPTP 100
+
 /*
  * This is broken out into a function, so that we can close and reopen
  * the socket if we detect a problem receiving frames.
@@ -345,6 +348,17 @@ openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf)
 				processTimestampEval(pStream, pAvtpFrame);
 			}
 
+			if (pStream->enable_debug_of_gptp_timestamps &&
+				pStream->avtp_sequence_num % 256 == 1) {
+				U32 ts = ntohl(*(U32 *)(&pAvtpFrame[HIDX_AVTP_TIMESPAMP32]));
+				ts = (U32)(ts & 0x00000000FFFFFFFFL);
+				U64 gptpTime = 0;
+				CLOCK_GETTIME64(OPENAVB_CLOCK_HWPTP, &gptpTime);
+				AVB_LOGF_INFO("Talker seq_no: %d : AVTP_TS: %lu gptp_time %llu",
+					pStream->avtp_sequence_num, ts, gptpTime);
+				ts = gptpTime = 0;
+			}
+
 			// Increment the sequence number now that we are sure this is a good packet.
 			pStream->avtp_sequence_num++;
 			// Mark the frame "ready to send".
@@ -478,6 +492,17 @@ static void x_avtpRxFrame(avtp_stream_t *pStream, U8 *pFrame, U32 frameLen)
 				flags & 0x08, flags & 0x01, flags2 & 0x01);
 
 			pRead += 8;
+
+			if (pStream->enable_debug_of_gptp_timestamps &&
+				rxSeq % 256 == 1) {
+				U32 ts = ntohl(*(U32 *)(&pFrame[HIDX_AVTP_TIMESPAMP32]));
+				ts = (U32)(ts & 0x00000000FFFFFFFFL);
+				U64 gptpTime = 0;
+				CLOCK_GETTIME64(OPENAVB_CLOCK_HWPTP, &gptpTime);
+				AVB_LOGF_INFO("Listener seq_no: %d : TS: %lu Current ptp time %llu",
+					rxSeq, ts, gptpTime);
+				gptpTime = ts = 0;
+			}
 
 			if (pStream->tsEval) {
 				processTimestampEval(pStream, pFrame);
