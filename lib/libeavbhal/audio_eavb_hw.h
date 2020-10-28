@@ -91,6 +91,7 @@ typedef struct {
     sem_t circ_buff_space_left_sem;
     pthread_mutex_t circ_buff_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
+    int32_t bus;
 } eavb_stream_ctx;
 
 typedef struct {
