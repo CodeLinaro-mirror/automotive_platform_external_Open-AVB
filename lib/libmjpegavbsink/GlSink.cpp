@@ -37,7 +37,12 @@
 #include <ui/PixelFormat.h>
 #include <ui/Rect.h>
 #include <ui/Region.h>
+
+#ifndef ANDROID_R
 #include <ui/DisplayInfo.h>
+#else
+#include <ui/DisplayConfig.h>
+#endif
 
 #include <gui/ISurfaceComposer.h>
 #include <gui/Surface.h>
@@ -125,6 +130,7 @@ status_t GlSink::readyToRun() {
 	sp<IBinder> dtoken(SurfaceComposerClient::getBuiltInDisplay(
              ISurfaceComposer::eDisplayIdMain));
 #endif
+#ifndef ANDROID_R
     DisplayInfo dinfo;
     status_t status = SurfaceComposerClient::getDisplayInfo(dtoken, &dinfo);
     if (status) {
@@ -134,6 +140,7 @@ status_t GlSink::readyToRun() {
 
     char value[PROPERTY_VALUE_MAX];
     property_get("persist.panel.orientation", value, "0");
+    /* check if orientation is horizontal or vertical */
     int orient = atoi(value)/90;
     if (orient == eOrientation90 || orient == eOrientation270) {
         int temp = dinfo.h;
@@ -143,10 +150,34 @@ status_t GlSink::readyToRun() {
     Rect destRect(dinfo.w, dinfo.h);
     sp<SurfaceControl> control = session()->createSurface(String8("AvbMjpegSink"),
             dinfo.w, dinfo.h, PIXEL_FORMAT_RGB_565);
+#else
+    DisplayConfig dis_config;
+    status_t status = SurfaceComposerClient::getActiveDisplayConfig(dtoken, &dis_config);
+    if (status) {
+        printf("AvbMjpeg-GlSink::readyToRun - failed to get SCC\n");
+        return -1;
+    }
 
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.panel.orientation", value, "0");
+    /* check if orientation is horizontal or vertical */
+    int orient = atoi(value)/90;
+    if (orient == eOrientation90 || orient == eOrientation270) {
+        int temp = dis_config.resolution.height;
+        dis_config.resolution.height = dis_config.resolution.width;
+        dis_config.resolution.width = temp;
+    }
+    Rect destRect(dis_config.resolution.width, dis_config.resolution.height);
+    sp<SurfaceControl> control = session()->createSurface(String8("AvbMjpegSink"),
+            dis_config.resolution.width, dis_config.resolution.height, PIXEL_FORMAT_RGB_565);
+#endif
 #ifdef SURFACE_NO_GLOBAL_TRANSACTION
     SurfaceComposerClient::Transaction t;
+#ifdef ANDROID_R
+    t.setDisplayProjection(dtoken, ui::toRotation(orient), destRect, destRect);
+#else
     t.setDisplayProjection(dtoken, orient, destRect, destRect);
+#endif
     t.setLayer(control, 0x40000000);
     t.show(control);
     t.apply();

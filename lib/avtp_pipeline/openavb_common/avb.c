@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <linux/ptp_clock.h>
 
 #include <arpa/inet.h>
 
@@ -49,10 +50,19 @@
 #define strlcat g_strlcat
 #endif
 
+#if AVB_FEATURE_GVM_MODE
+#define GVM_SHM_NAME "/dev/gptp_shm"
+#define GPTP_IPC_GVM_MODE
+#define GPTP_GVM_SHM_SIZE 0x1000
+#define HYP_HOST_MUTEX_SIZE 8
+#endif
+
 int gptpinit(int *shm_fd, char **memory_offset_buffer)
 {
 #ifdef ANDROID
 	*shm_fd = open(SHM_NAME, O_RDWR, 0);
+#elif defined(GPTP_IPC_GVM_MODE)
+	*shm_fd = open(GVM_SHM_NAME, O_RDWR);
 #else
 	*shm_fd = shm_open(SHM_NAME, O_RDWR, 0);
 #endif
@@ -60,13 +70,22 @@ int gptpinit(int *shm_fd, char **memory_offset_buffer)
 		perror("shm_open()");
 		return false;
 	}
+
+#ifdef GPTP_IPC_GVM_MODE
+	*memory_offset_buffer =
+            (char *)mmap(NULL, GPTP_GVM_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
+                         *shm_fd, 0);
+#else
 	*memory_offset_buffer =
 	    (char *)mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
 			 *shm_fd, 0);
+#endif
 	if (*memory_offset_buffer == (char *)-1) {
 		perror("mmap()");
 		*memory_offset_buffer = NULL;
 #ifdef ANDROID
+		close(*shm_fd);
+#elif defined(GPTP_IPC_GVM_MODE)
 		close(*shm_fd);
 #else
 		shm_unlink(SHM_NAME);
@@ -91,9 +110,13 @@ int gptpscaling(gPtpTimeData * td, char *memory_offset_buffer)
 	if (td == NULL)
 		return true;
 
+#ifndef GPTP_IPC_GVM_MODE
 	pthread_mutex_lock((pthread_mutex_t *) memory_offset_buffer);
 	memcpy(td, memory_offset_buffer + sizeof(pthread_mutex_t), sizeof(*td));
 	pthread_mutex_unlock((pthread_mutex_t *) memory_offset_buffer);
+#else
+	memcpy(td, memory_offset_buffer + HYP_HOST_MUTEX_SIZE, sizeof(*td));
+#endif
 
 	return true;
 }
@@ -120,6 +143,73 @@ bool gptplocaltime(const gPtpTimeData * td, uint64_t* now_local)
 	*now_local = td->local_time + delta_local;
 
 	return true;
+}
+
+// Use HW
+//#define LLONG_MAX ((long long)(~0ULL>>1))
+#define MAX_NSEC 1000000000
+#define CPTP_DEVICE "/dev/ptp0"
+static inline struct ptp_clock_time cpct_diff( struct ptp_clock_time *a, struct ptp_clock_time *b )
+{
+	struct ptp_clock_time result;
+	if( a->nsec >= b->nsec ) {
+		result.nsec = a->nsec - b->nsec;
+	} else {
+		--a->sec;
+		result.nsec = (MAX_NSEC - b->nsec) + a->nsec;
+	}
+	result.sec = a->sec - b->sec;
+
+	return result;
+}
+
+static inline int64_t cpctns(struct ptp_clock_time t)
+{
+	return t.sec * 1000000000LL + t.nsec;
+}
+
+bool gptp_hw_curr_time(uint64_t *system_time, uint64_t *device_time)
+{
+	unsigned int i;
+	int fd;
+	char *device = CPTP_DEVICE;
+
+	struct ptp_clock_time *pct;
+	struct ptp_clock_time *system_time_l = NULL, *device_time_l = NULL;
+	int64_t interval = LLONG_MAX;
+	struct ptp_sys_offset offset;
+
+	fd = open(device, O_RDWR);
+	if (fd < 0) {
+		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
+		return false;
+	}
+	memset( &offset, 0, sizeof(offset));
+	offset.n_samples = PTP_MAX_SAMPLES;
+	if( ioctl(fd, PTP_SYS_OFFSET, &offset ) == -1 ) {
+		close(fd);
+		return false;
+	}
+	pct = &offset.ts[0];
+	for( i = 0; i < offset.n_samples; ++i ) {
+		int64_t interval_t;
+		interval_t = cpctns(cpct_diff( pct+2*i+2, pct+2*i ));
+		if( interval_t < interval ) {
+			system_time_l = pct+2*i;
+			device_time_l = pct+2*i+1;
+			interval = interval_t;
+		}
+	}
+
+	if (device_time_l != NULL && system_time_l != NULL) {
+		*device_time = device_time_l->sec * 1000000000LL + device_time_l->nsec;
+		*system_time = system_time_l->sec * 1000000000LL + system_time_l->nsec;
+		close(fd);
+		return true;
+	} else {
+		close(fd);
+		return false;
+	}
 }
 
 /* setters & getters for seventeen22_header */

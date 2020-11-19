@@ -92,6 +92,7 @@ bool talkerStartStream(tl_state_t *pTLState)
 	}
 
 	avtp_stream_t *pStream = (avtp_stream_t *)(pTalkerData->avtpHandle);
+	pStream->enable_debug_of_gptp_timestamps = pCfg->enable_debug_of_gptp_timestamps;
 
 	if (!pStream->pMapCB->map_transmit_interval_cb(pTLState->pMediaQ)) {
 		pTalkerData->wakeRate = pTalkerData->classRate / pCfg->batch_factor;

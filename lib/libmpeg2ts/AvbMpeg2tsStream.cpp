@@ -34,7 +34,11 @@
 #include <media/MediaExtractor.h>
 #include <media/MediaSource.h>
 #else
+#ifdef ANDROID_R
+#include <media/DataSource.h>
+#else
 #include <media/stagefright/DataSource.h>
+#endif
 #include <media/stagefright/MediaExtractor.h>
 #include <media/stagefright/MediaSource.h>
 #endif
@@ -50,7 +54,11 @@
 #include <gui/Surface.h>
 
 #include <fcntl.h>
+#ifdef ANDROID_R
+#include <ui/DisplayConfig.h>
+#else
 #include <ui/DisplayInfo.h>
+#endif
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -117,7 +125,11 @@ void MyStreamSource::setBuffers(const Vector<sp<IMemory> > &buffers) {
 void MyStreamSource::onBufferAvailable(size_t index) {
     CHECK_LT(index, mBuffers.size());
     sp<IMemory> mem = mBuffers.itemAt(index);
+#ifndef ANDROID_R
     ssize_t n = read(mFd, mem->pointer(), mem->size());
+#else
+    ssize_t n = read(mFd, mem->unsecurePointer(), mem->size());
+#endif
     if (n <= 0) {
         mListener->issueCommand(IStreamListener::EOS, false /* synchronous */);
     } else {
@@ -220,11 +232,18 @@ void* AvbMpegStreamthread(void *arg)
 	sp<IBinder> display(SurfaceComposerClient::getBuiltInDisplay(
                          ISurfaceComposer::eDisplayIdMain));
 #endif
+#ifdef ANDROID_R
+    DisplayConfig config;
+    SurfaceComposerClient::getActiveDisplayConfig(display, &config);
+
+    ssize_t displayWidth = config.resolution.width;
+    ssize_t displayHeight = config.resolution.height;
+#else
     DisplayInfo info;
     SurfaceComposerClient::getDisplayInfo(display, &info);
     ssize_t displayWidth = info.w;
     ssize_t displayHeight = info.h;
-
+#endif
     ALOGV("display is %zd x %zd\n", displayWidth, displayHeight);
 
     sp<SurfaceControl> control =

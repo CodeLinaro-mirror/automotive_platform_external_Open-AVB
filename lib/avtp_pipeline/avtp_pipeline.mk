@@ -2,6 +2,7 @@ AVB_FEATURE_ENDPOINT ?= 1
 AVB_FEATURE_GSTREAMER ?= 0
 AVB_FEATURE_NEUTRINO ?= 0
 AVB_FEATURE_INTF_ALSA2 ?= 1
+AVB_FEATURE_GVM_MODE ?= 0
 
 .PHONY: all clean
 
@@ -20,6 +21,7 @@ build/Makefile:
 	mkdir -p build && \
 	cd build && \
 	cmake -DCMAKE_TOOLCHAIN_FILE=../platform/Linux/arm_ntn_linux.cmake \
+	      -DAVB_FEATURE_GVM_MODE=$(AVB_FEATURE_GVM_MODE) \
 	      -DAVB_FEATURE_ENDPOINT=$(AVB_FEATURE_ENDPOINT) \
 	      -DAVB_FEATURE_GSTREAMER=$(AVB_FEATURE_GSTREAMER) \
 	      -DGSTREAMER_1_0=$(GSTREAMER_1_0) \
