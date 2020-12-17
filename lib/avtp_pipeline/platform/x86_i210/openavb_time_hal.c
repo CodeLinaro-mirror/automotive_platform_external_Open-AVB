@@ -43,7 +43,7 @@ static device_t *igb_dev = NULL;
 bool halTimeInitialize(void)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_TIME);
-	igb_dev = igbAcquireDevice();
+//	igb_dev = igbAcquireDevice();
 	AVB_TRACE_EXIT(AVB_TRACE_TIME);
 	return TRUE;
 }
@@ -51,7 +51,7 @@ bool halTimeInitialize(void)
 bool halTimeFinalize(void)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_TIME);
-	igbReleaseDevice(igb_dev);
+//	igbReleaseDevice(igb_dev);
 	AVB_TRACE_EXIT(AVB_TRACE_TIME);
 	return TRUE;
 }

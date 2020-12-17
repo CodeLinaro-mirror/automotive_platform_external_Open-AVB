@@ -67,7 +67,7 @@ MESSAGE ("-- SDK_INSTALL_SDK_EAVB_DIR      : ${SDK_INSTALL_SDK_EAVB_DIR}")
 set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -Wall" )
 
 # Set default visibility of symbols (requires GCC version > 4)
-set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden" )
+set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=default" )
 
 # Need this to use pthread attributes 
 set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE" )
@@ -244,7 +244,6 @@ SET ( SRC_FILES ${SRC_FILES} ${AVB_HAL_DIR}/openavb_time_hal.c )
 SET ( SRC_FILES ${SRC_FILES} ${AVB_HAL_DIR}/mcr/openavb_mcr_hal.c )
 
 # OpenAVB Common (support) files
-SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/avb.c )
 SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/mrp_client.c )
 
 if ( AVB_FEATURE_PCAP )
@@ -323,6 +322,13 @@ if (AVB_FEATURE_GSTREAMER)
 endif ()
 add_intf_mod_platform ( "intf_mpeg2ts_file" )
 add_intf_mod_platform ( "intf_wav_file" )
+
+SET ( SRC_FILES "" )
+SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/avb.c )
+add_subdirectory (openavb_common)
+add_library ( openavb_common SHARED ${SRC_FILES} )
+target_link_libraries (avbTl openavb_common)
+install ( TARGETS openavb_common ARCHIVE DESTINATION LIBRARY DESTINATION ${AVB_INSTALL_LIB_DIR} )
 
 # API documentation
 add_subdirectory ( documents )
