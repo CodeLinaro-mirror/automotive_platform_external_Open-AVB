@@ -284,10 +284,12 @@ bool LinuxNetworkInterface::getLinkSpeed( int sd, uint32_t *speed )
 	edata.cmd = ETHTOOL_GSET;
 	if( ioctl( sd, SIOCETHTOOL, &ifr ) == -1 )
 	{
-		GPTP_LOG_ERROR
+		GPTP_LOG_WARNING
 			( "%s: SIOCETHTOOL failed: %s", __PRETTY_FUNCTION__,
 			  strerror( errno ));
-		return false;
+		*speed = LINKSPEED_1G;
+		GPTP_LOG_INFO( "Use default Link Speed: %d kb/sec", *speed );
+		return true;
 	}
 
 	switch (ethtool_cmd_speed(&edata))

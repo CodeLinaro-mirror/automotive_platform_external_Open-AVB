@@ -138,6 +138,7 @@ void print_usage( char *arg0 ) {
 		  "\t-L force slave (ignored when Automotive Profile set)\n"
 		  "\t-E enable test mode (as defined in AVnu automotive profile)\n"
 		  "\t-V enable AVnu Automotive Profile\n"
+		  "\t-N Neighbor prop delay threshold\n"
 		  "\t-GM set grandmaster for Automotive Profile\n"
 		  "\t-INITSYNC <value> initial sync interval (Log base 2. 0 = 1 second)\n"
 		  "\t-OPERSYNC <value> operational sync interval (Log base 2. 0 = 1 second)\n"
@@ -527,6 +528,12 @@ int main(int argc, char **argv)
 					snprintf(config_file_path, sizeof(config_file_path), "%s", argv[i+1]);
 				} else {
 					GPTP_LOG_ERROR("config file must be specified.\n");
+				}
+			}
+			else if (strcmp(argv[i] + 1, "N") == 0) {
+				if( i+1 < argc ) {
+					portInit.neighborPropDelayThreshold = atoi(argv[++i]);
+					GPTP_LOG_INFO("neighborPropDelayThreshold value:% " PRId64 " ", portInit.neighborPropDelayThreshold);
 				}
 			}
 		}
