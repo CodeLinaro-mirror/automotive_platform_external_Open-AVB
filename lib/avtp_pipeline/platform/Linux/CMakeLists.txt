@@ -261,7 +261,6 @@ add_subdirectory ( mcr )
 add_subdirectory ( ${AVB_OSAL_DIR}/rawsock )
 # OpenAVB Common (support) files
 SET ( SRC_FILES ${SRC_FILES} ${AVB_OSAL_DIR}/openavb_time_osal.c )
-SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/avb.c )
 SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/mrp_client.c )
 
 if (AVB_FEATURE_ENDPOINT)
@@ -319,6 +318,13 @@ add_map_mod ( "map_aaf_audio" )
 add_map_mod ( "map_uncmp_audio" )
 add_map_mod ( "map_h264" )
 add_map_mod ( "map_clk_ref" )
+
+SET ( SRC_FILES "" )
+SET ( SRC_FILES ${SRC_FILES} ${AVB_SRC_DIR}/openavb_common/avb.c )
+add_subdirectory (openavb_common)
+add_library ( openavb_common SHARED ${SRC_FILES} )
+target_link_libraries ( openavb openavb_common)
+install ( TARGETS openavb_common ARCHIVE DESTINATION LIBRARY DESTINATION ${AVB_INSTALL_LIB_DIR} )
 
 # Interface modules (common)
 macro (add_intf_mod INTF_NAME)
