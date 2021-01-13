@@ -55,6 +55,8 @@
 #define DEFAULT_SAMPLE_RATE 48000
 #define DEFAULT_CHANNEL_MASK AUDIO_CHANNEL_OUT_STEREO
 
+#define USE_ECNR_THREAD
+
 typedef struct {
     struct audio_hw_device device;
     //std::recursive_mutex* mutex;

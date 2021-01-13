@@ -90,6 +90,9 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
 
     char* saveptr = nullptr;
     char* kvpair = strtok_r(str, ";", &saveptr);
+    char* str_bus = NULL;
+    char* last_r;
+    int32_t bus_num = -1;
 
     while (kvpair) {
         char* eq = strchr(kvpair, '=');
@@ -100,6 +103,19 @@ static int in_set_parameters(struct audio_stream *stream, const char *kvpairs) {
         eq++;
         if (*eq == '\0') {
             // No value - skip to next pair
+            // Extract bus number from address
+            str_bus = strtok_r(kvpair, "BUS_", &last_r);
+            if (str_bus != NULL) {
+                bus_num = (int32_t)strtol(str_bus, (char **)NULL, 10);
+                ALOGI("%s: Bus number %d identified for the address", __func__, bus_num);
+                in->eavbCtx.bus = bus_num;
+                snprintf(in->eavbCtx.eavbSocketPath, MAX_PATH_LEN, "/data/misc/eavb/.eavb_in_%d", bus_num + 1);
+#ifdef USE_ECNR_THREAD
+                // create hal poll thread
+                ALOGI("%s: Creating ECNR HAL POLL THREAD", __func__);
+                eavb_halPollThread_init(&in->eavbCtx);
+#endif
+            }
             goto next_pair;
         }
 
