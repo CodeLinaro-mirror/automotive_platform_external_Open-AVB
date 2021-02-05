@@ -92,6 +92,9 @@ typedef struct {
     // intf_nv_number_of_data_bytes
     U32 numberOfDataBytes;
 
+    // intf_nv_audio_source
+    bool is_voice;
+
     int pollingThreadRunning;
 
     THREAD_DEFINITON(halPollingThread);
@@ -473,6 +476,11 @@ void openavbIntfAudioStreamCfgCB(media_q_t *pMediaQ, const char *name, const cha
             pPvtData->ignoreTimestamp = (tmp == 1);
         }
     }
+    else if (strcmp(name, "intf_nv_audio_source") == 0) {
+        if (strcmp(value, "voice") == 0) {
+            pPvtData->is_voice = true;
+        }
+    }
 
     passParamToMapModule(pMediaQ);
 
@@ -654,9 +662,10 @@ static bool consumeAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
     memcpy(pPvtData->audioBuffer + pPvtData->audioBufferPos, buffer, buflen);
     pPvtData->audioBufferPos += buflen;
 
-    // Check if we've accumulated enough data to send to receiver
-    if (pPvtData->audioBufferPos > SOCKET_BUFFER_SIZE) {
-        int writen = skt_write(pPvtData, pPvtData->audioBuffer, SOCKET_BUFFER_SIZE);
+    // Check if the audio source is voice
+    if (pPvtData->is_voice) {
+        // Send the data to receiver
+        int writen = skt_write(pPvtData, pPvtData->audioBuffer, buflen);
         if (writen <= 0) {
             AVB_LOGF_DEBUG("consumeAudio - skt_write() error: %d, %s",
                 writen, strerror(writen));
@@ -666,6 +675,20 @@ static bool consumeAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
         // Move remaining data in buffer to beginning of buf.
         memmove(pPvtData->audioBuffer, pPvtData->audioBuffer+writen, pPvtData->audioBufferPos - writen);
         pPvtData->audioBufferPos -= writen;
+    } else {
+        // Check if we've accumulated enough data to send to receiver
+        if (pPvtData->audioBufferPos > SOCKET_BUFFER_SIZE) {
+            int writen = skt_write(pPvtData, pPvtData->audioBuffer, SOCKET_BUFFER_SIZE);
+            if (writen <= 0) {
+                 AVB_LOGF_DEBUG("consumeAudio - skt_write() error: %d, %s",
+                    writen, strerror(writen));
+                return FALSE;
+            }
+            //AVB_LOGF_INFO("consumeAudio -written %d bytes socket %s, server %d, Hal %d",writen,pPvtData->socketPath,pPvtData->pServerSocket, pPvtData->pHalSocket);
+            // Move remaining data in buffer to beginning of buf.
+            memmove(pPvtData->audioBuffer, pPvtData->audioBuffer+writen, pPvtData->audioBufferPos - writen);
+            pPvtData->audioBufferPos -= writen;
+        }
     }
 
     return TRUE;
@@ -787,6 +810,7 @@ extern DLL_EXPORT bool openavbIntfAudioStreamInitialize(media_q_t *pMediaQ, open
         pPvtData->pServerSocket = -1;
         pPvtData->pHalSocket = -1;
         pPvtData->pollingThreadRunning = 0;
+        pPvtData->is_voice = FALSE;
 
         pPvtData->intervalCounter = 0;
         pPvtData->dataLeftInBuffer = 0;
