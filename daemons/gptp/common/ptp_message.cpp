@@ -1466,9 +1466,13 @@ void PTPMessagePathDelayRespFollowUp::processMessage(IEEE1588Port * port)
 	port->setPeerOffset( request_tx_timestamp, remote_req_rx_timestamp );
 
  abort:
-	delete req;
+	if( req != NULL){
+	    delete req;
+	}
 	port->setLastPDelayReq(NULL);
-	delete resp;
+	if( resp != NULL){
+	    delete resp;
+	}
 	port->setLastPDelayResp(NULL);
 
 	_gc = true;
