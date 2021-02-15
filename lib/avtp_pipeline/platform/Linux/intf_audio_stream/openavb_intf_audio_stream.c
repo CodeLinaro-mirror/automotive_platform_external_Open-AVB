@@ -530,6 +530,9 @@ void openavbIntfAudioStreamTxInitCB(media_q_t *pMediaQ) {
 }
 
 static bool readAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen) {
+    static int underflow_count = 0;
+    int underflow_threshold = 3;
+
     MUTEX_LOCK_ALT(pPvtData->audioBufferMutex);
 
     // Check if we have enough data to fill request
@@ -540,18 +543,27 @@ static bool readAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen) {
             return FALSE;
         } else {
             IF_LOG_INTERVAL(100) {
-                AVB_LOGF_ERROR("readAudio - buffer underflow - need %d bytes, have %d bytes",
-                        buflen, pPvtData->dataLeftInBuffer);
+                AVB_LOGF_ERROR("readAudio - buffer underflow - need %d bytes, have %d bytes - %s",
+                        buflen, pPvtData->dataLeftInBuffer, pPvtData->socketPath);
             }
-            memcpy(buffer, pPvtData->audioBuffer + pPvtData->audioBufferPos, pPvtData->dataLeftInBuffer);
-            memset(buffer + pPvtData->dataLeftInBuffer, 0, buflen - pPvtData->dataLeftInBuffer);
-            pPvtData->audioBufferPos = 0;
-            pPvtData->dataLeftInBuffer = 0;
+            if (++underflow_count > underflow_threshold) {
+                AVB_LOGF_ERROR("readAudio - buffer underflow - threshold exceeded - need %d bytes, have %d bytes - %s",
+                        buflen, pPvtData->dataLeftInBuffer, pPvtData->socketPath);
+                memcpy(buffer, pPvtData->audioBuffer + pPvtData->audioBufferPos, pPvtData->dataLeftInBuffer);
+                memset(buffer + pPvtData->dataLeftInBuffer, 0, buflen - pPvtData->dataLeftInBuffer);
+                pPvtData->audioBufferPos = 0;
+                pPvtData->dataLeftInBuffer = 0;
+                underflow_count = 0;
+            } else {
+                MUTEX_UNLOCK_ALT(pPvtData->audioBufferMutex);
+                return FALSE;
+            }
         }
         MUTEX_UNLOCK_ALT(pPvtData->audioBufferMutex);
         return TRUE;
     }
 
+    underflow_count = 0;
     // Still have enough data left in the buffer, use it
     memcpy(buffer, pPvtData->audioBuffer + pPvtData->audioBufferPos, buflen);
     pPvtData->audioBufferPos += buflen;
