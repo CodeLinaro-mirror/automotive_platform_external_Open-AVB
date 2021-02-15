@@ -94,6 +94,7 @@ typedef struct {
     pthread_mutex_t circ_buff_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
     int32_t bus;
+    uint64_t time1, time2;
 } eavb_stream_ctx;
 
 typedef struct {

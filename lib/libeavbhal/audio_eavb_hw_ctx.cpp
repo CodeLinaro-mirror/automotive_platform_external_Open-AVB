@@ -313,8 +313,6 @@ static int skt_disconnect(int fd) {
 
 int eavb_stream_write(eavb_stream_ctx *ctx, const void* buffer, size_t bytes) {
     int sent = -1;
-    uint64_t time1, time2;
-    time1 = systemTime(CLOCK_MONOTONIC);
 
     if (ctx->eavbFd < 0) {
         ctx->eavbFd = skt_connect(ctx->eavbSocketPath, AUDIO_STREAM_OUTPUT_BUFFER_SZ);
@@ -342,11 +340,14 @@ int eavb_stream_write(eavb_stream_ctx *ctx, const void* buffer, size_t bytes) {
 finish:
     {
         const int us_delay = calc_audiotime_usec(ctx, bytes);
-        time2 = systemTime(CLOCK_MONOTONIC);
-        int sleep_offset = (int) ((time2 - time1)/125);
-        if (sleep_offset < us_delay) {
-            usleep(us_delay - sleep_offset);
+        ctx->time2 = systemTime(CLOCK_MONOTONIC);
+        if (ctx->time1 && (ctx->time1 < ctx->time2)) {
+            int sleep_offset = (int) ((ctx->time2 - ctx->time1)/1000);
+            if (sleep_offset < us_delay) {
+                usleep(us_delay - sleep_offset);
+            }
         }
+        ctx->time1 = systemTime(CLOCK_MONOTONIC);
     }
     return bytes;
 }
@@ -396,6 +397,8 @@ int eavb_stream_ctx_init(eavb_stream_ctx *ctx, struct audio_config *config) {
     ctx->printErrorOnce = 0;
     ctx->eavbSocketPath[0] = '\0';
     ctx->eavbFd = -1;
+    ctx->time1 = 0;
+    ctx->time2 = 0;
 
     if (config) {
         ctx->format = config->format;
