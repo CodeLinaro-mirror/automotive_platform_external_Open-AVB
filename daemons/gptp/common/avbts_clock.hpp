@@ -91,6 +91,11 @@ struct ClockQuality {
 };
 
 /**
+ * @brief timeirq callback definition
+ */
+typedef void (*timeirq_handler) (void *);
+
+/**
  * @brief Provides the 1588 clock interface
  */
 class IEEE1588Clock {
@@ -178,12 +183,31 @@ public:
 	  unsigned long long time_ns );
 
 	/**
+        * @brief  Add a new timer to the timer queue
+        * @param  time_ns [in] Time in nanoseconds
+        * @param  func timer [in]  callback function
+        * @param  arg [in] argument for callback function
+        * @param  oneshot [in] true means oneshot timeout false means periodic timeout
+        * @param  timer_handle [out] returns handle on success
+	 */
+	void addTimer
+	( unsigned long long time_ns, timeirq_handler func,
+        void *arg, bool oneshot, timer_t *timer_handle);
+
+	/**
 	 * @brief  Deletes an event from the timer queue
 	 * @param  target Target port to remove the event from
 	 * @param  e Event to be removed
 	 * @return void
 	 */
 	void deleteEventTimer( CommonPort *target, Event e );
+
+	/**
+	 * @brief  Deletes timer from the timer queue
+	 * @param  timer_handle [in] handle to timer to be deleted.
+	 * @return void
+	 */
+	void deleteTimer( timer_t *timer_handle);
 
   /**
    * @brief Instantiates a IEEE 1588 Clock
@@ -306,6 +330,12 @@ public:
    * @return void
    */
   void setSyncStatus(bool is_sync, PortState port_state);
+
+  /**
+   * @brief  Get sync status
+   * @return true or false
+   */
+  bool getSyncStatus(void);
 
   /**
    * @brief  Gets grandmaster clock quality object

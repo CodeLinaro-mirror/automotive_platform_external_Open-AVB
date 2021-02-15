@@ -194,6 +194,13 @@ public:
 #endif
 
 	/**
+	 * @brief  Gets current ptp clock time.
+	 * @param  ptp_cur_time [out] Current ptp time
+	 * @return TRUE in case of sucess, FALSE if error.
+	 */
+	virtual bool HWTimestamper_getptptime( uint64_t *ptp_cur_time );
+
+	/**
 	 * @brief deletes LinuxTimestamperGeneric object
 	 */
 	virtual ~LinuxTimestamperGeneric();

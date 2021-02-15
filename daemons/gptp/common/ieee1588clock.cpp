@@ -239,9 +239,18 @@ void IEEE1588Clock::addEventTimer
 	event_descriptor->event = e;
 	event_descriptor->port = target;
 	timerq->addEvent
-		((unsigned)(time_ns / 1000), (int)e, timerq_handler, event_descriptor,
-		 true, NULL);
+		((unsigned)(time_ns / 1000), (int)e, timerq_handler, (void**)&event_descriptor,
+		 true, NULL, true, NULL);
 }
+
+
+void IEEE1588Clock::addTimer
+(unsigned long long time_ns, timeirq_handler func, void *arg, bool oneshot, timer_t *timer_handle)
+{
+	timerq->addEvent
+		((unsigned)(time_ns / 1000), 0, func, (void**)&arg, false, NULL, oneshot, &timer_handle);
+}
+
 
 void IEEE1588Clock::addEventTimerLocked
 ( CommonPort *target, Event e, unsigned long long time_ns )
@@ -271,11 +280,25 @@ void IEEE1588Clock::setSyncStatus(bool is_sync, PortState port_state) {
     }
 }
 
+bool IEEE1588Clock::getSyncStatus(void) {
+    if (ipc != NULL) {
+        return ipc->getSyncStatus();
+    }
+	return 0;
+}
+
 void IEEE1588Clock::deleteEventTimer
 ( CommonPort *target, Event event )
 {
 	timerq->cancelEvent((int)event, NULL);
 }
+
+void IEEE1588Clock::deleteTimer
+( timer_t *rgptp_pulse_timerId )
+{
+	timerq->cancelTimer(&rgptp_pulse_timerId);
+}
+
 
 void IEEE1588Clock::deleteEventTimerLocked
 ( CommonPort *target, Event event )

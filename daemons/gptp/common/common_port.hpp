@@ -267,6 +267,9 @@ typedef struct {
 
 	/* neighbor delay threshold */
 	int64_t neighborPropDelayThreshold;
+
+	/* rgptp periodic sync time in ms */
+	unsigned int rgptpSyncTime;
 } PortInit_t;
 
 

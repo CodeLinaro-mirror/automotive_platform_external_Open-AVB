@@ -98,6 +98,10 @@ static char *gPtpMmap = NULL;
 static gPtpTimeData gPtpTD;
 static int gptpPhcFd = -1;
 static clockid_t gPtpClockid = -1;
+#ifdef  RGPTP_CLNT_ENABLED
+static int rptp_fd = 0;
+static clockid_t rgptp_clkid = -1;
+#endif
 
 #ifdef GPTP_AUTO_START
 static pthread_t thread_id;
@@ -478,3 +482,40 @@ bool gptpDeinit(void) {
 	bInitialized = false;
 	return true;
 }
+
+#ifdef  RGPTP_CLNT_ENABLED
+/* public API to query current rgptp time */
+bool rgptpGetCurPtpTime(uint64_t *rgptp_time) {
+    struct timespec ts;
+    ts.tv_sec = ts.tv_nsec = 0;
+    *rgptp_time = 0;
+
+    if (clock_gettime(rgptp_clkid, &ts)) {
+        printf("clock_gettime failed");
+        return false;
+    }
+    *rgptp_time = (ts.tv_sec)*1000000000LL + ts.tv_nsec;
+    return true;
+}
+
+/* public API to init rgptp time scaling */
+bool rgptpInit(void) {
+    rptp_fd = open("/dev/ptp1", O_RDWR );
+
+    if( rptp_fd == -1 ||
+            (rgptp_clkid = FD_TO_CLOCKID(rptp_fd)) == -1 ) {
+        printf("%s, Failed to open PTP clock device\n", __func__);
+        return false;
+    }
+    return true;
+}
+
+/* public API to deinit rgptp time scaling */
+bool rgptpDeinit(void) {
+    if (rptp_fd < 0)
+        close(rptp_fd);
+    rgptp_clkid = -1;
+
+    return true;
+}
+#endif

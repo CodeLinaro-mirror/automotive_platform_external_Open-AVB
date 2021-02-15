@@ -37,7 +37,9 @@
 #include "avbts_oslock.hpp"
 #include "avbts_persist.hpp"
 #include "gptp_cfg.hpp"
-
+#ifdef RGPTP_ENABLED
+#include "rgptp.hpp"
+#endif
 #ifdef ARCH_INTELCE
 #include "linux_hal_intelce.hpp"
 #else
@@ -144,6 +146,9 @@ void print_usage( char *arg0 ) {
 		  "\t-INITPDELAY <value> initial pdelay interval (Log base 2. 0 = 1 second)\n"
 		  "\t-OPERPDELAY <value> operational pdelay interval (Log base 2. 0 = 1 sec)\n"
 		  "\t-F <path-to-ini-file>\n"
+#ifdef RGPTP_ENABLED
+		  "\t-Y GPIO pulse time thershold\n"
+#endif
 		);
 }
 
@@ -344,6 +349,9 @@ int main(int argc, char **argv)
 	LinuxIPCArg *ipc_arg = NULL;
 	bool use_config_file = false;
 	char config_file_path[512];
+#ifdef RGPTP_ENABLED
+	bool rgptp = false;
+#endif
 	memset(config_file_path, 0, 512);
 
 	GPTPPersist *pGPTPPersist = NULL;
@@ -529,6 +537,20 @@ int main(int argc, char **argv)
 					GPTP_LOG_ERROR("config file must be specified.\n");
 				}
 			}
+#ifdef RGPTP_ENABLED
+			else if (strcmp(argv[i] + 1, "Y") == 0) {
+				rgptp = true;
+				portInit.rgptpSyncTime = 125;
+
+				if(( i+1 < argc ) && (isdigit(*argv[i+1]))){
+					portInit.rgptpSyncTime = atoi(argv[++i]);
+					GPTP_LOG_INFO("rgptp - set pulse time thershold value: %ums", portInit.rgptpSyncTime);
+				}
+				else {
+					GPTP_LOG_INFO("rgptp - set default thershold value: %ums", portInit.rgptpSyncTime);
+				}
+			}
+#endif
 		}
 	}
 
@@ -771,7 +793,11 @@ int main(int argc, char **argv)
         gptpDaemonServInit();
 #endif
 	pPort->processEvent(POWERUP);
-
+#ifdef RGPTP_ENABLED
+	if( rgptp ) {
+		rgptpInit(&portInit);
+	}
+#endif
 	do {
 		sig = 0;
 
@@ -812,6 +838,11 @@ int main(int argc, char **argv)
 #endif
 	if( ipc ) delete ipc;
 
+#ifdef RGPTP_ENABLED
+	if( rgptp ) {
+		rgptpDeInit();
+	}
+#endif
 	GPTP_LOG_UNREGISTER();
 	return 0;
 }
