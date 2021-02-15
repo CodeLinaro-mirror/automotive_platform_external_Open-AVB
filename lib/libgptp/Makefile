@@ -7,6 +7,9 @@ endif
 ifeq ($(SYSTEMD_SUPPORT_INCLUDED),1)
 	CPPFLAGS += -DSYSTEMD
 endif
+ifeq ($(RGPTP_CLNT_ENABLED),1)
+	CPPFLAGS += -DRGPTP_CLNT_ENABLED
+endif
 LDFLAGS= -shared -lrt
 
 SOURCES= gptp_helper.cpp

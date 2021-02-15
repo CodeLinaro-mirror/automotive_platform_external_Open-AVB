@@ -42,7 +42,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <limits.h>
 #include <sys/time.h>
 #include <time.h>
-
+#include <unistd.h>
 #include <gptp_helper.h>
 
 uint64_t systemTime(int clock)
@@ -163,6 +163,32 @@ void do_some_tests_ptp() {
     }
 }
 
+#ifdef RGPTP_CLNT_ENABLED
+static void rgptp_test(void) {
+    bool rgptp_avail = false;
+    uint64_t test_rgptp_time;
+
+    rgptp_avail = rgptpInit();
+    if (rgptp_avail) {
+        printf("RGPTP Available\n");
+        if (rgptpGetCurPtpTime(&test_rgptp_time)){
+            printf("rgptp time %" PRIu64 ".%" PRIu64 "\n",
+                    test_rgptp_time/1000000000UL, test_rgptp_time%1000000000UL);
+        }
+        else {
+            printf("RGPTP time test failed\n");
+        }
+        if(!rgptpDeinit()) {
+            printf("RGPTP deinit failed\n");
+        }
+    }
+    else {
+        printf("RGPTP Not Available\n");
+    }
+    return;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     uint64_t test_vec_time;
@@ -252,6 +278,11 @@ int main(int argc, char *argv[])
             printf("\n\n\n====================PTP based test=====================\n\n\n");
             do_some_tests_ptp();
         }
+#ifdef RGPTP_CLNT_ENABLED
+        else if(argv[1][0] == 'r') {
+            rgptp_test();
+        }
+#endif
     }
 
     if(!gptpDeinit()) {

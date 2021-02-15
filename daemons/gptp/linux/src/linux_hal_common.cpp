@@ -411,10 +411,11 @@ struct LinuxTimerQueuePrivate {
 struct LinuxTimerQueueActionArg {
 	timer_t timer_handle;
 	struct sigevent sevp;
-	event_descriptor_t *inner_arg;
+	void *inner_arg;
 	ostimerq_handler func;
 	int type;
 	bool rm;
+	bool oneshot;
 };
 
 LinuxTimerQueue::~LinuxTimerQueue() {
@@ -461,13 +462,19 @@ void *LinuxTimerQueueHandler( void *arg ) {
 		iter = timerq->timerQueueMap.find(info.si_value.sival_int);
 		if( iter != timerq->timerQueueMap.end() ) {
 		    struct LinuxTimerQueueActionArg *action_arg = iter->second;
-			timerq->timerQueueMap.erase(iter);
-			timerq->LinuxTimerQueueAction( action_arg );
-			if( action_arg->rm ) {
-				delete action_arg->inner_arg;
+
+			if (!action_arg->oneshot) {
+				timerq->LinuxTimerQueueAction( action_arg );
 			}
-			timer_delete(action_arg->timer_handle);
-			delete action_arg;
+			else {
+				timerq->timerQueueMap.erase(iter);
+				timerq->LinuxTimerQueueAction( action_arg );
+				if( action_arg->rm ) {
+					delete action_arg->inner_arg;
+				}
+				timer_delete(action_arg->timer_handle);
+				delete action_arg;
+			}
 		}
 		if( timerq->lock->unlock() != oslock_ok ) {
 			GPTP_LOG_ERROR("LinuxTimerQueueHandler timerq unlock failed");
@@ -510,17 +517,18 @@ OSTimerQueue *LinuxTimerQueueFactory::createOSTimerQueue
 
 bool LinuxTimerQueue::addEvent
 ( unsigned long micros, int type, ostimerq_handler func,
-  event_descriptor_t * arg, bool rm, unsigned *event) {
+  void **arg, bool rm, unsigned *event, bool oneshot, timer_t **timer_handle) {
 	LinuxTimerQueueActionArg *outer_arg;
 	int err;
 	LinuxTimerQueueMap_t::iterator iter;
 
 
 	outer_arg = new LinuxTimerQueueActionArg;
-	outer_arg->inner_arg = arg;
+	outer_arg->inner_arg = *arg;
 	outer_arg->rm = rm;
 	outer_arg->func = func;
 	outer_arg->type = type;
+	outer_arg->oneshot = oneshot;
 
 	// Find key that we can use
 	while( timerQueueMap.find( key ) != timerQueueMap.end() ) {
@@ -544,6 +552,11 @@ bool LinuxTimerQueue::addEvent
 		memset(&its, 0, sizeof(its));
 		its.it_value.tv_sec = micros / 1000000;
 		its.it_value.tv_nsec = (micros % 1000000) * 1000;
+		if (!outer_arg->oneshot) {
+			its.it_interval.tv_sec = its.it_value.tv_sec;
+			its.it_interval.tv_nsec = its.it_value.tv_nsec;
+		}
+
 		err = timer_settime( outer_arg->timer_handle, 0, &its, NULL );
 		if( err < 0 ) {
 			fprintf
@@ -553,6 +566,9 @@ bool LinuxTimerQueue::addEvent
 		}
 	}
 
+	if(timer_handle != NULL)
+		**timer_handle = outer_arg->timer_handle;
+
 	return true;
 }
 
@@ -560,7 +576,7 @@ bool LinuxTimerQueue::addEvent
 bool LinuxTimerQueue::cancelEvent( int type, unsigned *event ) {
 	LinuxTimerQueueMap_t::iterator iter;
 	for( iter = timerQueueMap.begin(); iter != timerQueueMap.end();) {
-		if( (iter->second)->type == type ) {
+		if( ((iter->second)->type == type) && ((iter->second)->oneshot) ) {
 			// Delete element
 			if( (iter->second)->rm ) {
 				delete (iter->second)->inner_arg;
@@ -575,6 +591,27 @@ bool LinuxTimerQueue::cancelEvent( int type, unsigned *event ) {
 
 	return true;
 }
+
+bool LinuxTimerQueue::cancelTimer( timer_t **timer_handle ) {
+	LinuxTimerQueueMap_t::iterator iter;
+	for( iter = timerQueueMap.begin(); iter != timerQueueMap.end();) {
+		if( ((iter->second)->timer_handle == **timer_handle)) {
+			// Delete element
+			if( (iter->second)->rm ) {
+				delete (iter->second)->inner_arg;
+			}
+			timer_delete(iter->second->timer_handle);
+			delete iter->second;
+			timerQueueMap.erase(iter++);
+			GPTP_LOG_INFO("cancelTimer");
+		} else {
+			++iter;
+		}
+	}
+
+    return true;
+}
+
 
 
 void* OSThreadCallback( void* input ) {
@@ -1028,6 +1065,24 @@ bool LinuxSharedMemoryIPC::updateSyncStatus(bool is_sync , PortState port_state)
        }
        return true;
 }
+
+bool LinuxSharedMemoryIPC::getSyncStatus(void) {
+	bool sync_stat = 0;
+	int buf_offset = 0;
+	char *shm_buffer = master_offset_buffer;
+
+	gPtpTimeData *ptimedata;
+	if (shm_buffer != NULL) {
+		pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+		buf_offset += sizeof(pthread_mutex_t);
+		ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+		sync_stat = ptimedata->sync_status;
+		pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+	}
+
+	return sync_stat;
+}
+
 
 bool LinuxSharedMemoryIPC::updateQtimeToMonoOffset(int64_t offset) {
 	int buf_offset = 0;

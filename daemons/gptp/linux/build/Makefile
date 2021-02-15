@@ -46,6 +46,10 @@ ifeq ($(HAS_PRECISE_TIME),0)
        CFLAGS_G += -DPTP_HW_CROSSTSTAMP
 endif
 
+ifeq ($(RGPTP_ENABLED),1)
+	CFLAGS_G += -DRGPTP_ENABLED
+endif
+
 CPPFLAGS_G = $(CFLAGS_G) -std=c++0x -Wnon-virtual-dtor
 LDFLAGS_G = -lpthread -lrt `pkg-config --libs glib-2.0`
 COMMON_DIR = ../../common
@@ -112,6 +116,13 @@ else
 	HEADER_FILES += $(SRC_DIR)/linux_hal_generic.hpp
 endif
 
+ifeq ($(RGPTP_ENABLED),1)
+	INCPATHS := -I${PKG_CONFIG_SYSROOT_DIR}/usr/include/qmi-framework-vendor
+	LDFLAGS_G += -lqrtr
+	OBJ_FILES += $(OBJ_DIR)/rgptp.o
+	HEADER_FILES += $(SRC_DIR)/rgptp.hpp
+endif
+
 ifeq ($(SYSTEMD_SUPPORT_INCLUDED),1)
 	CFLAGS_G += -DSYSTEMD
 endif
@@ -132,6 +143,11 @@ rebuild: clean all
 
 $(OBJ_DIR)/daemon_cl: $(SRC_DIR)/daemon_cl.cpp $(OBJ_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_FILES) $(SRC_DIR)/daemon_cl.cpp -o $(OBJ_DIR)/daemon_cl $(LDFLAGS)
+
+ifeq ($(RGPTP_ENABLED),1)
+$(OBJ_DIR)/rgptp.o: $(SRC_DIR)/rgptp.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/rgptp.cpp -o $(OBJ_DIR)/rgptp.o $(INCPATHS)
+endif
 
 $(OBJ_DIR)/linux_hal_common.o: $(SRC_DIR)/linux_hal_common.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/linux_hal_common.cpp -o $(OBJ_DIR)/linux_hal_common.o

@@ -444,11 +444,14 @@ public:
 	 * @param arg inner argument of type event_descriptor_t
 	 * @param rm when true, allows elements to be deleted from the queue
 	 * @param event [inout] Pointer to the event
+	 * @param oneshot true for onetime timeout and false periodic timeout
+	 * @param timer_handle [inout] handle to new created timer
 	 * @return TRUE success, FALSE fail
 	 */
 	bool addEvent
 	( unsigned long micros, int type, ostimerq_handler func,
-	  event_descriptor_t * arg, bool rm, unsigned *event );
+	  void **arg, bool rm, unsigned *event,
+	  bool oneshot, timer_t **timer_handle );
 
 	/**
 	 * @brief Removes an event from the timer queue
@@ -457,6 +460,13 @@ public:
 	 * @return TRUE success, FALSE fail
 	 */
 	bool cancelEvent( int type, unsigned *event );
+
+	/**
+	 * @brief Removes timer from the timer queue
+	 * @param handle to timer
+	 * @return TRUE success, FALSE fail
+	 */
+	bool cancelTimer( timer_t **time_handle );
 };
 
 /**
@@ -736,6 +746,12 @@ public:
 	 * @return void
 	 */
 	void stop();
+
+	/**
+	 * @brief Get sync status
+	 * @return true or false
+	 */
+	virtual bool getSyncStatus(void);
 };
 
 

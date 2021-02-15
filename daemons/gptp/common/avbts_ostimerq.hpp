@@ -67,11 +67,14 @@ public:
 	 * @param arg inner argument of type event_descriptor_t
 	 * @param dynamic when true, allows elements to be deleted from the queue
 	 * @param event [inout] Pointer to the event
+	 * @param oneshot true for onetime timeout false for periodic timeout
+	 * @param timer_handle [inout] pointer to timer handle
 	 * @return TRUE success, FALSE fail
 	 */
 	virtual bool addEvent
 	(unsigned long micros, int type, ostimerq_handler func,
-	 event_descriptor_t * arg, bool dynamic, unsigned *event) = 0;
+	 void **arg, bool dynamic, unsigned *event,
+	 bool oneshot, timer_t **timer_handle) = 0;
 
 	/**
 	 * @brief Removes an event from the timer queue
@@ -80,6 +83,14 @@ public:
 	 * @return TRUE success, FALSE fail
 	 */
 	virtual bool cancelEvent(int type, unsigned *event) = 0;
+
+	/**
+	 * @brief Removes timer from the timer queue
+	 * @param [in] timer handle
+	 * @return TRUE success, FALSE fail
+	 */
+	virtual bool cancelTimer(timer_t **timer_handle) = 0;
+
 	virtual ~OSTimerQueue() = 0;
 };
 

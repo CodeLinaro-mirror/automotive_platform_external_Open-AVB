@@ -77,4 +77,13 @@ bool gptpInit(void);
 
 bool gptpDeinit(void);
 
+#ifdef  RGPTP_CLNT_ENABLED
+/* Get current rptp time in nanoseconds */
+bool rgptpGetCurPtpTime(uint64_t *rgptp_time_ns);
+
+bool rgptpInit(void);
+
+bool rgptpDeinit(void);
+#endif
+
 #endif		/* __GPTP_HELPER_H__ */

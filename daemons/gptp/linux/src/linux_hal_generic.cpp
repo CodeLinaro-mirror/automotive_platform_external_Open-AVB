@@ -537,3 +537,20 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
 #endif
 	return true;
 }
+
+
+bool LinuxTimestamperGeneric::HWTimestamper_getptptime( uint64_t *ptp_cur_time ) {
+	struct timespec ts;
+
+	ts.tv_sec = ts.tv_nsec = 0;
+	*ptp_cur_time = 0;
+
+	if (clock_gettime(_private->clockid, &ts)) {
+		GPTP_LOG_ERROR("clock_gettime failed");
+		return false;
+	}
+
+	*ptp_cur_time = (ts.tv_sec)*1000000000LL + ts.tv_nsec;
+
+	return true;
+}
