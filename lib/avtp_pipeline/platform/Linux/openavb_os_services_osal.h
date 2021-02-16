@@ -116,6 +116,10 @@ thread##_type	thread##_ThreadData
 				&thread_attr,   																					\
 				thread_function,																					\
 				(void*)thread_function_arg);																		\
+			if (threadhandle##_ThreadData.err) break;																\
+			threadhandle##_ThreadData.err = pthread_setname_np(														\
+				threadhandle##_ThreadData.pthread,																	\
+				#threadName);																						\
 		} while (0);																								\
 		pthread_attr_destroy(&thread_attr);																			\
 	}

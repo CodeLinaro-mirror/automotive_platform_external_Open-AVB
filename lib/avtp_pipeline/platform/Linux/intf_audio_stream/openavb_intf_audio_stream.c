@@ -67,7 +67,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define READ_POLL_MS 200
 
 extern void *halPollingThreadFn(void *pv);
-#define halPollingThread_THREAD_STK_SIZE THREAD_STACK_SIZE
+#define halPollThread_THREAD_STK_SIZE THREAD_STACK_SIZE
 THREAD_TYPE(halPollingThread);
 
 typedef struct {
@@ -513,7 +513,7 @@ void openavbIntfAudioStreamTxInitCB(media_q_t *pMediaQ) {
         }
 
         int errResult;
-        THREAD_CREATE(halPollingThread, pPvtData->halPollingThread, NULL, halPollingThreadFn, pPvtData);
+        THREAD_CREATE(halPollThread, pPvtData->halPollingThread, NULL, halPollingThreadFn, pPvtData);
         THREAD_CHECK_ERROR(pPvtData->halPollingThread, "HAL polling Thread creation failed", errResult);
     }
 

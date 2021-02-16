@@ -124,6 +124,11 @@ int main(int argc, char *argv[])
 	tl_handle_t *tlHandleList = NULL;
 	int i1;
 
+	// Set thread name
+	if(pthread_setname_np(pthread_self(), "main_thread")) {
+		printf("Unable to set thread name");
+	}
+
 	// Process command line
 	bool optDone = FALSE;
 	while (!optDone) {

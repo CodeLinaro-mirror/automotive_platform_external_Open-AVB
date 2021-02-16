@@ -132,6 +132,11 @@ bool startEndpoint(int mode, int ifindex, const char* ifname, unsigned mtu,
 		goto error;
 	}
 
+	// Set thread name
+	if (pthread_setname_np(endpointServerHandle, "endpoint_thread")) {
+		AVB_LOG_ERROR("Failed to set endpoint thread name");
+	}
+
 	AVB_TRACE_EXIT(AVB_TRACE_ENDPOINT);
 	return true;
 
