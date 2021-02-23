@@ -187,9 +187,19 @@ static int skt_connect(const char* path, size_t buffer_sz) {
     return skt_fd;
 }
 
+static int skt_disconnect(int fd) {
+    AVB_LOGF_INFO("fd %d", fd);
+
+    if (fd != -1) {
+        shutdown(fd, SHUT_RDWR);
+        close(fd);
+    }
+    return 0;
+}
+
 static int skt_read(pvt_data_t *pPvtData, uint8_t* p, size_t len) {
     int read = 0;
-    struct pollfd pfd;
+//    struct pollfd pfd;
 
     if (pPvtData->pServerSocket < 0) {
         AVB_LOG_ERROR("invalid socket");
@@ -205,34 +215,36 @@ static int skt_read(pvt_data_t *pPvtData, uint8_t* p, size_t len) {
     }
 
 
-    int poll_ret;
-    pfd.fd = pPvtData->pHalSocket;
-    pfd.events = POLLIN | POLLHUP;
+//    int poll_ret;
+//    pfd.fd = pPvtData->pHalSocket;
+//    pfd.events = POLLIN | POLLHUP;
 
-    do {
-        poll_ret = poll(&pfd, 1, READ_POLL_MS);
-    } while ((poll_ret == -1) && (errno == EINTR));
+//    do {
+//        poll_ret = poll(&pfd, 1, READ_POLL_MS);
+//    } while ((poll_ret == -1) && (errno == EINTR));
 
-    if (poll_ret == 0) {
-      AVB_LOGF_VERBOSE("poll timeout (%d ms)", READ_POLL_MS);
-      //break;
-      return read;
-    } else if (poll_ret < 0) {
-      AVB_LOGF_ERROR("%s(): poll() failed: return %d errno %d (%s)", __func__,
-                       poll_ret, errno, strerror(errno));
-      //break;
-      return read;
-    }
+//    if (poll_ret == 0) {
+//      AVB_LOGF_VERBOSE("poll timeout (%d ms)", READ_POLL_MS);
+//      //break;
+//      return read;
+//    } else if (poll_ret < 0) {
+//      AVB_LOGF_ERROR("%s(): poll() failed: return %d errno %d (%s)", __func__,
+//                       poll_ret, errno, strerror(errno));
+//      //break;
+//      return read;
+//    }
 
-    if (pfd.revents & (POLLHUP | POLLNVAL)) {
-        return 0;
-    }
+//    if (pfd.revents & (POLLHUP | POLLNVAL)) {
+//        return 0;
+//    }
 
     do {
         read = recv(pPvtData->pHalSocket, p, len, 0);
     } while ((read == -1) && (errno == EINTR));
 
     if (read == 0) {
+      skt_disconnect(pPvtData->pHalSocket);
+      pPvtData->pHalSocket = -1;
       return 0;
     }
 
@@ -302,17 +314,6 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
   }
   return (int)count;
 }
-
-static int skt_disconnect(int fd) {
-    AVB_LOGF_INFO("fd %d", fd);
-
-    if (fd != -1) {
-        shutdown(fd, SHUT_RDWR);
-        close(fd);
-    }
-    return 0;
-}
-
 
 void *halPollingThreadFn(void *pv) {
     pvt_data_t *pPvtData = (pvt_data_t *) pv;

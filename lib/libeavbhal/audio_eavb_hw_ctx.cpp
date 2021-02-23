@@ -395,6 +395,7 @@ int eavb_stream_ctx_init(eavb_stream_ctx *ctx, struct audio_config *config) {
 
     ctx->printErrorOnce = 0;
     ctx->eavbSocketPath[0] = '\0';
+    ctx->eavbFd = -1;
 
     if (config) {
         ctx->format = config->format;
