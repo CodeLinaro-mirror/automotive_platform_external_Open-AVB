@@ -86,6 +86,12 @@
 #define MAX_EVENTS 1
 #endif
 
+#ifdef RGPTP_ENABLED
+#define RGPTP_MIN_GPIO_PULSE_TIME_MS 125
+#define RGPTP_MAX_GPIO_PULSE_TIME_MS 5000
+#endif
+
+
 void gPTPPersistWriteCB(char *bufPtr, uint32_t bufSize);
 
 #ifdef GPTP_AUTO_START
@@ -147,7 +153,7 @@ void print_usage( char *arg0 ) {
 		  "\t-OPERPDELAY <value> operational pdelay interval (Log base 2. 0 = 1 sec)\n"
 		  "\t-F <path-to-ini-file>\n"
 #ifdef RGPTP_ENABLED
-		  "\t-Y GPIO pulse time thershold\n"
+		  "\t-Y Periodic GPIO pulse time in ms\n"
 #endif
 		);
 }
@@ -540,14 +546,25 @@ int main(int argc, char **argv)
 #ifdef RGPTP_ENABLED
 			else if (strcmp(argv[i] + 1, "Y") == 0) {
 				rgptp = true;
-				portInit.rgptpSyncTime = 125;
+				portInit.rgptpSyncTime = RGPTP_MIN_GPIO_PULSE_TIME_MS;
 
 				if(( i+1 < argc ) && (isdigit(*argv[i+1]))){
-					portInit.rgptpSyncTime = atoi(argv[++i]);
-					GPTP_LOG_INFO("rgptp - set pulse time thershold value: %ums", portInit.rgptpSyncTime);
+					int sync_interval = atoi(argv[++i]);
+					if(sync_interval < RGPTP_MIN_GPIO_PULSE_TIME_MS) {
+						portInit.rgptpSyncTime = RGPTP_MIN_GPIO_PULSE_TIME_MS;
+						GPTP_LOG_INFO("rgptp - set pulse time default min value: %ums", portInit.rgptpSyncTime);
+					}
+					else if(sync_interval > RGPTP_MAX_GPIO_PULSE_TIME_MS) {
+						portInit.rgptpSyncTime = RGPTP_MAX_GPIO_PULSE_TIME_MS;
+						GPTP_LOG_INFO("rgptp - set pulse time default max value: %ums", portInit.rgptpSyncTime);
+					}
+					else {
+						portInit.rgptpSyncTime = sync_interval;
+						GPTP_LOG_INFO("rgptp - set pulse time value: %ums", portInit.rgptpSyncTime);
+					}
 				}
 				else {
-					GPTP_LOG_INFO("rgptp - set default thershold value: %ums", portInit.rgptpSyncTime);
+					GPTP_LOG_INFO("rgptp - set pulse time default value: %ums", portInit.rgptpSyncTime);
 				}
 			}
 #endif
