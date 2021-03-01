@@ -187,6 +187,54 @@ static void rgptp_test(void) {
     }
     return;
 }
+
+static void do_some_tests_rgptp_s(int time_s) {
+    uint64_t rptp_time = 0;
+    uint64_t ptp_time = 0;
+    int i = 0;
+    int64_t ns = 0;
+
+    if (rgptpInit()) {
+        for(i=0; i< 200; i++) {
+            gptpGetCurPtpTime(&ptp_time);
+            rgptpGetCurPtpTime(&rptp_time);
+            ns = (ptp_time - rptp_time);
+            printf("gptp time: %" PRIu64 "rgptp time: %"PRIu64 " diff:%" PRId64 "\n", ptp_time, rptp_time, ns);
+            sleep(time_s);
+        }
+        if(!rgptpDeinit()) {
+            printf("RGPTP deinit failed\n");
+        }
+    }
+    else {
+        printf("RGPTP Not Available\n");
+    }
+    return;
+}
+
+static void do_some_tests_rgptp_u(int time_us) {
+    uint64_t rptp_time = 0;
+    uint64_t ptp_time = 0;
+    int i = 0;
+    int64_t ns = 0;
+
+    if (rgptpInit()) {
+        for(i=0; i< 200; i++) {
+            gptpGetCurPtpTime(&ptp_time);
+            rgptpGetCurPtpTime(&rptp_time);
+            ns = (ptp_time - rptp_time);
+            printf("gptp time: %" PRIu64 "rgptp time: %"PRIu64 " diff:%" PRId64 "\n", ptp_time, rptp_time, ns);
+            usleep(time_us);
+        }
+        if(!rgptpDeinit()) {
+            printf("RGPTP deinit failed\n");
+        }
+    }
+    else {
+        printf("RGPTP Not Available\n");
+    }
+    return;
+}
 #endif
 
 int main(int argc, char *argv[])
@@ -284,6 +332,24 @@ int main(int argc, char *argv[])
         }
 #endif
     }
+#ifdef RGPTP_CLNT_ENABLED
+    if (argc == 3) {
+        if(argv[1][0] == 's') {
+            int time_s = 0;
+            time_s = atoi(argv[2]);
+            printf("\n\n====================RPTP based test========================");
+            printf("\nsleep interval: %ds\n", time_s);
+            do_some_tests_rgptp_s(time_s);
+        }
+        else if(argv[1][0] == 'u') {
+            int time_us = 0;
+            time_us = atoi(argv[2]);
+            printf("\n\n====================RPTP based test=====================");
+            printf("\nsleep interval: %dus\n", time_us);
+            do_some_tests_rgptp_u(time_us);
+        }
+	}
+#endif
 
     if(!gptpDeinit()) {
         printf("GPTP deinit failed\n");
