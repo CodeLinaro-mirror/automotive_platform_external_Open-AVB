@@ -358,6 +358,10 @@ void openavbMapAVTPAudioCfgCB(media_q_t *pMediaQ, const char *name, const char *
 			pPvtData->genClockTickOnReceiveAudio = strtol(value,
 				&pEnd, 10);
 		}
+		else if (strcmp(name, "map_nv_evt") == 0) {
+			char* pEnd;
+			pPvtData->aaf_event_field = strtol(value, &pEnd, 10);
+		}
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_MAP);
