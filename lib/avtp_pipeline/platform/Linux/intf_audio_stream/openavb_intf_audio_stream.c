@@ -63,7 +63,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 // set WRITE_POLL_MS to 0 for blocking sockets, nonzero for polled non-blocking
 // sockets
-#define WRITE_POLL_MS 20
+#define WRITE_POLL_MS 200
 #define READ_POLL_MS 200
 
 extern void *halPollingThreadFn(void *pv);
@@ -287,7 +287,7 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
   }
 
   // use non-blocking send, poll
-  int ms_timeout = SOCK_SEND_TIMEOUT_MS;
+  int ms_timeout = WRITE_POLL_MS;
   size_t count = 0;
   while (count < len) {
     do {
@@ -299,9 +299,9 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
         AVB_LOGF_DEBUG("write failed with error(%s)", strerror(errno));
         return -1;
       }
-      if (ms_timeout >= WRITE_POLL_MS) {
-        usleep(WRITE_POLL_MS * 1000);
-        ms_timeout -= WRITE_POLL_MS;
+      if (ms_timeout >= SOCK_SEND_TIMEOUT_MS) {
+        usleep(SOCK_SEND_TIMEOUT_MS * 1000);
+        ms_timeout -= SOCK_SEND_TIMEOUT_MS;
         continue;
       }
       AVB_LOGF_DEBUG("write timeout exceeded, sent %zu bytes", count);

@@ -349,7 +349,7 @@ finish:
         }
         ctx->time1 = systemTime(CLOCK_MONOTONIC);
     }
-    return bytes;
+    return sent;
 }
 
 int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
@@ -369,7 +369,7 @@ int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
         memset(buffer, 0, bytes);
     }
 
-    return bytes;
+    return read;
 #else
     struct timespec semwait_timeout;
 
