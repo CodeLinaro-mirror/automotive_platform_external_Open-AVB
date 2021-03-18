@@ -470,7 +470,7 @@ void *LinuxTimerQueueHandler( void *arg ) {
 				timerq->timerQueueMap.erase(iter);
 				timerq->LinuxTimerQueueAction( action_arg );
 				if( action_arg->rm ) {
-					delete action_arg->inner_arg;
+					delete (event_descriptor_t *)action_arg->inner_arg;
 				}
 				timer_delete(action_arg->timer_handle);
 				delete action_arg;
@@ -579,7 +579,7 @@ bool LinuxTimerQueue::cancelEvent( int type, unsigned *event ) {
 		if( ((iter->second)->type == type) && ((iter->second)->oneshot) ) {
 			// Delete element
 			if( (iter->second)->rm ) {
-				delete (iter->second)->inner_arg;
+				delete (event_descriptor_t *)(iter->second)->inner_arg;
 			}
 			timer_delete(iter->second->timer_handle);
 			delete iter->second;
@@ -595,10 +595,10 @@ bool LinuxTimerQueue::cancelEvent( int type, unsigned *event ) {
 bool LinuxTimerQueue::cancelTimer( timer_t **timer_handle ) {
 	LinuxTimerQueueMap_t::iterator iter;
 	for( iter = timerQueueMap.begin(); iter != timerQueueMap.end();) {
-		if( ((iter->second)->timer_handle == **timer_handle)) {
+		if( (iter->second)->timer_handle == **timer_handle ) {
 			// Delete element
 			if( (iter->second)->rm ) {
-				delete (iter->second)->inner_arg;
+				delete (event_descriptor_t *)(iter->second)->inner_arg;
 			}
 			timer_delete(iter->second->timer_handle);
 			delete iter->second;
