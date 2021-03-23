@@ -243,6 +243,16 @@ static int skt_connect(const char* path, size_t buffer_sz) {
     return skt_fd;
 }
 
+static int skt_disconnect(int fd) {
+    ALOGI("fd %d", fd);
+
+    if (fd != -1) {
+      shutdown(fd, SHUT_RDWR);
+      close(fd);
+    }
+    return 0;
+}
+
 static int skt_read(int fd, void* p, size_t len) {
     ssize_t read = -1;
 
@@ -258,8 +268,9 @@ static int skt_read(int fd, void* p, size_t len) {
 }
 
 
-static int skt_write(int fd, const void* p, size_t len) {
+static int skt_write(eavb_stream_ctx *ctx, const void* p, size_t len) {
     ssize_t sent = -1;
+    int fd = ctx->eavbFd;
 
     if (WRITE_POLL_MS == 0) {
         // do not poll, use blocking send
@@ -285,7 +296,13 @@ static int skt_write(int fd, const void* p, size_t len) {
         if (sent == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 ALOGE("write failed with error(%s)", strerror(errno));
-                return -1;
+                if (count) {
+                    skt_disconnect(fd);
+                    ctx->eavbFd = -1;
+                    return count;
+                } else {
+                    return -1;
+                }
             }
             if (ms_timeout >= WRITE_POLL_MS) {
                 usleep(WRITE_POLL_MS * 1000);
@@ -293,22 +310,18 @@ static int skt_write(int fd, const void* p, size_t len) {
                 continue;
             }
             ALOGW("write timeout exceeded, sent %zu bytes", count);
-            return -1;
+            if (count) {
+                skt_disconnect(fd);
+                ctx->eavbFd = -1;
+                return count;
+            } else {
+                return -1;
+            }
         }
         count += sent;
         p = (const uint8_t*)p + sent;
     }
     return (int)count;
-}
-
-static int skt_disconnect(int fd) {
-  ALOGI("fd %d", fd);
-
-  if (fd != -1) {
-    shutdown(fd, SHUT_RDWR);
-    close(fd);
-  }
-  return 0;
 }
 
 int eavb_stream_write(eavb_stream_ctx *ctx, const void* buffer, size_t bytes) {
@@ -329,7 +342,7 @@ int eavb_stream_write(eavb_stream_ctx *ctx, const void* buffer, size_t bytes) {
         }
     }
 
-    sent = skt_write(ctx->eavbFd, buffer, bytes);
+    sent = skt_write(ctx, buffer, bytes);
 
     if (sent == -1) {
         ALOGE("write failed - server might have disconnected");
@@ -367,6 +380,8 @@ int eavb_stream_read(eavb_stream_ctx *ctx, void* buffer, size_t bytes) {
     if (read == -1) {
         ALOGE("read failed");
         memset(buffer, 0, bytes);
+        skt_disconnect(ctx->eavbFd);
+        ctx->eavbFd = -1;
     }
 
     return read;
@@ -425,6 +440,10 @@ void eavb_stream_ctx_destroy(eavb_stream_ctx *ctx) {
     ctx->halPollingThreadRunning = false;
     usleep(1000);
 #endif
+    if (ctx->eavbFd >= 0) {
+        skt_disconnect(ctx->eavbFd);
+        ctx->eavbFd = -1;
+    }
 }
 
 #ifdef USE_ECNR_THREAD
@@ -467,6 +486,8 @@ void *in_eavbHalPollingThreadFn(void *pv) {
         if (pctx->eavbFd > 0) {
             len = skt_read(pctx->eavbFd, buffer, DEFAULT_READ_SIZE);
             if (len <= 0) {
+                skt_disconnect(pctx->eavbFd);
+                pctx->eavbFd = -1;
                 continue;
             }
 
@@ -484,6 +505,11 @@ void *in_eavbHalPollingThreadFn(void *pv) {
                 pthread_mutex_unlock(&pctx->circ_buff_mutex);
                 sem_post(&pctx->circ_buff_count_sem);
                 usleep(1000);
+            }
+        } else {
+            while (pctx->eavbFd <= 0) {
+                pctx->eavbFd = skt_connect(pctx->eavbSocketPath, AUDIO_STREAM_INPUT_BUFFER_SZ);
+                usleep(20);
             }
         }
     }

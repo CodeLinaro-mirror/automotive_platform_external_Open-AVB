@@ -242,15 +242,12 @@ static int skt_read(pvt_data_t *pPvtData, uint8_t* p, size_t len) {
         read = recv(pPvtData->pHalSocket, p, len, 0);
     } while ((read == -1) && (errno == EINTR));
 
-    if (read == 0) {
-      skt_disconnect(pPvtData->pHalSocket);
-      pPvtData->pHalSocket = -1;
-      return 0;
-    }
-
-    if (read < 0) {
-        AVB_LOGF_ERROR("read failed with errno=%d, str=%s\n", errno, strerror(errno));
-        return 0;
+    if (read <= 0) {
+        if (read < 0) {
+            AVB_LOGF_ERROR("read failed with errno=%d, str=%s\n", errno, strerror(errno));
+        }
+        skt_disconnect(pPvtData->pHalSocket);
+        pPvtData->pHalSocket = -1;
     }
 
     return (int)read;
@@ -297,7 +294,13 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
     if (sent == -1) {
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
         AVB_LOGF_DEBUG("write failed with error(%s)", strerror(errno));
-        return -1;
+        skt_disconnect(pPvtData->pHalSocket);
+        pPvtData->pHalSocket = -1;
+        if (count) {
+          return count;
+        } else {
+          return -1;
+        }
       }
       if (ms_timeout >= SOCK_SEND_TIMEOUT_MS) {
         usleep(SOCK_SEND_TIMEOUT_MS * 1000);
@@ -305,9 +308,13 @@ static int skt_write(pvt_data_t *pPvtData, const void* p, size_t len) {
         continue;
       }
       AVB_LOGF_DEBUG("write timeout exceeded, sent %zu bytes", count);
-      close(pPvtData->pHalSocket);
+      skt_disconnect(pPvtData->pHalSocket);
       pPvtData->pHalSocket = -1;
-      return -1;
+      if (count) {
+        return count;
+        } else {
+        return -1;
+      }
     }
     count += sent;
     p = (const uint8_t*)p + sent;
@@ -347,11 +354,7 @@ void *halPollingThreadFn(void *pv) {
     while (pPvtData->pollingThreadRunning) {
         // read new data
         read = skt_read(pPvtData, buff, SOCKET_BUFFER_SIZE);
-        if (read == 0) {
-            continue;
-        } else if (read < 0) {
-            AVB_LOGF_ERROR("halPollingThreadFn - skt_read() error: %d, %s",
-                    read, strerror(read));
+        if (read <= 0) {
             continue;
         }
 

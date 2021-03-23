@@ -28,6 +28,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <cutils/sockets.h>
 
 #include <log/log.h>
 
@@ -77,7 +78,14 @@ static int out_set_format(struct audio_stream *stream, audio_format_t format)
 
 static int out_standby(struct audio_stream *stream)
 {
+    eavb_stream_out* out = (eavb_stream_out*) stream;
     ALOGI("out_standby");
+    if (out->eavbCtx.eavbFd >= 0) {
+        ALOGI("Closing HAL socket (%d)", out->eavbCtx.eavbFd);
+        shutdown(out->eavbCtx.eavbFd, SHUT_RDWR);
+        close(out->eavbCtx.eavbFd);
+        out->eavbCtx.eavbFd = -1;
+    }
     return 0;
 }
 
