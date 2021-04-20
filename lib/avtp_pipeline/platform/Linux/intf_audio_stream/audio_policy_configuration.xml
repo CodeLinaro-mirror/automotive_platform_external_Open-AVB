@@ -78,11 +78,11 @@
                 </mixPort>
                 <mixPort name="driver_side" role="source">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_MONO"/>
                 </mixPort>
                 <mixPort name="phone" role="source">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+                             samplingRates="24000" channelMasks="AUDIO_CHANNEL_OUT_MONO"/>
                 </mixPort>
                 <mixPort name="primary output" role="source" flags="AUDIO_OUTPUT_FLAG_FAST|AUDIO_OUTPUT_FLAG_PRIMARY">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
@@ -219,7 +219,7 @@
                 </devicePort>
                 <devicePort tagName="Nav Guidance Bus" role="sink" type="AUDIO_DEVICE_OUT_BUS" address="BUS02_NAV_GUIDANCE">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_MONO,AUDIO_CHANNEL_OUT_STEREO"/>
+                             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_MONO"/>
                     <gains>
                         <gain name="" mode="AUDIO_GAIN_MODE_JOINT"
                                 minValueMB="-8400" maxValueMB="1200" defaultValueMB="0" stepValueMB="80"/>
@@ -227,7 +227,7 @@
                 </devicePort>
                 <devicePort tagName="Phone Bus" role="sink" type="AUDIO_DEVICE_OUT_BUS" address="BUS03_PHONE">
                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                             samplingRates="24000,48000" channelMasks="AUDIO_CHANNEL_OUT_MONO,AUDIO_CHANNEL_OUT_STEREO"/>
+                             samplingRates="24000" channelMasks="AUDIO_CHANNEL_OUT_MONO"/>
                     <gains>
                         <gain name="" mode="AUDIO_GAIN_MODE_JOINT"
                                 minValueMB="-8400" maxValueMB="1200" defaultValueMB="0" stepValueMB="80"/>
