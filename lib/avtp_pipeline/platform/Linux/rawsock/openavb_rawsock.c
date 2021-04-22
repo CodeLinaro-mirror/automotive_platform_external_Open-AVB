@@ -78,7 +78,7 @@ void *openavbRawsockOpen(const char *ifname_uri, bool rx_mode, bool tx_mode, U16
 	AVB_TRACE_ENTRY(AVB_TRACE_RAWSOCK);
 
 	const char* ifname = ifname_uri;
-	char proto[IF_NAMESIZE] = "pcap";
+	char proto[IF_NAMESIZE] = "simple";
 	char *colon = strchr(ifname_uri, ':');
 	if (colon) {
 		ifname = colon + 1;
