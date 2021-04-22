@@ -106,6 +106,11 @@ typedef struct {
 	//intf_nv_repeat_data
 	int repeatData;
 
+	//total number of data bytes stored in file so far
+	U32 numOfStoredDataBytes;
+
+	//set when writing to file is finished
+	bool fileReady;
 } pvt_data_t;
 
 // fread that (mostly) ignores return value - to silence compiler warnings
@@ -189,6 +194,8 @@ static void x_parseWaveFile(media_q_t *pMediaQ)
 			return;
 		}
 
+// Workaround : This check is not met by all wav files
+/*
 		if (memcmp(wavFileHeader.subChunk2ID, "data", 4) != 0) {
 			AVB_LOGF_ERROR("%s does not appear to be a supported wav file.", pPvtData->pFileName);
 			fclose(pPvtData->pFile);
@@ -202,7 +209,7 @@ static void x_parseWaveFile(media_q_t *pMediaQ)
 			pPvtData->pFile = NULL;
 			return;
 		}
-
+*/
 		// Give the audio parameters to the mapping module.
 		if (pMediaQ->pMediaQDataFormat) {
 			if (strcmp(pMediaQ->pMediaQDataFormat, MapUncmpAudioMediaQDataFormat) == 0
@@ -599,17 +606,15 @@ bool openavbIntfWavFileRxCB(media_q_t *pMediaQ)
 
         bool moreData = TRUE;
         size_t written;
-        static U32 numOfStoredDataBytes = 0;       //total number of data bytes stored in file so far
-        static bool fileReady = FALSE;             //set when writing to file is finished
         bool expectedNumberOfDataReceived = FALSE; //set when expected number of data bytes has been received
 
         while (moreData) {
             media_q_item_t *pMediaQItem = openavbMediaQTailLock(pMediaQ, TRUE);
-            if ((pMediaQItem) && (fileReady == FALSE)) {
+            if ((pMediaQItem) && (pPvtData->fileReady == FALSE)) {
                 if (pPvtData->pFile && pMediaQItem->dataLen > 0) {
                     if (expectedNumberOfDataReceived == FALSE) {
-                        if ((numOfStoredDataBytes + pMediaQItem->dataLen ) > pPvtData->numberOfDataBytes) {
-                            pMediaQItem->dataLen = pPvtData->numberOfDataBytes - numOfStoredDataBytes;
+                        if ((pPvtData->numOfStoredDataBytes + pMediaQItem->dataLen ) > pPvtData->numberOfDataBytes) {
+                            pMediaQItem->dataLen = pPvtData->numberOfDataBytes - pPvtData->numOfStoredDataBytes;
                             expectedNumberOfDataReceived = TRUE;
                         }
                     }
@@ -626,12 +631,12 @@ bool openavbIntfWavFileRxCB(media_q_t *pMediaQ)
                     }
                     else {
                         pMediaQItem->dataLen = 0;
-                        numOfStoredDataBytes += written;
+                        pPvtData->numOfStoredDataBytes += written;
                         if (expectedNumberOfDataReceived == TRUE) {
-                            fileReady = TRUE;
+                            pPvtData->fileReady = TRUE;
                             fclose(pPvtData->pFile);
                             pPvtData->pFile = NULL;
-                            AVB_LOG_INFO("Wav file ready.");
+                            AVB_LOGF_INFO("Wav file ready. Received %lu bytes", pPvtData->numOfStoredDataBytes);
                         }
                     }
                 }
@@ -717,6 +722,8 @@ extern DLL_EXPORT bool openavbIntfWavFileInitialize(media_q_t *pMediaQ, openavb_
 
 		pPvtData->intervalCounter = 0;
 		pPvtData->repeatData = 0;
+		pPvtData->numOfStoredDataBytes = 0;
+		pPvtData->fileReady = FALSE;
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
