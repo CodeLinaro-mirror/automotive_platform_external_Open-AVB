@@ -175,7 +175,7 @@ static void x_calculateSizes(media_q_t *pMediaQ)
 			case AVB_AUDIO_RATE_16KHZ:
 				pPvtData->aaf_rate = AAF_RATE_16K;
 				break;
-			case AVB_AUDIO_RATE_24KHZ:
+			case AVB_AUDIO_RATE_24KHZ:   
 				pPvtData->aaf_rate = AAF_RATE_24K;
 				break;
 			case AVB_AUDIO_RATE_32KHZ:
