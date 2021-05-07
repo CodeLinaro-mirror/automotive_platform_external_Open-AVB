@@ -82,6 +82,7 @@ pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
 
 #define CLOCKFD 3
 #define FD_TO_CLOCKID(fd)	((~(clockid_t) (fd) << 3) | CLOCKFD)
+#define BUF_SIZE 500
 
 #ifdef GPTP_AUTO_START
 #ifdef SYSTEMD
@@ -93,6 +94,10 @@ pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 static bool bInitialized = false;
+static bool bServiceConnect = false;
+/* Pipe file descriptors for cleanup the loop */
+int pipefd[2];
+fd_set readfds;
 static int gPtpShmFd = -1;
 static char *gPtpMmap = NULL;
 static gPtpTimeData gPtpTD;
@@ -105,7 +110,7 @@ static clockid_t rgptp_clkid = -1;
 
 #ifdef GPTP_AUTO_START
 static pthread_t thread_id;
-static int sock = 0;
+static int sock = -1;
 #endif
 
 static int gptpClkInit(int *gptp_phc_fd)
@@ -205,6 +210,10 @@ static bool gptpLocalTime(const gPtpTimeData *td, uint64_t *now_local, uint64_t 
 	corresponding to system time */
 	*now_local = td->local_time + delta_local;
 
+	if (*now_local == 0) {
+		return false;
+	}
+
 	return true;
 }
 
@@ -227,6 +236,9 @@ static bool gptpLocalQTime(const gPtpTimeData *td, uint64_t *now_local, uint64_t
 	corresponding to qtimer time*/
 	*now_local = td->local_time + delta_local;
 
+	if (*now_local == 0) {
+		return false;
+	}
 	return true;
 }
 
@@ -254,19 +266,21 @@ static void *gptpDaemonSrvConnect(void *arg)
     int bytes_read = 0;
     int retry_count = 0;
     int gptp_state = 0;
+    char buf[BUF_SIZE];
 
-    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-        printf("gptpDaemonSrvConnect: socket create failed\n");
-        return NULL;
-    }
+    while (bServiceConnect) {
+        if (sock == -1) {
+            if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+                printf("gptpDaemonSrvConnect: socket create failed\n");
+                return NULL;
+            }
 
-    memset(&saun, 0, sizeof(sockaddr_un));
-    saun.sun_family = AF_UNIX;
-    snprintf(saun.sun_path, (sizeof(saun.sun_path) - 1), ADDRESS);
-    fcntl(sock, F_SETFL, O_NONBLOCK);
-    len = sizeof(saun.sun_family) + strlen(saun.sun_path);
+            memset(&saun, 0, sizeof(sockaddr_un));
+            saun.sun_family = AF_UNIX;
+            snprintf(saun.sun_path, (sizeof(saun.sun_path) - 1), ADDRESS);
+            len = sizeof(saun.sun_family) + strlen(saun.sun_path);
+        }
 
-    while (1) {
         ret = connect(sock, (struct sockaddr*) &saun, len);
 
         /* EISCONN -- Transport endpoint is already connected */
@@ -279,13 +293,39 @@ static void *gptpDaemonSrvConnect(void *arg)
                 }
             }
             UNLOCK();
-        }else if(ret == -1){
+            FD_ZERO(&readfds);
+            FD_SET(sock, &readfds);
+            FD_SET(pipefd[0], &readfds);
+            ret = select((pipefd[0] > sock ? pipefd[0] : sock) + 1, &readfds, NULL, NULL,
+                         NULL);
+
+            if (ret != -1) {
+                if (FD_ISSET(pipefd[0], &readfds)) {
+                    char pipebuf;
+                    read(pipefd[0], &pipebuf, 1);
+
+                    if (pipebuf == '1') {
+                        printf("clean up thread\n");
+                        ret = -1;
+                    }
+                } else if (FD_ISSET(sock, &readfds)) {
+                    ret = read(sock, buf, BUF_SIZE);
+
+                    if (ret == 0) {
+                        close(sock);
+                        sock = -1;
+                    }
+                }
+            }
+        }
+
+        if(ret == -1){
             LOCK();
             gptpMemDeinit(gPtpShmFd, gPtpMmap);
             gptpClkDeInit(gptpPhcFd);
             memset(&gPtpTD, 0, sizeof(gPtpTimeData));
             bInitialized = false;
-            printf("gptpDaemonSrvConnect: failed %s\n", strerror(errno));
+            printf("gptpDaemonSrvConnect: cleanup\n");
             UNLOCK();
         }
 
@@ -296,24 +336,54 @@ static void *gptpDaemonSrvConnect(void *arg)
 
 static void gptpDaemonClientInit(void) {
     int ret = 0;
+    bServiceConnect = true;
+    pipefd[0] = -1;
+    pipefd[1] = -1;
 
+    if (pipe(pipefd) == -1) {
+        printf("pipe create error\n");
+        return;
+    }
     ret = pthread_create(&thread_id, NULL, gptpDaemonSrvConnect, NULL);
 
     if(ret != 0){
         printf("gptpDaemonClientInit: failed -->%s\n", strerror(errno));
     }
+
+    ret = pthread_setname_np(thread_id, "GPTP-HELPER");
+
+    if (ret != 0) {
+        printf("Failed to set thread name \n");
+    }
+
     return;
 }
 
 static void gptpDaemonClientDeInit(void) {
     int ret = 0;
-
-    close(sock);
-    ret = pthread_detach(thread_id);
+    char data = '1';
+    bServiceConnect = false;
+    write(pipefd[1], &data, 1);
+    ret = pthread_join(thread_id, NULL);
 
     if(ret != 0){
         printf("gptpDaemonClientDeInit: failed -->%s\n", strerror(errno));
     }
+
+    if (sock > 0) {
+        close(sock);
+        sock = -1;
+    }
+
+    // Release the Pipe
+    if (pipefd[0] != -1) {
+        close(pipefd[0]);
+    }
+
+    if (pipefd[1] != -1) {
+        close(pipefd[1]);
+    }
+
     return;
 }
 
