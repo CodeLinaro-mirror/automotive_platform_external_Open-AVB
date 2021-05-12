@@ -82,7 +82,23 @@ static int rgptpGpioInit(rgptp_data *rpgtp)
 {
     ssize_t n;
     int exportfd, directionfd;
+    //Unexport the GPIO if it was already opened in previous session
+    exportfd = open(GPIO_UNEXP_PATH, O_WRONLY);
 
+    if (exportfd < 0) {
+        GPTP_LOG_DEBUG("Cannot open GPIO to unexport it\n");
+    } else {
+        int n = 0;
+        n = write(exportfd, SPARE_GPIO_PIN, 3);
+
+        if (n < 0) {
+            GPTP_LOG_DEBUG("GPIO %s unexport failed:%s\n", SPARE_GPIO_PIN, strerror(errno));
+        } else {
+            GPTP_LOG_DEBUG("GPIO %s unexported succesfully\n", SPARE_GPIO_PIN);
+        }
+    }
+
+    close(exportfd);
     exportfd = open(GPIO_EXP_PATH, O_WRONLY);
     if(exportfd < 0) {
         GPTP_LOG_ERROR("Cannot open GPIO to export it\n");
@@ -307,7 +323,7 @@ void rgptpDeInit(void)
                 GPTP_LOG_ERROR("GPIO %s unexport failed:%s\n", SPARE_GPIO_PIN, strerror(errno));
             }
             else {
-                GPTP_LOG_INFO("GPIO %s unexported ssuccesfully\n", SPARE_GPIO_PIN);
+                GPTP_LOG_INFO("GPIO %s unexported succesfully\n", SPARE_GPIO_PIN);
             }
         }
         close(fd);
