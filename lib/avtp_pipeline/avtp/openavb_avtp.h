@@ -148,6 +148,14 @@ typedef struct
 } avtp_stream_t;
 
 
+typedef struct {
+	U32 previousAvtpTime;
+	U32 currentAVTPReference;
+	U64 intervalNS;
+	unsigned long   wakeFrames;
+} avtp_smoothning_data;
+
+
 typedef void (*avtp_listener_callback_fn)(void *pv, avtp_info_t *data);
 
 // tx/rx
@@ -164,7 +172,8 @@ openavbRC openavbAvtpTxInit(media_q_t *pMediaQ,
 					U16 nbuffers,
 					void **pStream_out);
 
-openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf);
+openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf, int count,
+                        avtp_smoothning_data* avtpdata);
 
 openavbRC openavbAvtpRxInit(media_q_t *pMediaQ, 
 					openavb_map_cb_t *pMapCB,

@@ -56,6 +56,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 // Debug function for getting hardware ptp time
 #define OPENAVB_CLOCK_HWPTP 100
 
+#define WRAP_AROUND_CHECK ((U32)1 << 31)
+#define MAX_PERMISSIBLE_DELTA  (float)(0.05)  //5 percent
 /*
  * This is broken out into a function, so that we can close and reopen
  * the socket if we detect a problem receiving frames.
@@ -110,6 +112,108 @@ static void processTimestampEval(avtp_stream_t *pStream, U8 *pHdr)
 	AVB_TRACE_EXIT(AVB_TRACE_AVTP_DETAIL);
 }
 
+static void smoothenTimestamp(avtp_stream_t *pStream, U8 *pHdr, int count,
+                              avtp_smoothning_data* avtpdata)
+{
+	bool tsValid =  (pHdr[HIDX_AVTP_HIDE7_TV1] & 0x01) ? TRUE : FALSE;
+	bool tsUncertain = (pHdr[HIDX_AVTP_HIDE7_TU1] & 0x01) ? TRUE : FALSE;
+
+	if (tsValid && !tsUncertain) {
+		U32 ts = ntohl(*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]));
+		U32 tsSmoothed = 0;
+		U32 delta;
+
+		/* Use the first timestamp of the batch as reference */
+		if (avtpdata->currentAVTPReference == 0) {
+			avtpdata->currentAVTPReference = ts + (avtpdata->wakeFrames - 1) *
+			                                 avtpdata->intervalNS / avtpdata->wakeFrames;
+
+			if (avtpdata->previousAvtpTime != 0) {
+				U32 expectedAVTPref;
+				U32 permissibleDelta;
+				permissibleDelta = MAX_PERMISSIBLE_DELTA * avtpdata->intervalNS;
+				expectedAVTPref = avtpdata->previousAvtpTime + avtpdata->intervalNS;
+				AVB_LOGF_DEBUG("avtpdata->currentAVTPReference %lu expectedAVTPref ts %lu",
+				               avtpdata->currentAVTPReference, expectedAVTPref);
+
+				/*check for the drift and adjust it*/
+				if (avtpdata->currentAVTPReference > expectedAVTPref) {
+					delta = avtpdata->currentAVTPReference - expectedAVTPref;
+
+					if (delta < WRAP_AROUND_CHECK) {
+						if (delta > permissibleDelta * 100) {
+							/* We shouldnt be seeing this print, if we see then we need to check
+							if there is huge delays happening in the system */
+							AVB_LOGF_INFO("resetting the timeline as delta is too high %lu", delta);
+						} else if (delta > permissibleDelta) {
+							avtpdata->currentAVTPReference = expectedAVTPref + permissibleDelta;
+						} else {
+							avtpdata->currentAVTPReference = expectedAVTPref;
+						}
+					} else {
+						avtpdata->currentAVTPReference = expectedAVTPref;
+					}
+				} else {
+					delta = expectedAVTPref - avtpdata->currentAVTPReference;
+
+					if (delta < WRAP_AROUND_CHECK) {
+						avtpdata->currentAVTPReference = expectedAVTPref;
+					} else {
+						U32 permissibleDelta;
+						permissibleDelta = MAX_PERMISSIBLE_DELTA * avtpdata->intervalNS;
+						delta = ((U32) - 1) - (delta);
+
+						if (delta > permissibleDelta * 100) {
+							AVB_LOGF_INFO("resetting the timeline as delta is too high %lu", delta);
+						} else if (delta > permissibleDelta) {
+							avtpdata->currentAVTPReference = expectedAVTPref + permissibleDelta;
+						} else {
+							avtpdata->currentAVTPReference = expectedAVTPref;
+						}
+					}
+				}
+			}
+
+			delta = 0;
+		}
+
+		/* Check if this is the first packet */
+		if (avtpdata->previousAvtpTime != 0) {
+			/* if packet is not the first packet, check if the timestamp
+			    has valid time or has been wrapped around. find the
+			    delta between the timestamps based on that. */
+			if (avtpdata->previousAvtpTime < avtpdata->currentAVTPReference) {
+				delta = avtpdata->currentAVTPReference - avtpdata->previousAvtpTime;
+			} else {
+				delta = ((U32) - 1) - (avtpdata->previousAvtpTime -
+				                       avtpdata->currentAVTPReference);
+			}
+
+			/* check if the difference is within range, if not treat the packet
+			    as a new packet */
+
+			if (delta < 2 * avtpdata->intervalNS) {
+				/* divide the time based on the index of the packet in the batch */
+				delta = delta * (count - 1) / avtpdata->wakeFrames;
+			} else {
+				delta = (count - 1) * avtpdata->intervalNS / avtpdata->wakeFrames;
+			}
+		} else {
+			/* if its a new packet, timestamp it based on the index in the
+			    batch by dividing the time within the interval range */
+			delta = (count - 1) * avtpdata->intervalNS / avtpdata->wakeFrames;
+		}
+
+		if (delta > avtpdata->currentAVTPReference) {
+			tsSmoothed = ((U32) - 1) - (delta - avtpdata->currentAVTPReference);
+		} else {
+			tsSmoothed = avtpdata->currentAVTPReference - delta;
+		}
+
+		AVB_LOGF_DEBUG("smoothenTimestamp ts %lu smoothened ts %lu", ts, tsSmoothed);
+		*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]) = htonl(tsSmoothed);
+	}
+}
 
 /* Initialize AVTP for talking
  */
@@ -285,7 +389,8 @@ static openavbRC fillAvtpHdr(avtp_stream_t *pStream, U8 *pFill)
 
 /* Send a frame
  */
-openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf)
+openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf, int count,
+                        avtp_smoothning_data* avtpdata)
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_AVTP_DETAIL);
 
@@ -346,6 +451,10 @@ openavbRC openavbAvtpTx(void *pv, bool bSend, bool txBlockingInIntf)
 
 			if (pStream->tsEval) {
 				processTimestampEval(pStream, pAvtpFrame);
+			}
+
+			if (avtpdata->wakeFrames > 1) {
+				smoothenTimestamp(pStream, pAvtpFrame, count, avtpdata);
 			}
 
 			if (pStream->enable_debug_of_gptp_timestamps &&

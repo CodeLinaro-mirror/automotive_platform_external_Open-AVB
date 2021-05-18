@@ -39,28 +39,29 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 typedef struct {
 	// Data from callback
-	char			ifname[IFNAMSIZ];
-	AVBStreamID_t 	streamID;
-	U8				destAddr[ETH_ALEN];
-	AVBTSpec_t		tSpec;
-	U32				classRate;
-	U32				fwmark;
-	U16				vlanID;
-	U8				vlanPCP;
+	char            ifname[IFNAMSIZ];
+	AVBStreamID_t   streamID;
+	U8              destAddr[ETH_ALEN];
+	AVBTSpec_t      tSpec;
+	U32             classRate;
+	U32             fwmark;
+	U16             vlanID;
+	U8              vlanPCP;
 
 	// State info for streaming
-	void			*avtpHandle;
-	unsigned long 	sleepUsec;
-	unsigned long	wakeRate;
-	unsigned long	wakeFrames;
-	unsigned long	wakesPerReport;
-	unsigned long	cntWakes;
-	unsigned long	cntFrames;
-	U64 			nextCycleNS;
-	U64 			intervalNS;
-	U64 			nextReportNS;
-	U64				nextSecondNS;
-	talker_stats_t	stats;
+	void            *avtpHandle;
+	unsigned long   sleepUsec;
+	unsigned long   wakeRate;
+	unsigned long   wakeFrames;
+	unsigned long   wakesPerReport;
+	unsigned long   cntWakes;
+	unsigned long   cntFrames;
+	U64             nextCycleNS;
+	U64             intervalNS;
+	U64             nextReportNS;
+	U64             nextSecondNS;
+	U32             prevAVTPTime;
+	talker_stats_t  stats;
 } talker_data_t;
 
 
