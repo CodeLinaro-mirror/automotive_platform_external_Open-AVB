@@ -172,6 +172,7 @@ static void *rgptpSrvThread(void *arg)
     struct qrtr_packet pkt;
     struct rgptp_data *info = (rgptp_data*)arg;
     IEEE1588Clock *pClock = info->port_init->clock;
+    bool timerActiveStatus = false;
 
     while(1) {
         rl = sizeof(rq);
@@ -207,20 +208,40 @@ static void *rgptpSrvThread(void *arg)
         GPTP_LOG_INFO("%s  qrtr_decode pkt - type = %d data_len = %d data = %s\n",__func__,
                                                             pkt.type, pkt.data_len, pkt.data);
 
-        memset(&info->clnt, 0, sizeof(struct sockaddr_qrtr));
-        info->clnt.sq_family = AF_QIPCRTR;
-        info->clnt.sq_node = pkt.node;
-        info->clnt.sq_port = pkt.port;
-
         switch (pkt.type) {
             case QRTR_TYPE_DATA:
-                pClock->addTimer((info->port_init->rgptpSyncTime*1000000),
-                                    rgptpTimeoutThread, info, false, &info->timer_id);
-            break;
+                memset(&info->clnt, 0, sizeof(struct sockaddr_qrtr));
+                info->clnt.sq_family = AF_QIPCRTR;
+                info->clnt.sq_node = pkt.node;
+                info->clnt.sq_port = pkt.port;
+                GPTP_LOG_INFO("%s,%d addTimer", __func__, getpid());
+                pClock->addTimer((info->port_init->rgptpSyncTime * 1000000),
+                                 rgptpTimeoutThread, info, false, &info->timer_id);
+                timerActiveStatus = true;
+                break;
+
             case QRTR_TYPE_DEL_CLIENT:
+                if ((info->clnt.sq_node == pkt.node) && (info->clnt.sq_port == pkt.port)
+                        && (timerActiveStatus == true)) {
+                    GPTP_LOG_INFO("%s,%d deleteTimer", __func__, getpid());
+                    pClock->deleteTimer(&info->timer_id);
+                    timerActiveStatus = false;
+                }
+
+                break;
+
+            case QRTR_TYPE_BYE:
+                if ((info->clnt.sq_node == pkt.node) && (timerActiveStatus == true)) {
+                    GPTP_LOG_INFO("%s,%d deleteTimer", __func__, getpid());
+                    pClock->deleteTimer(&info->timer_id);
+                    timerActiveStatus = false;
+                }
+
+                break;
+
             default:
-                pClock->deleteTimer(&info->timer_id);
-            break;
+                GPTP_LOG_ERROR("%s,%d unknown message", __func__, getpid());
+                break;
         }
     }
 
