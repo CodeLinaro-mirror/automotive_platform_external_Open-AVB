@@ -2,6 +2,7 @@ OBJS=neutrino
 INCL=neutrino.h
 AVBLIB=libneutrino.a
 #CFLAGS=-ggdb
+CFLAGS+= -DUSE_GLIB
 
 CC?=gcc
 RANLIB?=ranlib

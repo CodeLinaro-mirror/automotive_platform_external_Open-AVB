@@ -43,6 +43,11 @@
 #define MAX_INTERFERENCE_SIZE (1542*8)
 #define MAX_FRAME_SIZE (1542*8)
 
+#ifdef USE_GLIB
+#define strlcpy g_strlcpy
+#define strlcat g_strlcat
+#endif
+
 // Ethernet Frame overhead
 // L2 includes MAC src/dest, VLAN tag, Ethertype
 #define AVTP_L2_OVERHEAD 18
@@ -125,12 +130,88 @@ static unsigned int get_low_credit(float bw, int connected_speed, int class)
 	return low_credit;
 }
 
-int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
+int ntn_set_class_bandwidth_ntn1(int nClass, unsigned classBytesPerSec, char *ifname)
+{
+        int ret;
+        struct ifreq ifr;
+        struct ifr_data_struct data;
+        struct avb_algorithm avb_struct;
+        int sockfd = -1;
+        unsigned int classBitsPerSecond = classBytesPerSec * 8;
+        float bw100 = 0;
+        float bw1000 = 0;
+        char *colon = strchr(ifname, ':');
+        char *ifname_interface = NULL;
+        if (colon) {
+                ifname_interface = colon + 1;
+        }
+        else
+                ifname_interface = ifname;
+
+        if (classBitsPerSecond > 0) {
+                classBitsPerSecond /= 1000 * 1000;
+                classBitsPerSecond += 1;
+                classBitsPerSecond *= 1000 * 1000;
+        }
+
+        bw1000 = ((float)classBitsPerSecond / 1000000) / 1000;
+        bw100 = ((float)classBitsPerSecond / 1000000) / 100;
+
+        if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+                syslog(LOG_ERR, "Configuring HW queue; can't open socket\n");
+                return sockfd;
+        }
+	switch (nClass) {
+        case SR_CLASS_A:
+                avb_struct.chInx = 1;
+                break;
+        case SR_CLASS_B:
+                avb_struct.chInx = 2;
+                break;
+        default:
+                syslog(LOG_ERR, "Configuring HW queue; unsupported SR class (%d)\n", nClass);
+                ret = -EINVAL;
+                goto finish;
+        }
+
+        syslog(LOG_DEBUG, "Setting up hw queue: bw100 %f, bw1000 %f, index %d\n", bw100, bw1000, avb_struct.chInx);
+
+        data.cmd = DWC_ETH_QOS_AVB_ALGORITHM;
+        data.chInx = avb_struct.chInx;
+        avb_struct.algorithm = classBitsPerSecond > 0 ? AVB_CBS : AVB_SP;
+        avb_struct.cc = classBitsPerSecond > 0 ? 1 : 0;
+
+        avb_struct.speed100params.idle_slope = get_idle_slope(bw100, SPEED_100);
+        avb_struct.speed100params.send_slope = get_send_slope(bw100, SPEED_100);
+        avb_struct.speed100params.hi_credit = get_hi_credit(bw100, SPEED_100, avb_struct.chInx);
+        avb_struct.speed100params.low_credit = get_low_credit(bw100, SPEED_100, avb_struct.chInx);
+
+        avb_struct.speed1000params.idle_slope = get_idle_slope(bw1000, SPEED_1000);
+        avb_struct.speed1000params.send_slope = get_send_slope(bw1000, SPEED_1000);
+        avb_struct.speed1000params.hi_credit = get_hi_credit(bw1000, SPEED_1000, avb_struct.chInx);
+        avb_struct.speed1000params.low_credit = get_low_credit(bw1000, SPEED_1000, avb_struct.chInx);
+
+        avb_struct.op_mode = QAVB;
+        data.ptr = &avb_struct;
+        strlcpy(ifr.ifr_ifrn.ifrn_name, ifname_interface, IFNAMSIZ - 1);
+        ifr.ifr_ifru.ifru_data = (void *)&data;
+
+        errno = 0;
+        ret = ioctl(sockfd, DWC_ETH_QOS_PRV_IOCTL, &ifr);
+        if (ret < 0)
+                syslog(LOG_ERR, "Configuring HW queue; ioctl failed (%d: %s)\n", errno, strerror(errno));
+        else
+                syslog(LOG_DEBUG, "Configured AVB Algorithm parameters successfully\n");
+finish:
+        close(sockfd);
+        return ret;
+}
+int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname)
 {
 	int ret;
 	struct ifreq ifr;
-	struct ifr_data_struct data;
-	struct avb_algorithm avb_struct;
+	struct tc9562mac_ioctl_cbs_cfg cbs_params;
+	struct tc9562mac_ioctl_qmode_cfg qmode_cfg;
 	int sockfd = -1;
 	unsigned int classBitsPerSecond = classBytesPerSec * 8;
 	float bw100 = 0;
@@ -152,10 +233,10 @@ int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
 
 	switch (nClass) {
 	case SR_CLASS_A:
-		avb_struct.chInx = 1;
+		cbs_params.queue_idx = 1;
 		break;
 	case SR_CLASS_B:
-		avb_struct.chInx = 2;
+		cbs_params.queue_idx = 2;
 		break;
 	default:
 		syslog(LOG_ERR, "Configuring HW queue; unsupported SR class (%d)\n", nClass);
@@ -163,27 +244,36 @@ int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname)
 		goto finish;
 	}
 
-	syslog(LOG_DEBUG, "Setting up hw queue: bw100 %f, bw1000 %f, index %d\n", bw100, bw1000, avb_struct.chInx);
+	syslog(LOG_DEBUG, "Setting up hw queue: bw100 %f, bw1000 %f, index %d\n", bw100, bw1000,cbs_params.queue_idx);
 
-	data.cmd = DWC_ETH_QOS_AVB_ALGORITHM;
-	data.chInx = avb_struct.chInx;
-	avb_struct.algorithm = classBitsPerSecond > 0 ? AVB_CBS : AVB_SP;
-	avb_struct.cc = classBitsPerSecond > 0 ? 1 : 0;
+	cbs_params.cmd = TC9562MAC_AVB_ALGORITHM;
+	qmode_cfg.cmd = TC9562MAC_SET_QMODE;
+	qmode_cfg.queue_idx =  cbs_params.queue_idx;
+	qmode_cfg.queue_mode = QAVB;
 
-	avb_struct.speed100params.idle_slope = get_idle_slope(bw100, SPEED_100);
-	avb_struct.speed100params.send_slope = get_send_slope(bw100, SPEED_100);
-	avb_struct.speed100params.hi_credit = get_hi_credit(bw100, SPEED_100, avb_struct.chInx);
-	avb_struct.speed100params.low_credit = get_low_credit(bw100, SPEED_100, avb_struct.chInx);
+	strlcpy(ifr.ifr_ifrn.ifrn_name, ifname, IFNAMSIZ - 1);
+	ifr.ifr_ifru.ifru_data = (void *)&qmode_cfg;
 
-	avb_struct.speed1000params.idle_slope = get_idle_slope(bw1000, SPEED_1000);
-	avb_struct.speed1000params.send_slope = get_send_slope(bw1000, SPEED_1000);
-	avb_struct.speed1000params.hi_credit = get_hi_credit(bw1000, SPEED_1000, avb_struct.chInx);
-	avb_struct.speed1000params.low_credit = get_low_credit(bw1000, SPEED_1000, avb_struct.chInx);
+	errno = 0;
+	ret = ioctl(sockfd, DWC_ETH_QOS_PRV_IOCTL, &ifr);
+	if (ret < 0)
+		syslog(LOG_ERR, "Configuring HW queue for setting the queue mode; ioctl failed (%d: %s)\n", errno, strerror(errno));
+	else
+		syslog(LOG_DEBUG, "Configured AVB queue mode parameters successfully\n");
 
-	avb_struct.op_mode = QAVB;
-	data.ptr = &avb_struct;
-	strncpy(ifr.ifr_ifrn.ifrn_name, ifname, IFNAMSIZ - 1);
-	ifr.ifr_ifru.ifru_data = (void *)&data;
+
+
+	cbs_params.speed100cfg.idle_slope = get_idle_slope(bw100, SPEED_100);
+	cbs_params.speed100cfg.send_slope = get_send_slope(bw100, SPEED_100);
+	cbs_params.speed100cfg.high_credit = get_hi_credit(bw100, SPEED_100, cbs_params.queue_idx);
+	cbs_params.speed100cfg.low_credit = get_low_credit(bw100, SPEED_100, cbs_params.queue_idx);
+
+	cbs_params.speed1000cfg.idle_slope = get_idle_slope(bw1000, SPEED_1000);
+	cbs_params.speed1000cfg.send_slope = get_send_slope(bw1000, SPEED_1000);
+	cbs_params.speed1000cfg.high_credit = get_hi_credit(bw1000, SPEED_1000, cbs_params.queue_idx);
+	cbs_params.speed1000cfg.low_credit = get_low_credit(bw1000, SPEED_1000, cbs_params.queue_idx);
+
+	ifr.ifr_ifru.ifru_data = (void *)&cbs_params;
 
 	errno = 0;
 	ret = ioctl(sockfd, DWC_ETH_QOS_PRV_IOCTL, &ifr);

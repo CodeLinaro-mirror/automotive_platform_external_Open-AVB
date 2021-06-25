@@ -55,6 +55,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define AVB_DEFAULT_QDISC_MODE AVB_SHAPER_HWQ_PER_CLASS
 
+#define ETH_NTN_VER1 1
+#define ETH_NTN_VER2 2
+
 // We have a singleton Qmgr, so we use file-static data here
 
 // Qdisc configuration
@@ -98,14 +101,32 @@ static qmgrStream_t qmgr_streams[MAX_AVB_STREAMS];
 #if MAX_AVB_STREAMS_PER_CLASS > (1 << TC_AVB_CLASS_SHIFT)
 #error MAX_AVB_STREAMS_PER_CLASS too large for FWMARK encoding
 #endif
+static void ntn_detection(int *ntn_flag)
+{
+       int ret =0;
+       ret = system("lspci | grep 1179:021a");
+       if(ret == 0)
+          *ntn_flag = ETH_NTN_VER1;
+       else
+       {
+         ret = system("lspci | grep 1179:021f");
+         if(ret == 0)
+           *ntn_flag = ETH_NTN_VER2;
+       }
+}
 
 static bool setupHWQueue(int nClass, unsigned classBytesPerSec)
 {
-	int err = 0;
+	int err = 0,ntn_flag=0;
 	AVB_TRACE_ENTRY(AVB_TRACE_QUEUE_MANAGER);
 
 #ifdef AVB_FEATURE_NEUTRINO
-	err = ntn_set_class_bandwidth(nClass, classBytesPerSec, qdisc_data.ifname);
+        ntn_detection(&ntn_flag);
+        if(ntn_flag == ETH_NTN_VER1)
+              err = ntn_set_class_bandwidth_ntn1(nClass, classBytesPerSec, qdisc_data.ifname);
+        else
+              err = ntn_set_class_bandwidth_ntn2(nClass, classBytesPerSec, qdisc_data.ifname);
+
 #else
 	U32 class_a_bytes_per_sec, class_b_bytes_per_sec;
 

@@ -31,9 +31,12 @@
 
 /* Private IOCTLs parameters */
 #define DWC_ETH_QOS_PRV_IOCTL		SIOCDEVPRIVATE
-#define DWC_ETH_QOS_AVB_ALGORITHM	27
 #define DWC_ETH_QOS_RWK_FILTER_LENGTH	8
 
+#define DWC_ETH_QOS_AVB_ALGORITHM      27 //for neutrino 1
+#define TC9562MAC_AVB_ALGORITHM        4 //for neutrino 2
+#define TC9562MAC_SET_QMODE            2
+//Neutrino 1 structures
 /* common data structure between driver and application for
  * sharing info through ioctl
  * */
@@ -80,7 +83,29 @@ struct avb_algorithm {
 	struct avb_algorithm_params speed1000params;
 	queue_operating_mode op_mode;
 };
+//Neutrino 2 structures
+struct tc9562mac_ioctl_qmode_cfg {
+        unsigned int cmd;
+        unsigned int queue_idx;
+        unsigned int queue_mode;
+};
 
-int ntn_set_class_bandwidth(int nClass, unsigned classBytesPerSec, char *ifname);
+struct tc9562_ioctl_cbs_params {
+        unsigned int send_slope;
+        unsigned int idle_slope;
+        unsigned int high_credit;
+        unsigned int low_credit;
+        unsigned int percentage;
+};
+
+struct tc9562mac_ioctl_cbs_cfg {
+        unsigned int cmd;
+        unsigned int queue_idx;
+        struct tc9562_ioctl_cbs_params speed100cfg;
+        struct tc9562_ioctl_cbs_params speed1000cfg;
+};
+
+int ntn_set_class_bandwidth_ntn1(int nClass, unsigned classBytesPerSec, char *ifname);
+int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname);
 
 #endif // NEUTRINO_H
