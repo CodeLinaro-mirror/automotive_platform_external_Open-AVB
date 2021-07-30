@@ -62,6 +62,7 @@ typedef struct {
 	U64             nextSecondNS;
 	U32             prevAVTPTime;
 	talker_stats_t  stats;
+	int             driftCurve;
 } talker_data_t;
 
 

@@ -58,6 +58,7 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 
 #define WRAP_AROUND_CHECK ((U32)1 << 31)
 #define MAX_PERMISSIBLE_DELTA  (float)(0.05)  //5 percent
+#define MAX_DRIFT_CURVE ((int)2)
 /*
  * This is broken out into a function, so that we can close and reopen
  * the socket if we detect a problem receiving frames.
@@ -122,6 +123,7 @@ static void smoothenTimestamp(avtp_stream_t *pStream, U8 *pHdr, int count,
 		U32 ts = ntohl(*(U32 *)(&pHdr[HIDX_AVTP_TIMESPAMP32]));
 		U32 tsSmoothed = 0;
 		U32 delta;
+		bool driftUpdated = false;
 
 		/* Use the first timestamp of the batch as reference */
 		if (avtpdata->currentAVTPReference == 0) {
@@ -144,33 +146,68 @@ static void smoothenTimestamp(avtp_stream_t *pStream, U8 *pHdr, int count,
 						if (delta > permissibleDelta * 100) {
 							/* We shouldnt be seeing this print, if we see then we need to check
 							if there is huge delays happening in the system */
-							AVB_LOGF_INFO("resetting the timeline as delta is too high %lu", delta);
-						} else if (delta > permissibleDelta) {
-							avtpdata->currentAVTPReference = expectedAVTPref + permissibleDelta;
-						} else {
-							avtpdata->currentAVTPReference = expectedAVTPref;
+							AVB_LOGF_INFO("resetting the timeline as delta is too high1 %lu", delta);
+							expectedAVTPref = avtpdata->currentAVTPReference;
+						} else if (delta > permissibleDelta * 2) {
+							avtpdata->driftCurve++;
+							driftUpdated = true;
 						}
 					} else {
-						avtpdata->currentAVTPReference = expectedAVTPref;
+						delta = ((U32) - 1) - (delta);
+
+						if (delta > permissibleDelta * 100) {
+							/* We shouldnt be seeing this print, if we see then we need to check
+							if there is huge delays happening in the system */
+							AVB_LOGF_INFO("resetting the timeline as delta is too high2 %lu", delta);
+							expectedAVTPref = avtpdata->currentAVTPReference;
+						} else if (delta > permissibleDelta * 2) {
+							avtpdata->driftCurve--;
+							driftUpdated = true;
+						}
 					}
 				} else {
 					delta = expectedAVTPref - avtpdata->currentAVTPReference;
 
 					if (delta < WRAP_AROUND_CHECK) {
-						avtpdata->currentAVTPReference = expectedAVTPref;
+						if (delta > permissibleDelta * 100) {
+							/* We shouldnt be seeing this print, if we see then we need to check
+							if there is huge delays happening in the system */
+							AVB_LOGF_INFO("resetting the timeline as delta is too high3 %lu", delta);
+							expectedAVTPref = avtpdata->currentAVTPReference;
+						} else if (delta > permissibleDelta * 2) {
+							avtpdata->driftCurve--;
+							driftUpdated = true;
+						}
 					} else {
-						U32 permissibleDelta;
-						permissibleDelta = MAX_PERMISSIBLE_DELTA * avtpdata->intervalNS;
 						delta = ((U32) - 1) - (delta);
 
 						if (delta > permissibleDelta * 100) {
-							AVB_LOGF_INFO("resetting the timeline as delta is too high %lu", delta);
-						} else if (delta > permissibleDelta) {
-							avtpdata->currentAVTPReference = expectedAVTPref + permissibleDelta;
-						} else {
-							avtpdata->currentAVTPReference = expectedAVTPref;
+							AVB_LOGF_INFO("resetting the timeline as delta is too high4 %lu", delta);
+							expectedAVTPref = avtpdata->currentAVTPReference;
+						} else if (delta > permissibleDelta * 2) {
+							avtpdata->driftCurve++;
+							driftUpdated = true;
 						}
 					}
+				}
+
+				if (driftUpdated) {
+					if (avtpdata->driftCurve > MAX_DRIFT_CURVE) {
+						avtpdata->driftCurve = MAX_DRIFT_CURVE;
+					} else if (avtpdata->driftCurve < -MAX_DRIFT_CURVE ) {
+						avtpdata->driftCurve = -MAX_DRIFT_CURVE;
+					}
+
+					if (avtpdata->driftCurve > 0) {
+						avtpdata->currentAVTPReference = expectedAVTPref + (permissibleDelta *
+						                                 avtpdata->driftCurve) / MAX_DRIFT_CURVE;
+					} else {
+						avtpdata->currentAVTPReference = expectedAVTPref - (permissibleDelta * abs(
+						                                     avtpdata->driftCurve)) / MAX_DRIFT_CURVE;
+					}
+				} else {
+					avtpdata->currentAVTPReference = expectedAVTPref;
+					avtpdata->driftCurve = 0;
 				}
 			}
 

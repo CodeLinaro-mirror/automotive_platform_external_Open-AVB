@@ -138,7 +138,7 @@ bool talkerStartStream(tl_state_t *pTLState)
 
 	pTalkerData->sleepUsec = MICROSECONDS_PER_SECOND / pTalkerData->wakeRate;
 	pTalkerData->intervalNS = NANOSECONDS_PER_SECOND / pTalkerData->wakeRate;
-
+	pTalkerData->driftCurve = 0;
 	U32 SRKbps = ((unsigned long)pTalkerData->classRate * (unsigned long)pCfg->max_interval_frames * (unsigned long)pStream->frameLen * 8L) / 1000;
 	U32 DataKbps = ((unsigned long)pTalkerData->wakeRate * (unsigned long)pCfg->max_interval_frames * (unsigned long)pStream->frameLen * 8L) / 1000;
 
@@ -244,6 +244,7 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 	avtpdata.currentAVTPReference = 0;
 	avtpdata.intervalNS = pTalkerData->intervalNS;
 	avtpdata.wakeFrames = pTalkerData->wakeFrames;
+	avtpdata.driftCurve = pTalkerData->driftCurve;
 
 	if (pTLState->bStreaming) {
 		U64 nowNS;
@@ -285,6 +286,7 @@ static inline bool talkerDoStream(tl_state_t *pTLState)
 		}
 
 		pTalkerData->prevAVTPTime = avtpdata.currentAVTPReference;
+		pTalkerData->driftCurve = avtpdata.driftCurve;
 
 		if (pTalkerData->cntWakes++ % pTalkerData->wakeRate == 0) {
 			// time to service the endpoint IPC

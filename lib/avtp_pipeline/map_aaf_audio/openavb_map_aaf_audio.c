@@ -762,6 +762,13 @@ bool openavbMapAVTPAudioRxCB(media_q_t *pMediaQ, U8 *pData, U32 dataLen)
 
 			// Get item pointer in media queue
 			media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
+
+			if (pMediaQItem == NULL)      {
+				AVB_LOG_ERROR("Media queue full so remove older timestamp from queue");
+				openavbMediaQTailPull(pMediaQ);
+				pMediaQItem = openavbMediaQHeadLock(pMediaQ);
+			}
+
 			if (pMediaQItem) {
 				// set timestamp if first data written to item
 				if (pMediaQItem->dataLen == 0) {

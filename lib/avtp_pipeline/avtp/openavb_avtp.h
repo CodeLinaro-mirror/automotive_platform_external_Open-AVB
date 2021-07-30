@@ -153,6 +153,7 @@ typedef struct {
 	U32 currentAVTPReference;
 	U64 intervalNS;
 	unsigned long   wakeFrames;
+	int driftCurve;
 } avtp_smoothning_data;
 
 
