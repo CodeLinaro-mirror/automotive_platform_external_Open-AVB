@@ -82,6 +82,9 @@ typedef enum {
 	AAF_RATE_96K,
 	AAF_RATE_176K4,
 	AAF_RATE_192K,
+	AAF_RATE_33_1_3_RPM,
+	AAF_RATE_45_RPM,
+	AAF_RATE_78_RPM,
 } aaf_nominal_sample_rate_t;
 
 typedef enum {
@@ -152,6 +155,8 @@ typedef struct {
 	bool mediaQItemSyncTS;
 
 	U8 lastSequenceNumber;
+
+	bool d6Support;
 
 } pvt_data_t;
 
@@ -353,6 +358,14 @@ void openavbMapAVTPAudioCfgCB(media_q_t *pMediaQ, const char *name, const char *
 			char *pEnd;
 			pPvtData->genClockTickOnReceiveAudio = strtol(value,
 				&pEnd, 10);
+		} else if (strcmp(name, "map_nv_d6_support") == 0) {
+			char *pEnd;
+
+			if (strtol(value, &pEnd, 10) == 1) {
+				pPvtData->d6Support = true;
+			} else {
+				pPvtData->d6Support = false;
+			}
 		}
 	}
 
@@ -498,23 +511,42 @@ tx_cb_ret_t openavbMapAVTPAudioTxCB(media_q_t *pMediaQ, U8 *pData, U32 *dataLen)
 				pHdr++; // Move past the timestamp field
 			}
 
-			// - 4 bytes	format info (format, sample rate, channels per frame, bit depth)
-			tmp32 = pPvtData->aaf_format << 24;
-			tmp32 |= pPvtData->aaf_rate  << 20;
-			tmp32 |= pPubMapInfo->audioChannels << 8;
-			tmp32 |= pPvtData->aaf_bit_depth;
-			*pHdr++ = htonl(tmp32);
+			if (!pPvtData->d6Support) {
+				// - 4 bytes    format info (format, sample rate, channels per frame, bit depth)
+				tmp32 = pPvtData->aaf_format << 24;
+				tmp32 |= pPvtData->aaf_rate  << 20;
+				tmp32 |= pPubMapInfo->audioChannels << 8;
+				tmp32 |= pPvtData->aaf_bit_depth;
+				*pHdr++ = htonl(tmp32);
+				// - 4 bytes    packet info (data length, evt field)
+				tmp32 = pPvtData->payloadSize << 16;
+				tmp32 |= pPvtData->aaf_event_field << 8;
+				*pHdr++ = htonl(tmp32);
 
-			// - 4 bytes	packet info (data length, evt field)
-			tmp32 = pPvtData->payloadSize << 16;
-			tmp32 |= pPvtData->aaf_event_field << 8;
-			*pHdr++ = htonl(tmp32);
-
-			// Set (clear) sparse mode flag
-			if (pPvtData->sparseMode == TS_SPARSE_MODE_ENABLED) {
-				pHdrV0[HIDX_AVTP_HIDE7_SP] |= SP_M0_BIT;
+				// Set (clear) sparse mode flag
+				if (pPvtData->sparseMode == TS_SPARSE_MODE_ENABLED) {
+					pHdrV0[HIDX_AVTP_HIDE7_SP] |= SP_M0_BIT;
+				} else {
+					pHdrV0[HIDX_AVTP_HIDE7_SP] &= ~SP_M0_BIT;
+				}
 			} else {
-				pHdrV0[HIDX_AVTP_HIDE7_SP] &= ~SP_M0_BIT;
+				// - 4 bytes    format info (format, sample rate, bit depth)
+				tmp32 = pPvtData->aaf_format << 24;
+				tmp32 |= pPvtData->aaf_rate  << 8;
+				tmp32 |= pPvtData->aaf_bit_depth;
+				*pHdr++ = htonl(tmp32);
+				// - 4 bytes    packet info (data length, evt field, channels per frame)
+				tmp32 = pPvtData->payloadSize << 16;
+				tmp32 |= pPvtData->aaf_event_field << 10;
+				tmp32 |= pPubMapInfo->audioChannels;
+				*pHdr++ = htonl(tmp32);
+
+				// Set (clear) sparse mode flag
+				if (pPvtData->sparseMode == TS_SPARSE_MODE_ENABLED) {
+					pHdrV0[HIDX_AVTP_HIDE7_SP] |= SP_M0_BIT;
+				} else {
+					pHdrV0[HIDX_AVTP_HIDE7_SP] &= ~SP_M0_BIT;
+				}
 			}
 
 			if ((*dataLen - TOTAL_HEADER_SIZE) < pPvtData->payloadSize) {
@@ -677,41 +709,101 @@ bool openavbMapAVTPAudioRxCB(media_q_t *pMediaQ, U8 *pData, U32 dataLen)
 					       payloadLen, pPvtData->payloadSize);
 			dataValid = FALSE;
 		}
-		if ((tmp = ((format_info >> 24) & 0xFF)) != pPvtData->aaf_format) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener format %d doesn't match received data (%d)",
-					pPvtData->aaf_format, tmp);
-			dataValid = FALSE;
+
+		if (!pPvtData->d6Support) {
+			if ((tmp = ((format_info >> 24) & 0xFF)) != pPvtData->aaf_format) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener format %d doesn't match received data (%d)",
+					               pPvtData->aaf_format, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((format_info >> 20) & 0x0F)) != pPvtData->aaf_rate) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener sample rate (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_rate, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((format_info >> 8) & 0x3FF)) != pPubMapInfo->audioChannels) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener channel count (%d) doesn't match received data (%d)",
+					               pPubMapInfo->audioChannels, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = (format_info & 0xFF)) != pPvtData->aaf_bit_depth) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener bit depth (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_bit_depth, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((packet_info >> 16) & 0xFFFF)) != pPvtData->payloadSize) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener payload size (%d) doesn't match received data (%d)",
+					               pPvtData->payloadSize, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((packet_info >> 8) & 0x0F)) != pPvtData->aaf_event_field) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener event field (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_event_field, tmp);
+			}
+		} else {
+			if ((tmp = ((format_info >> 24) & 0xFF)) != pPvtData->aaf_format) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener format %d doesn't match received data (%d)",
+					               pPvtData->aaf_format, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((format_info >> 8) & 0x0F)) != pPvtData->aaf_rate) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener sample rate (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_rate, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = (format_info & 0xFF)) != pPvtData->aaf_bit_depth) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener bit depth (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_bit_depth, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((packet_info >> 16) & 0xFFFF)) != pPvtData->payloadSize) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener payload size (%d) doesn't match received data (%d)",
+					               pPvtData->payloadSize, tmp);
+
+				dataValid = FALSE;
+			}
+
+			if ((tmp = ((packet_info >> 10) & 0x04)) != pPvtData->aaf_event_field) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener event field (%d) doesn't match received data (%d)",
+					               pPvtData->aaf_event_field, tmp);
+			}
+
+			if ((tmp = ((packet_info) & 0x3FF)) != pPubMapInfo->audioChannels) {
+				if (pPvtData->dataValid)
+					AVB_LOGF_ERROR("Listener channel count (%d) doesn't match received data (%d)",
+					               pPubMapInfo->audioChannels, tmp);
+
+				dataValid = FALSE;
+			}
 		}
-		if ((tmp = ((format_info >> 20) & 0x0F)) != pPvtData->aaf_rate) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener sample rate (%d) doesn't match received data (%d)",
-					pPvtData->aaf_rate, tmp);
-			dataValid = FALSE;
-		}
-		if ((tmp = ((format_info >> 8) & 0x3FF)) != pPubMapInfo->audioChannels) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener channel count (%d) doesn't match received data (%d)",
-					pPubMapInfo->audioChannels, tmp);
-			dataValid = FALSE;
-		}
-		if ((tmp = (format_info & 0xFF)) != pPvtData->aaf_bit_depth) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener bit depth (%d) doesn't match received data (%d)",
-					pPvtData->aaf_bit_depth, tmp);
-			dataValid = FALSE;
-		}
-		if ((tmp = ((packet_info >> 16) & 0xFFFF)) != pPvtData->payloadSize) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener payload size (%d) doesn't match received data (%d)",
-					pPvtData->payloadSize, tmp);
-			dataValid = FALSE;
-		}
-		if ((tmp = ((packet_info >> 8) & 0x0F)) != pPvtData->aaf_event_field) {
-			if (pPvtData->dataValid)
-				AVB_LOGF_ERROR("Listener event field (%d) doesn't match received data (%d)",
-					pPvtData->aaf_event_field, tmp);
-		}
+
 		if (streamSparseMode != listenerSparseMode) {
 			if (pPvtData->dataValid)
 				AVB_LOGF_ERROR("Listener sparse mode (%d) doesn't match stream sparse mode (%d)",

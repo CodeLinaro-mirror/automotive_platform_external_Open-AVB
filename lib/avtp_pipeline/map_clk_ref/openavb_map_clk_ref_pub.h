@@ -65,6 +65,21 @@ typedef enum {
 	AVTP_PULL_1_OVER_8     = 5  // Multiply base freq by 1/8
 } avtp_pull_multiplier;
 
+// Nominal frequency options
+typedef enum {
+	AVTP_NOMINAL_OTHER            = 0,  // defined by higher level protocol
+	AVTP_NOMINAL_8k = 1,  // 8 kHz
+	AVTP_NOMINAL_16k        = 2,  // 16k
+	AVTP_NOMINAL_32k   = 3,  // 32k
+	AVTP_NOMINAL_44_1k   = 4,  // 44_1k
+	AVTP_NOMINAL_88_2k     = 5,  // 88.2k
+	AVTP_NOMINAL_176_4k     = 6,  // 176.4k
+	AVTP_NOMINAL_48k     = 7,  // 48k
+	AVTP_NOMINAL_96k     = 8,  // 96k
+	AVTP_NOMINAL_192k     = 9,  // 192k
+} avtp_nominal_frequency;
+
+
 // Clock reference format types for the Type field
 typedef enum {
 	AVTP_TYPE_CRF_USER          = 0,

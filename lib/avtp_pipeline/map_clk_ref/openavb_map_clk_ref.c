@@ -52,8 +52,10 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Header sizes
 #define AVTP_V0_HEADER_SIZE 12
 #define MAP_HEADER_SIZE 8
+#define MAP_HEADER_SIZE_D6 16
 
 #define TOTAL_HEADER_SIZE (AVTP_V0_HEADER_SIZE + MAP_HEADER_SIZE)
+#define TOTAL_HEADER_SIZE_D6 (AVTP_V0_HEADER_SIZE + MAP_HEADER_SIZE_D6)
 
 //////
 // AVTP Version 0 Header
@@ -110,12 +112,40 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // (mod 2^64). The length of this field is crf_data_length.
 #define HIDX_DATA 20
 
+// 4 bytes
+//reserved bytes for crf stream in case of 1722a/D6
+#define HIDX_RESERVE32_1_D6 12
+#define HIDX_RESERVE32_2_D6 16
+#define HIDX_RESERVE8_3_D6 25
+
+// crf_data_length 2 bytes: (Section 11.2.10) length of the crf_data field.
+// This must be a multiple of 8 and mentioned in 1722a/D6 format
+#define HIDX_DATALEN16_D6				20
+// 1 Byte : type (Section 11.2.6)
+#define HIDX_AVTP_TYPE_D6 22
+// 1 bytes
+// nominal frequency values which can be used. This is only used under D6 support
+#define HIDX_AVTP_NOMINAL_FREQUENCY8 24
+// timestampInterval 2 bytes: (Section 11.2.11) number of events (e.g.
+// audio samples) between each timestamp in the crf_data field. The value of
+// this field shall be static for the duration of the life of the stream and
+// shall be nonzero. D6 support
+#define HIDX_TIMESTAMP_INTERVAL16_D6 26
+
+
+
+
 typedef struct {
 	// listener variables
 	bool lastClockRestartFlag;
 	U8 lastSequenceNumber;
+	/// Nominal Frequency
+	U8 nominalFrequency;
+	/// is D6 format enabled
+	bool d6Support;
 } pvt_data_t;
 
+int crf_subtype = 0x04;
 
 // Each configuration name value pair for this mapping will result in this
 // callback being called.
@@ -127,8 +157,14 @@ void openavbMapClkRefCfgCB(media_q_t *pMediaQ, const char *name,
 	if (pMediaQ) {
 		media_q_pub_map_clk_ref_info_t *pPubMapInfo =
 			pMediaQ->pPubMapInfo;
+		pvt_data_t *pPvtData = pMediaQ->pPvtMapInfo;
 		if (!pPubMapInfo) {
 			AVB_LOG_ERROR("Public mapping module data not allocated.");
+			return;
+		}
+
+		if (!pPvtData) {
+			AVB_LOG_ERROR("pPvtData module data not allocated.");
 			return;
 		}
 
@@ -162,6 +198,56 @@ void openavbMapClkRefCfgCB(media_q_t *pMediaQ, const char *name,
 		else if (strcmp(name, "map_nv_tx_rate") == 0 ||
 			 strcmp(name, "map_nv_tx_interval") == 0) {
 			pPubMapInfo->txRate = strtol(value, &pEnd, 10);
+		} else if (strcmp(name, "map_nv_nominal_frequency") == 0) {
+			switch (strtol(value, &pEnd, 10)) {
+				case 8000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_8k;
+					break;
+
+				case 16000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_16k;
+					break;
+
+				case 32000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_32k;
+					break;
+
+				case 44100:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_44_1k;
+					break;
+
+				case 88200:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_88_2k;
+					break;
+
+				case 176400:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_176_4k;
+					break;
+
+				case 48000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_48k;
+					break;
+
+				case 96000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_96k;
+					break;
+
+				case 192000:
+					pPvtData->nominalFrequency = AVTP_NOMINAL_192k;
+					break;
+
+				default :
+					pPvtData->nominalFrequency = AVTP_NOMINAL_48k;//AVTP_NOMINAL_OTHER; keeping 48k as default
+					break;
+			}
+		} else if (strcmp(name, "map_nv_d6_support") == 0) {
+			if (strtol(value, &pEnd, 10) == 1) {
+				pPvtData->d6Support = true;
+				crf_subtype = 0x05;
+			} else {
+				pPvtData->d6Support = false;
+				crf_subtype = 0x04;
+			}
 		}
 	}
 
@@ -172,7 +258,7 @@ U8 openavbMapClkRefSubtypeCB()
 {
 	AVB_TRACE_ENTRY(AVB_TRACE_MAP);
 	AVB_TRACE_EXIT(AVB_TRACE_MAP);
-	return 0x04;        // Clock reference format subtype
+	return crf_subtype;        // Clock reference format subtype
 }
 
 // Returns the AVTP version used by this mapping
@@ -189,16 +275,30 @@ U16 openavbMapClkRefMaxDataSizeCB(media_q_t *pMediaQ)
 
 	if (pMediaQ) {
 		media_q_pub_map_clk_ref_info_t *pPubMapInfo =
-			pMediaQ->pPubMapInfo;
+		    pMediaQ->pPubMapInfo;
+		pvt_data_t *pPvtData = pMediaQ->pPvtMapInfo;
+
 		if (!pPubMapInfo) {
 			AVB_LOG_ERROR("Public mapping module data not allocated.");
 			return 0;
 		}
 
+		if (!pPvtData) {
+			AVB_LOG_ERROR("pPvtData module data not allocated.");
+			return 0;
+		}
+
 		AVB_TRACE_EXIT(AVB_TRACE_MAP);
+
+		if (pPvtData->d6Support) {
+			return TOTAL_HEADER_SIZE_D6 + (pPubMapInfo->timestampsPerPacket *
+			                               CRF_TIMESTAMP_SIZE);
+		}
+
 		return TOTAL_HEADER_SIZE + (pPubMapInfo->timestampsPerPacket *
-					    CRF_TIMESTAMP_SIZE);
+		                            CRF_TIMESTAMP_SIZE);
 	}
+
 	AVB_TRACE_EXIT(AVB_TRACE_MAP);
 	return 0;
 }
@@ -333,19 +433,39 @@ tx_cb_ret_t openavbMapClkRefTxCB(media_q_t *pMediaQ, U8 *pData, U32 *dataLen)
 	}
 
 	media_q_pub_map_clk_ref_info_t *pPubMapInfo = pMediaQ->pPubMapInfo;
+	pvt_data_t *pPvtData = pMediaQ->pPvtMapInfo;
 
-	if (*dataLen < pPubMapInfo->timestampsPerPacket * CRF_TIMESTAMP_SIZE +
-			TOTAL_HEADER_SIZE ) {
-		AVB_LOG_ERROR("Not enough room in packet for timestamps frames.");
-		AVB_TRACE_EXIT(AVB_TRACE_MAP_DETAIL);
-		return TX_CB_RET_PACKET_NOT_READY;
+	if (!pPvtData) {
+		AVB_LOG_ERROR("Private mapping module data not allocated.");
+		return;
+	}
+
+	if (!pPubMapInfo) {
+		AVB_LOG_ERROR("Public mapping module data not allocated.");
+		return;
+	}
+
+	if (!pPvtData->d6Support) {
+		if (*dataLen < pPubMapInfo->timestampsPerPacket * CRF_TIMESTAMP_SIZE +
+		        TOTAL_HEADER_SIZE ) {
+			AVB_LOG_ERROR("Not enough room in packet for timestamps frames.");
+			AVB_TRACE_EXIT(AVB_TRACE_MAP_DETAIL);
+			return TX_CB_RET_PACKET_NOT_READY;
+		}
+	} else {
+		if (*dataLen < pPubMapInfo->timestampsPerPacket * CRF_TIMESTAMP_SIZE +
+		        TOTAL_HEADER_SIZE_D6 ) {
+			AVB_LOG_ERROR("Not enough room in packet for timestamps frames.");
+			AVB_TRACE_EXIT(AVB_TRACE_MAP_DETAIL);
+			return TX_CB_RET_PACKET_NOT_READY;
+		}
 	}
 
 	if (openavbMediaQIsAvailableBytes(pMediaQ,
 			pPubMapInfo->timestampsPerPacket * CRF_TIMESTAMP_SIZE,
 			TRUE)) {
 		U8 *pHdr = pData;
-		U8 *pPayload = pData + TOTAL_HEADER_SIZE;
+		U8 *pPayload;
 		// Set media clock restart to 0.
 		// Set frame sync to 0.
 		// Frame timing uncertain to 0.
@@ -355,37 +475,60 @@ tx_cb_ret_t openavbMapClkRefTxCB(media_q_t *pMediaQ, U8 *pData, U32 *dataLen)
 		pHdr[HIDX_AVTP_HIDE4_MR1_HIDE1_FS1_TU1] &=
 			~TIMING_UNCERTAIN_MASK;
 
-		// Set the type of the CRF stream
-		pHdr[HIDX_AVTP_TYPE] = pPubMapInfo->crfType;
-		// Set the pull and base frequency
-		U32 pull_and_base_freq = pPubMapInfo->baseFrequency;
-		pull_and_base_freq |= pPubMapInfo->pullMultiplier <<
-			PULL_OFFSET;
-		*(U32 *)(&pHdr[HIDX_AVTP_PULL4_BASE_FREQ28]) =
-			htonl(pull_and_base_freq);
-		// Set the data length
-		*(U16 *)(&pHdr[HIDX_DATALEN16]) = htons(
-			pPubMapInfo->timestampsPerPacket *
-			CRF_TIMESTAMP_SIZE);
-		// Set the timestamp interval
-		*(U16 *)(&pHdr[HIDX_TIMESTAMP_INTERVAL16]) = htons(
-			pPubMapInfo->timestampInterval);
+		if (!pPvtData->d6Support) {
+			// Set the type of the CRF stream
+			pHdr[HIDX_AVTP_TYPE] = pPubMapInfo->crfType;
+			// Set the pull and base frequency
+			U32 pull_and_base_freq = pPubMapInfo->baseFrequency;
+			pull_and_base_freq |= pPubMapInfo->pullMultiplier <<
+			                      PULL_OFFSET;
+			*(U32 *)(&pHdr[HIDX_AVTP_PULL4_BASE_FREQ28]) =
+			    htonl(pull_and_base_freq);
+			// Set the data length
+			*(U16 *)(&pHdr[HIDX_DATALEN16]) = htons(
+			                                      pPubMapInfo->timestampsPerPacket *
+			                                      CRF_TIMESTAMP_SIZE);
+			// Set the timestamp interval
+			*(U16 *)(&pHdr[HIDX_TIMESTAMP_INTERVAL16]) = htons(
+			            pPubMapInfo->timestampInterval);
+			pPayload = pData + TOTAL_HEADER_SIZE;
+		} else {
+			*(U32 *)(&pHdr[HIDX_RESERVE32_1_D6]) = 0;
+			*(U32 *)(&pHdr[HIDX_RESERVE32_2_D6]) = 0;
+			// Set the data length
+			*(U16 *)(&pHdr[HIDX_DATALEN16_D6]) = htons(pPubMapInfo->timestampsPerPacket *
+			                                     CRF_TIMESTAMP_SIZE);
+			// Set the type of the CRF stream
+			*(U16 *)(&pHdr[HIDX_AVTP_TYPE_D6]) = htons( pPubMapInfo->crfType);
+			pHdr[HIDX_AVTP_NOMINAL_FREQUENCY8] = pPvtData->nominalFrequency;
+			pHdr[HIDX_RESERVE8_3_D6] = 0;
+			// Set the timestamp interval
+			*(U16 *)(&pHdr[HIDX_TIMESTAMP_INTERVAL16_D6]) = htons(
+			            pPubMapInfo->timestampInterval);
+			pPayload = pData + TOTAL_HEADER_SIZE_D6;
+		}
+
 		// Write the timestamps
 		if (!writeTimestamps(pMediaQ, pPayload,
-			pPubMapInfo->timestampsPerPacket *
-			CRF_TIMESTAMP_SIZE)) {
+		                     pPubMapInfo->timestampsPerPacket *
+		                     CRF_TIMESTAMP_SIZE)) {
 			AVB_LOG_ERROR("Unable to write timestamps to packet.");
 			return TX_CB_RET_PACKET_NOT_READY;
 		}
 
-		// Set out bound data length (entire packet length)
-		*dataLen = (pPubMapInfo->timestampsPerPacket *
-			    CRF_TIMESTAMP_SIZE) + TOTAL_HEADER_SIZE;
+		if (!pPvtData->d6Support) {
+			// Set out bound data length (entire packet length)
+			*dataLen = (pPubMapInfo->timestampsPerPacket *
+			            CRF_TIMESTAMP_SIZE) + TOTAL_HEADER_SIZE;
+		} else {
+			// Set out bound data length (entire packet length)
+			*dataLen = (pPubMapInfo->timestampsPerPacket *
+			            CRF_TIMESTAMP_SIZE) + TOTAL_HEADER_SIZE_D6;
+		}
 
 		AVB_TRACE_LINE(AVB_TRACE_MAP_LINE);
 		AVB_TRACE_EXIT(AVB_TRACE_MAP_DETAIL);
 		return TX_CB_RET_PACKET_READY;
-
 	}
 
 	AVB_TRACE_EXIT(AVB_TRACE_MAP_DETAIL);
@@ -408,22 +551,28 @@ bool openavbMapClkRefRxCB(media_q_t *pMediaQ, U8 *pData, U32 dataLen)
 	AVB_TRACE_ENTRY(AVB_TRACE_MAP_DETAIL);
 	if (pMediaQ && pData) {
 		U8 *pHdr = pData;
-		U8 *pPayload = pData + TOTAL_HEADER_SIZE;
+		U8 *pPayload;
 		pvt_data_t *pPvtData = pMediaQ->pPvtMapInfo;
-
-		U16 payloadLen = ntohs(*(U16 *)(&pHdr[HIDX_DATALEN16]));
+		U16 payloadLen;
 		bool clockRestartFlag = (pHdr[HIDX_AVTP_HIDE4_MR1_HIDE1_FS1_TU1] &
-			MEDIA_CLOCK_RESTART_MASK) ? TRUE : FALSE;
+		                         MEDIA_CLOCK_RESTART_MASK) ? TRUE : FALSE;
 		bool tsUncertain = (pHdr[HIDX_AVTP_HIDE4_MR1_HIDE1_FS1_TU1] &
-				    TIMING_UNCERTAIN_MASK) ? TRUE : FALSE;
+		                    TIMING_UNCERTAIN_MASK) ? TRUE : FALSE;
 		U8 sequenceNumber = pHdr[HIDX_AVTP_SEQUENCE_NUMBER8];
+		U16 timestampInterval;
 
-		U16 timestampInterval = ntohs(*(U16 *)(&pHdr[
-			HIDX_TIMESTAMP_INTERVAL16]));
+		if (!pPvtData->d6Support) {
+			timestampInterval = ntohs(*(U16 *)(&pHdr[HIDX_TIMESTAMP_INTERVAL16]));
+			pPayload = pData + TOTAL_HEADER_SIZE;
+			payloadLen = ntohs(*(U16 *)(&pHdr[HIDX_DATALEN16]));
+		} else {
+			timestampInterval = ntohs(*(U16 *)(&pHdr[HIDX_TIMESTAMP_INTERVAL16_D6]));
+			pPayload = pData + TOTAL_HEADER_SIZE_D6;
+			payloadLen = ntohs(*(U16 *)(&pHdr[HIDX_DATALEN16_D6]));
+		}
 
 		U8 *pAVTPDataUnit = pPayload;
 		U8 *pAVTPDataUnitEnd = pPayload + payloadLen;
-
 		bool restartClock =
 			(pPvtData->lastClockRestartFlag != clockRestartFlag) ||
 			((pPvtData->lastSequenceNumber + 1) % MAX_U8 != sequenceNumber);
