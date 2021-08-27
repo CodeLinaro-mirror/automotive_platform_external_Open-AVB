@@ -284,20 +284,25 @@ static void *gptpDaemonSrvConnect(void *arg)
         ret = connect(sock, (struct sockaddr*) &saun, len);
 
         /* EISCONN -- Transport endpoint is already connected */
-        if((ret == 0)||((ret == -1)&&(errno == EISCONN))){
+        if ((ret == 0) || ((ret == -1) && (errno == EISCONN))) {
             LOCK();
+
             if (!bInitialized) {
-                if (gptpTimeInit()){
+                if (gptpTimeInit()) {
                     printf("gptpDaemonSrvConnect: success\n");
                     bInitialized = true;
                 }
             }
+
             UNLOCK();
             FD_ZERO(&readfds);
             FD_SET(sock, &readfds);
             FD_SET(pipefd[0], &readfds);
-            ret = select((pipefd[0] > sock ? pipefd[0] : sock) + 1, &readfds, NULL, NULL,
-                         NULL);
+
+            do {
+                ret = select((pipefd[0] > sock ? pipefd[0] : sock) + 1, &readfds, NULL, NULL,
+                             NULL);
+            } while ((ret == -1) && (errno == EINTR));
 
             if (ret != -1) {
                 if (FD_ISSET(pipefd[0], &readfds)) {
@@ -316,26 +321,35 @@ static void *gptpDaemonSrvConnect(void *arg)
                         sock = -1;
                     }
                 }
+            } else {
+                printf("gptpDaemonSrvConnect: select errno %d\n", errno);
             }
         }
 
-        if(ret == -1){
+        if (ret == -1) {
+            printf("gptpDaemonSrvConnect: cleanup errno %d\n", errno);
             LOCK();
             gptpMemDeinit(gPtpShmFd, gPtpMmap);
             gptpClkDeInit(gptpPhcFd);
             memset(&gPtpTD, 0, sizeof(gPtpTimeData));
             bInitialized = false;
-            printf("gptpDaemonSrvConnect: cleanup\n");
             UNLOCK();
         }
 
         usleep(CONNECT_RETRY_PERIOD_us);
     }
+
     return NULL;
 }
 
 static void gptpDaemonClientInit(void) {
     int ret = 0;
+
+    if (bServiceConnect == true || sock != -1) {
+        printf("gptpDaemonClientInit: already initialized\n");
+        return;
+    }
+
     bServiceConnect = true;
     pipefd[0] = -1;
     pipefd[1] = -1;
