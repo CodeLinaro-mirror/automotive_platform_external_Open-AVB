@@ -206,7 +206,7 @@ finish:
         close(sockfd);
         return ret;
 }
-int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname)
+int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname, unsigned maxTransUsec, unsigned streamID)
 {
 	int ret;
 	struct ifreq ifr;
@@ -250,7 +250,8 @@ int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *if
 	qmode_cfg.cmd = TC9562MAC_SET_QMODE;
 	qmode_cfg.queue_idx =  cbs_params.queue_idx;
 	qmode_cfg.queue_mode = QAVB;
-
+	qmode_cfg.max_transit_usec = maxTransUsec;
+	qmode_cfg.stream_id = streamID;
 	strlcpy(ifr.ifr_ifrn.ifrn_name, ifname, IFNAMSIZ - 1);
 	ifr.ifr_ifru.ifru_data = (void *)&qmode_cfg;
 

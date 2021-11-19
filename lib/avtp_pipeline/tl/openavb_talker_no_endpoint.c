@@ -123,7 +123,9 @@ bool openavbTLRunTalkerInit(tl_state_t *pTLState)
 	pTalkerData->fwmark = openavbQmgrAddStream((SRClassIdx_t)pCfg->sr_class,
 					       pTalkerData->wakeRate,
 					       pTalkerData->tSpec.maxIntervalFrames,
-					       pTalkerData->tSpec.maxFrameSize);
+					       pTalkerData->tSpec.maxFrameSize,
+					       pTalkerData->tSpec.maxTransUsec,
+					       pTalkerData->streamID.uniqueID);
 
 	if (pTalkerData->fwmark == INVALID_FWMARK)
 		return FALSE;

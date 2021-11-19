@@ -148,6 +148,7 @@ bool openavbTLRunTalkerInit(tl_state_t *pTLState)
 		}
 	}
 	pTalkerData->tSpec.maxIntervalFrames = pCfg->max_interval_frames;
+	pTalkerData->tSpec.maxTransUsec = pCfg->max_transit_usec;
 
 	// The TSpec frame size is the L2 payload - i.e. no Ethernet headers, VLAN, FCS, etc...
 	pTalkerData->tSpec.maxFrameSize = pCfg->map_cb.map_max_data_size_cb(pTLState->pMediaQ);

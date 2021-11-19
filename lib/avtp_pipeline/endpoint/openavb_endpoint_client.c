@@ -133,6 +133,7 @@ bool openavbEptClntRegisterStream(int h,
 		memcpy(msgBuf.params.talkerRegister.destAddr, destAddr, ETH_ALEN);
 	msgBuf.params.talkerRegister.tSpec.maxFrameSize = tSpec->maxFrameSize;
 	msgBuf.params.talkerRegister.tSpec.maxIntervalFrames = tSpec->maxIntervalFrames;
+	msgBuf.params.talkerRegister.tSpec.maxTransUsec = tSpec->maxTransUsec;
 	msgBuf.params.talkerRegister.srClass = srClass;
 	msgBuf.params.talkerRegister.srRank = srRank;
 	msgBuf.params.talkerRegister.latency = latency;

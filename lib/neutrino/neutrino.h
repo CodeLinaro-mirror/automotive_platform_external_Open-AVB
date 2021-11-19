@@ -88,6 +88,8 @@ struct tc9562mac_ioctl_qmode_cfg {
         unsigned int cmd;
         unsigned int queue_idx;
         unsigned int queue_mode;
+        unsigned int max_transit_usec;
+        unsigned int stream_id;
 };
 
 struct tc9562_ioctl_cbs_params {
@@ -106,6 +108,6 @@ struct tc9562mac_ioctl_cbs_cfg {
 };
 
 int ntn_set_class_bandwidth_ntn1(int nClass, unsigned classBytesPerSec, char *ifname);
-int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname);
+int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *ifname, unsigned int maxTransUsec, unsigned int streamID);
 
 #endif // NEUTRINO_H

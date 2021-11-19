@@ -314,7 +314,7 @@ openavbRC strmAttachCb(void* pv,
 
 			rc = openavbSrpGetClassParams(ps->srClass, &ps->priority, &ps->vlanID, &ps->classRate);
 			if (IS_OPENAVB_SUCCESS(rc)) {
-				ps->fwmark = openavbQmgrAddStream(ps->srClass, ps->classRate, ps->tSpec.maxIntervalFrames, ps->tSpec.maxFrameSize);
+				ps->fwmark = openavbQmgrAddStream(ps->srClass, ps->classRate, ps->tSpec.maxIntervalFrames, ps->tSpec.maxFrameSize,ps->tSpec.maxTransUsec, ps->streamID.uniqueID);
 				if (ps->fwmark == INVALID_FWMARK) {
 					AVB_LOG_ERROR("Error in attach callback: unable to setup stream queues");
 					rc = OPENAVB_FAILURE;

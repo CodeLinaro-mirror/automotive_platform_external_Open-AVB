@@ -63,7 +63,9 @@ void openavbQmgrFinalize();
 U16 openavbQmgrAddStream(SRClassIdx_t nClass, 
 					 unsigned classRate,
 					 unsigned maxIntervalFrames,
-					 unsigned maxFrameSize);
+					 unsigned maxFrameSize,
+					 U32 maxTransTime,
+					 U16 streamID);
 
 void openavbQmgrRemoveStream(U16 fwmark);
 

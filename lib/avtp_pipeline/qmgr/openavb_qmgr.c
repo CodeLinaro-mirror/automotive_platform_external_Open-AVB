@@ -90,6 +90,8 @@ typedef struct {
 	unsigned classRate;
 	unsigned maxIntervalFrames;
 	unsigned maxFrameSize;
+	U32 maxTransTime;
+	U16 streamID;
 } qmgrStream_t;
 
 // Arrays to hold info for classes and streams
@@ -125,7 +127,7 @@ static bool setupHWQueue(int nClass, unsigned classBytesPerSec)
         if(ntn_flag == ETH_NTN_VER1)
               err = ntn_set_class_bandwidth_ntn1(nClass, classBytesPerSec, qdisc_data.ifname);
         else
-              err = ntn_set_class_bandwidth_ntn2(nClass, classBytesPerSec, qdisc_data.ifname);
+              err = ntn_set_class_bandwidth_ntn2(nClass, classBytesPerSec, qdisc_data.ifname, qmgr_streams[nClass * MAX_AVB_STREAMS_PER_CLASS].maxTransTime, qmgr_streams[nClass * MAX_AVB_STREAMS_PER_CLASS].streamID);
 
 #else
 	U32 class_a_bytes_per_sec, class_b_bytes_per_sec;
@@ -155,7 +157,7 @@ static bool setupHWQueue(int nClass, unsigned classBytesPerSec)
  * 	maxFrameSize = max size of frames
  *
  */
-U16 openavbQmgrAddStream(SRClassIdx_t nClass, unsigned classRate, unsigned maxIntervalFrames, unsigned maxFrameSize)
+U16 openavbQmgrAddStream(SRClassIdx_t nClass, unsigned classRate, unsigned maxIntervalFrames, unsigned maxFrameSize, U32 maxTransTime, U16 streamID)
 {
 	unsigned fullFrameSize = maxFrameSize + OPENAVB_AVTP_ETHER_FRAME_OVERHEAD;
 	unsigned long streamBytesPerSec = fullFrameSize * maxIntervalFrames * classRate;
@@ -180,6 +182,9 @@ U16 openavbQmgrAddStream(SRClassIdx_t nClass, unsigned classRate, unsigned maxIn
 				break;
 			}
 		}
+
+		qmgr_streams[idx].maxTransTime = maxTransTime;
+		qmgr_streams[idx].streamID = streamID;
 
 		if (fwmark == INVALID_FWMARK) {
 			AVB_LOGF_ERROR("Adding stream; too many streams in class %d", nClass);
