@@ -59,6 +59,7 @@ typedef struct pvt_data_t
 	bool ignoreTimestamp;
 	U8 *fp;
 	U32 seq;
+        bool asyncTx
 	bool asyncRx;
 	bool blockingRx;
 	U32 read_size;
@@ -71,7 +72,286 @@ typedef struct pvt_data_t
 	U32 frame_timestamp;            /*<! this is a timestamp of a video frame */
 	bool repeatData;
 } pvt_data_t;
+typedef struct nalu_header {
+        U8 type:    5;
+        U8 nri:     2;
+        U8 f:       1;
+} __attribute__((packed)) nalu_header_t;
 
+typedef struct fu_indicator {
+        U8 type:    5;
+        U8 nri:     2;
+        U8 f:       1;
+} __attribute__((packed)) fu_indicator_t;
+
+typedef struct fu_header {
+        U8 type:    5;
+        U8 r:       1;
+        U8 e:       1;
+        U8 s:       1;
+} __attribute__((packed)) fu_header_t;
+
+#define RTP_PAYLOAD_MAX_SIZE         1400
+#define SEND_BUF_SIZE                1500
+#define NAL_BUF_SIZE                 1500 * 500
+
+U8 nal_buf[NAL_BUF_SIZE];
+
+typedef struct payload_tx_queue_t {
+        U8 item[SEND_BUF_SIZE];
+        U32 len;
+        bool lastPacket;
+        bool empty;
+} payload_tx_q;
+
+#define MAX_QUEUE_ITEM_NUM 1000
+#define TX_SLEEP_MS  10
+static payload_tx_q pq[MAX_QUEUE_ITEM_NUM];
+static U32 push_index = 0;
+static U32 pop_index = 0;
+static U32 total_num = 0;
+static bool tx_bRunning = false;
+
+static pthread_t asyncTxThread;
+static media_q_t *pAsyncTxMediaQ;
+static pthread_mutex_t asyncTxMutex = PTHREAD_MUTEX_INITIALIZER;
+
+static int fetch_nal_from_file(FILE *fp, U8 *buf, int *len)
+{
+       char tmbuf2[1];
+       int flag = 0;
+       char tmpbuf[4];
+       int ret;
+
+        *len = 0;
+
+        do{
+               if (feof(fp)) {
+                       AVB_LOG_INFO("feof reached, closing the file.");
+                       return -1;
+                }
+                ret = fread(tmpbuf2, 1, 1, fp);
+                if (0 == ret){
+                        AVB_LOG_INFO("EOF reached, closing the file.");
+                       return -1; 
+                   }
+
+                   if (!flag && tmpbuf2[0] != 0x0) {
+                             buf[*len] = tmpbuf2[0];
+                             (*len)++;
+                    } else if (!flag && tmpbuf2[0] == 0x0) {
+                             flag = 1;
+                             tmpbuf[0] = tmpbuf2[0];
+                    } else if (flag) {
+                             switch (flag) {
+                             case 1:
+                                     if(tmpbuf2[0] == 0x0) {
+                                           flag++;
+                                           tmpbuf[1] = tmpbuf2[0];
+                                      } else { 
+                                             flag = 0;
+                                             buf[*len] = tmpbuf[0];
+                                             (*len)++;
+                                             buf[*len] = tmpbuf2[0];
+                                             (*len)++;
+                                       }
+                                       break;
+
+                              case 2:
+                                     if(tmpbuf2[0] == 0x0) {
+                                           flag++;
+                                           tmpbuf[2] = tmpbuf2[0];
+                                      } else if (tmpbuf2[0] == 0x1) {
+                                               flag = 0;
+                                               return *len;
+                                      } else {
+                                             flag = 0;
+                                             buf[*len] = tmpbuf[0];
+                                             (*len)++;
+                                             buf[*len] = tmpbuf[1];
+                                             (*len)++;
+                                             buf[*len] = tmpbuf2[0];
+                                             (*len)++;
+                                       }
+                                       break;
+                              case 3:
+                                     if(tmpbuf2[0] == 0x1) {
+                                           flag = 0;
+                                           return *len;
+                                      } else {
+                                           flag = 0; 
+                                           break;
+                                      }
+                              }
+                          }
+                   } while (1);
+                 
+                   return *len;
+}
+
+static int h264nal_send(int framerate, U8 *pstStream, int nalu_len)
+{
+
+             U8 *nalu_buf;
+             nalu_buf = pstStream;
+             nalu_header_t *nalu_hdr;
+             fu_indicator_t *fu_ind;
+             fu_header_t *fu_hdr;
+
+             int fu_pack_num;
+             int last_fu_pack_size;
+             int fu_seq;
+
+             if (nalu_len < 1) {
+                     return -1;
+             }
+           
+             if(nalu_len <= RTP_PAYLOAD_MAX_SIZE) {
+                    /*Add pscket into queue*/
+                    pthread_mutex_lock(&asyncTxMutex);
+                    nalu_hdr = (nalu_header_t *)&(pq[push_index].item[0]);
+                    nalu_hdr->f = (nalu_buf[0] & 0x80) >> 7;
+                    nalu_hdr->nri = (nalu_buf[0] & 0x60) >> 5;
+                    nalu_hdr->type = (nalu_buf[0] & 0x1f);
+                    memcpy(pq[push_index].item + 1, nalu_buf + 1, nalu_len - 1);
+                    pq[push_index].empty = FALSE;
+                    pq[push_index].lastPacket = TRUE;
+                    pq[push_index].len = nalu_len;
+                    push_index++;
+                    if( push_index == MAX_QUEUE_ITEM_NUM)
+                             push_index = 0;
+                    total_num++;
+                    pthread_mutex_lock(&asyncTxMutex);
+                } else {
+                        fu_pack_num = nalu_len % RTP_PAYLOAD_MAX_SIZE ? (nalu_len / RTP_PAYLOAD_MAX_SIZE + 1) : nalu_len / RTP_PAYLOAD_MAX_SIZE;
+                        last_fu_pack_size = nalu_len % RTP_PAYLOAD_MAX_SIZE ? nalu_len % RTP_PAYLOAD_MAX_SIZE :  RTP_PAYLOAD_MAX_SIZE;
+                        fu_seq = 0;
+
+                        for(fu_seq = 0; fu_seq < fu_pack_num; fu_seq++) {
+                              if(fu_seq == 0) {
+                                     memset(pq[push_index].item, 0, SEND_BUF_SIZE);
+                                     pthread_mutex_lock(&asyncTxMutex);
+                                     /*Add packet into queue */
+                                     fu_ind = (fu_indicator_t *)&(pq[push_index].item[0]);
+                                     fu_ind->f = (nalu_buf[0] & 0x80) >> 7;
+                                     fu_ind->nri = (nalu_buf[0] & 0x60) >> 5;
+                                     fu_ind->type = 28;
+ 
+                                     fu_hdr = (nalu_header_t *)&(pq[push_index].item[1]);
+                                     fu_hdr->s = 1;
+                                     fu_hdr->e = 0;
+                                     fu_hdr->r = 0;
+                                     fu_hdr->type = nalu_buf[0] & 0x1f;
+                                     memcpy(pq[push_index].item + 2, nalu_buf + 1, RTP_PAYLOAD_MAX_SIZE - 1);
+                                     pq[push_index].empty = FALSE;
+                                     pq[push_index].lastPacket = FALSE;
+                                     pq[push_index].len = RTP_PAYLOAD_MAX_SIZE + 1;
+                                     push_index++;
+                                     if( push_index == MAX_QUEUE_ITEM_NUM)
+                                         push_index = 0;
+                                    total_num++;
+                                    pthread_mutex_lock(&asyncTxMutex);
+                     } else if (fu_seq < fu_pack_num -1) {
+                              memset(pq[push_index].item, 0, SEND_BUF_SIZE);
+                              pthread_mutex_lock(&asyncTxMutex);
+                              /*Add packet into queue */
+                              fu_ind = (fu_indicator_t *)&(pq[push_index].item[0]);
+                              fu_ind->f = (nalu_buf[0] & 0x80) >> 7;
+                              fu_ind->nri = (nalu_buf[0] & 0x60) >> 5;
+                              fu_ind->type = 28;
+
+                              fu_hdr = (nalu_header_t *)&(pq[push_index].item[1]);
+                              fu_hdr->s = 0;
+                              fu_hdr->e = 0;
+                              fu_hdr->r = 0;
+                              fu_hdr->type = nalu_buf[0] & 0x1f;
+                               
+                              memcpy(pq[push_index].item + 2, nalu_buf + RTP_PAYLOAD_MAX_SIZE * fu_seq, RTP_PAYLOAD_MAX_SIZE);
+                              pq[push_index].empty = FALSE;
+                              pq[push_index].lastPacket = FALSE;
+                              pq[push_index].len = RTP_PAYLOAD_MAX_SIZE + 1;
+                              push_index++;
+                              if( push_index == MAX_QUEUE_ITEM_NUM)
+                                         push_index = 0;
+                              total_num++;
+                              pthread_mutex_lock(&asyncTxMutex);
+                     } else {
+                              memset(pq[push_index].item, 0, SEND_BUF_SIZE);
+                              pthread_mutex_lock(&asyncTxMutex);
+                              /*Add packet into queue */
+                              fu_ind = (fu_indicator_t *)&(pq[push_index].item[0]);
+                              fu_ind->f = (nalu_buf[0] & 0x80) >> 7;
+                              fu_ind->nri = (nalu_buf[0] & 0x60) >> 5;
+                              fu_ind->type = 28;
+
+                              fu_hdr = (nalu_header_t *)&(pq[push_index].item[1]);
+                              fu_hdr->s = 0;
+                              fu_hdr->e = 1;
+                              fu_hdr->r = 0;
+                              fu_hdr->type = nalu_buf[0] & 0x1f;
+
+                              memcpy(pq[push_index].item + 2, nalu_buf + RTP_PAYLOAD_MAX_SIZE * fu_seq, last_fu_pack_size);
+                              pq[push_index].empty = FALSE;
+                              pq[push_index].lastPacket = TRUE;
+                              pq[push_index].len = last_fu_pack_size + 2;
+                              push_index++;
+                              if( push_index == MAX_QUEUE_ITEM_NUM)
+                                         push_index = 0;
+                              total_num++;
+                              pthread_mutex_lock(&asyncTxMutex);
+                             }
+                       }
+              }
+
+             return 0;
+}
+
+static void* openavbIntfH264FileRtpThread(void* pv)
+{
+
+       pvt_data_t *pPvtData;
+       FILE *fp = NULL;
+       int len = 0;
+       int ret = 0;
+
+       if(!pAsyncTxMediaQ) { 
+              AVB_LOG_ERROR("No async mediaQ");
+              return;
+        }
+
+        pPvtData = pAsyncTxMediaQ->pPvtIntfInfo;
+        if(!pPvtData) {
+              AVB_LOG_ERROR("No async RX private data.");
+              return;
+        }   
+
+        sleep(1);
+
+        tx_bRunning = true;
+        if((fp = fopen(pPvtData->file_name, "r")) == NULL)
+                return;
+
+        while(tx_bRunning) {
+                if(fetch_nal_from_file(fp, nal_buf, &len) != -1) {
+                         ret = h264nal_send(25, nal_buf, len);
+                         if(ret != 1)
+                                usleep(TX_SLEEP_MS * 1000);
+                         } else if (pPvtData->repeatData){
+                                  if(fp) {
+                                         close(fp);
+                                         fp = NULL;
+                                   }
+
+                                   if((fp = fopen(pPvtData->file_name, "r")) == NULL)
+                                            return;
+                          } else {
+                                  break;
+                          }
+                  }
+
+                  return;
+}
+                              
 // Each configuration name value pair for this mapping will result in this callback being called.
 void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const char *value)
 {
@@ -103,6 +383,12 @@ void openavbIntfH264RtpFileCfgCB(media_q_t *pMediaQ, const char *name, const cha
 			pPvtData->asyncRx = (tmp == 1);
 		}
 	}
+        else if (strcmp(name, "intf_nv_blocking_tx") == 0) {
+                tmp = strtol(value, &pEnd, 10);
+                if (*pEnd == '\0' && tmp == 1) {
+                        pPvtData->asyncRx = (tmp == 1);
+                }
+        }
 	else if (strcmp(name, "intf_nv_blocking_rx") == 0) {
 		tmp = strtol(value, &pEnd, 10);
 		if (*pEnd == '\0' && tmp == 1) {
@@ -173,7 +459,19 @@ void openavbIntfH264RtpFileTxInitCB(media_q_t *pMediaQ)
 	pPvtData->loc = 0;
 	pPvtData->get_avtp_timestamp = TRUE;
 	pPvtData->read_size = MAX_READ_SIZE;
-
+        if(pPvtData->asyncTx) {
+                if(pthread_mutex_init(&asyncTxMutex, 0))
+                        AVB_LOG_ERROR("Mutex init failed");
+                 pAsyncTxMediaQ = pMeiaQ;
+                 pthread_attr_t attr;
+                 struct sched_param param;
+                 pthread_attr_init(&attr);
+                 pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+                 param.sched_priority = 0;
+                 pthread_attr_setschedparam(&attr, &param);
+                 pthread_create(&asyncTxThread, &attr, openavbIntfH264FileRtpThread, NULL);
+        }
+ 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 
 	return;
@@ -203,57 +501,83 @@ bool openavbIntfH264RtpFileTxCB(media_q_t *pMediaQ)
 
 	U32 read_size = 0;
 	static U32 buf_size ;
-	media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
-	if (pMediaQItem) {
-		if (pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
-			read_size = pPvtData->statbuf.st_size - pPvtData->loc;
-		} else {
-			read_size = pPvtData->read_size;
-		}
+	if(pPvtData->asyncTx) {
+               pthread_mutex_lock(&asyncTxMutex);
+               if(total_num > 0 && !pq[pop_index].empty) {
+                       media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMediaQ);
+                       if(pMediaQItem) {
+                         memcpy(pMediaQItem->pPubData, pq[pop_index].item, pq[pop_index].len);
+                         pMediaQItem->dataLen = pq[pop_index].len;
+                         ((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = pq[pop_index].lastPacket;
+                         pq[pop_index].empty = true;
+                         pq[pop_index].lastPacket = false;
+                         memset(pq[pop_index].item, 0, SEND_BUF_SIZE);
+                         pq[pop_index].len = 0;
+                         pop_index++;
+                         if( pop_index == MAX_QUEUE_ITEM_NUM)
+                                         pop_index = 0;
+                              total_num--;
 
-		if (read_size > 0) {
-			memcpy(pMediaQItem->pPubData, &pPvtData->fp[pPvtData->loc], read_size);
+                              openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
+                              openavbMediaQHeadPush(pMediaQ);
+                              pthread_mutex_unlock(&asyncTxMutex);
+                              AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
+                              return TRUE;
+                           } else {
+                              pthread_mutex_unlock(&asyncTxMutex);
+                           } 
 		} else {
-			AVB_LOGF_ERROR("Invalid read size %d. read pos = %d, file size = %d",
-					read_size, pPvtData->loc, pPvtData->statbuf.st_size);
+			pthread_mutex_unlock(&asyncTxMutex);
+                        AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
 			return FALSE;
 		}
-
-		pMediaQItem->dataLen = read_size;
-		pPvtData->loc += read_size;
-		buf_size += read_size;
-
-		// Check if we've reached the end of the file
-		if (pPvtData->loc >= pPvtData->statbuf.st_size) {
-			if (pPvtData->repeatData) {
-				pPvtData->loc = 0;
+        } else {
+                media_q_item_t *pMediaQItem = openavbMediaQHeadLock(pMedia);
+                if(pMediaQItem) {
+                        if(pPvtData->loc + pPvtData->read_size > pPvtData->statbuf.st_size) {
+                              read_size = pPvtData->statbuf.st_size - pPvtData->loc;
+                        } else {
+                               read_size = pPvtData->read_size;
+                        }
+		        if(read_size > 0) {
+                                memcpy(pMediaQItem->pPubMapData, &pPvtData->fp[pPvtData->loc], read_size);
 			} else {
-				AVB_LOG_INFO("EOF reached, closing the file.");
-				close(pPvtData->fd);
-				pPvtData->fd = -1;
+			       AVB_LOGF_ERROR("Invalid read size %d. read pos = %d, file size = %d",
+                                               read_size, pPvtData->loc, pPvtData->statbuf.st_size);
+                               return FALSE;
 			}
-		}
+		                pMediaQItem->dataLen = read_size;
+                                pPvtData->loc += read_size;
+                                buf_size += read_size;
 
-		if (buf_size < MAX_BUFFER_LEN) {
-			((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = FALSE;
-			if (read_size > 0 && read_size < MAX_READ_SIZE) {
+                                // Check if we've  reached the end of the file
+                                if(pPvtData->loc >= pPvtData->statbuf.st_size) {
+                                       if (pPvtData->repeatData) {
+                                               pPvtData->loc = 0;
+                                       } else {
+                                              AVB_LOG_INFO("EOF reached, closing the file.");
+                                              close(pPvtData->fd);
+                                              pPvtData->fd = -1;
+                                        }
+                          }
+                         
+                          if (buf_size < MAX_BUFFER_LEN) {
+                                 ((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = FALSE;
+                                 if (read_size > 0 && read_size < MAX_READ_SIZE) {
+                                         ((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
+                        }
+                }
+                else {                               
 				((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
+                                buf_size = 0;
 			}
-		}
-		else {
-			((media_q_item_map_h264_pub_data_t *)pMediaQItem->pPubMapData)->lastPacket = TRUE;
-			buf_size = 0;
-		}
-		openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
-		openavbMediaQHeadPush(pMediaQ);
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return TRUE;
+                                openavbAvtpTimeSetToWallTime(pMediaQItem->pAvtpTime);
+                                openavbMediaQHeadPush(pMediaQ);
+                                AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
+                                return TRUE;
+                        }
+	}
 
-	}
-	else {
-		AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
-		return FALSE;
-	}
 	AVB_TRACE_EXIT(AVB_TRACE_INTF_DETAIL);
 	return TRUE;
 }
@@ -344,6 +668,11 @@ void openavbIntfH264RtpFileEndCB(media_q_t *pMediaQ)
 		filewriter_close(pPvtData->filewriter);
 		pPvtData->filewriter = NULL;
 	}
+        if (pPvtData->asyncTx) {
+                tx_bRunning = false;
+                pthread_mutex_destroy(&asyncTxMutex);
+                pthread_join(asyncTxThread, NULL);
+        }
 
 	AVB_TRACE_EXIT(AVB_TRACE_INTF);
 }
