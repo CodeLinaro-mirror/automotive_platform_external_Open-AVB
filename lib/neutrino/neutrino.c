@@ -233,10 +233,10 @@ int ntn_set_class_bandwidth_ntn2(int nClass, unsigned classBytesPerSec, char *if
 
 	switch (nClass) {
 	case SR_CLASS_A:
-		cbs_params.queue_idx = 1;
+		cbs_params.queue_idx = 4;
 		break;
 	case SR_CLASS_B:
-		cbs_params.queue_idx = 2;
+		cbs_params.queue_idx = 3;
 		break;
 	default:
 		syslog(LOG_ERR, "Configuring HW queue; unsupported SR class (%d)\n", nClass);
