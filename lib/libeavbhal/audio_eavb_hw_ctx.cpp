@@ -909,7 +909,10 @@ void *in_eavbHalPollingThreadFn(void *pv) {
 
                     // read new data
                     buffer = (void*) malloc(sockbufsize);
+
+                    if(buffer != NULL) {
                     memset(buffer, 0, sockbufsize);
+                    }
 
                     if (circ_buff_init(&pctx->circ_buff, AUDIO_STREAM_INPUT_BUFFER_SZ,
                                        rxreadbufsize) < 0) {
