@@ -49,17 +49,22 @@
 #include "avbts_persist.hpp"
 #include "gptp_cfg.hpp"
 #include "rgptp.hpp"
+#include <linux/gpio.h>
+#include <sys/ioctl.h>
 
 #define QSOCKET_QC_GPTP_TIME_SERVICE_ID 5010
 #define QSOCKET_QC_GPTP_TIME_INSTANCE_ID 10
 #define GPIO_EXP_PATH "/sys/class/gpio/export"
 #define GPIO_UNEXP_PATH "/sys/class/gpio/unexport"
 #define SPARE_GPIO_PIN "82"
+#define SPARE_GPIO_PIN_NO 82
 #define GPIO_VAL "/value"
 #define GPIO_DIR "/direction"
 #define GPIO_FILE_SYS "/sys/class/gpio/gpio"
 #define RGPTP_GPIO_DIR GPIO_FILE_SYS SPARE_GPIO_PIN GPIO_DIR
 #define RGPTP_GPIO_VAL GPIO_FILE_SYS SPARE_GPIO_PIN GPIO_VAL
+#define GPIO_DEV_NAME "/dev/gpiochip0"
+
 
 struct sync_data{
     uint64_t ptp_time;
@@ -80,6 +85,8 @@ static struct rgptp_data rgptp;
 
 static int rgptpGpioInit(rgptp_data *rpgtp)
 {
+
+#ifndef GPIO_CHIP
     ssize_t n;
     int exportfd, directionfd;
     //Unexport the GPIO if it was already opened in previous session
@@ -134,6 +141,60 @@ static int rgptpGpioInit(rgptp_data *rpgtp)
         close(rpgtp->gpio_fd);
         return -1;
     }
+
+#else
+	struct gpiohandle_request req;
+	struct gpiochip_info cinfo;
+	struct gpioline_info linfo;
+	int fd, ret;
+	printf("rgptp init\n");
+	fd = open(GPIO_DEV_NAME, O_RDONLY);
+
+	if (fd < 0) {
+		printf("Unabled to open %s: %s", GPIO_DEV_NAME, strerror(errno));
+		return -1;
+	}
+
+	ret = ioctl(fd, GPIO_GET_CHIPINFO_IOCTL, &cinfo);
+
+	if (ret < 0) {
+		printf("ERROR get chip info ret=%d\n", ret);
+		return -1;
+	}
+
+	printf("GPIO chip: %s, \"%s\", %u GPIO lines\n",
+	       cinfo.name, cinfo.label, cinfo.lines);
+
+	memset(&linfo, 0, sizeof(linfo));
+	linfo.line_offset = SPARE_GPIO_PIN_NO;
+
+	ret = ioctl(fd, GPIO_GET_LINEINFO_IOCTL, &linfo);
+
+	if (ret == -1) {
+		printf("Failed to issue LINEINFO IOCTL\n");
+		return -1;
+	}
+	req.lineoffsets[0] = SPARE_GPIO_PIN_NO;
+	req.lines = 1;
+	req.flags = GPIOHANDLE_REQUEST_OUTPUT;
+
+	ret = ioctl(fd, GPIO_GET_LINEHANDLE_IOCTL, &req);
+
+	if (ret == -1) {
+		fprintf(stderr, "Failed to issue GET LINEHANDLE IOCTL (%d) %s\n",
+		        errno, strerror(errno));
+		return -1;
+	}
+
+	rpgtp->gpio_fd = req.fd;
+
+	if (close(fd) == -1) {
+		perror("Failed to close GPIO device");
+	}
+
+	printf("gpio init successful\n");
+
+#endif
     return 0;
 }
 
@@ -147,8 +208,27 @@ void rgptpTimeoutThread( void *arg )
     if(info == NULL)
         return;
 
-    write(info->gpio_fd,"0", 2);
-    write(info->gpio_fd,"1", 2);
+#ifndef GPIO_CHIP
+	write(info->gpio_fd, "0", 2);
+	write(info->gpio_fd, "1", 2);
+#else
+	struct gpiohandle_data data;
+	data.values[0] = 0;
+	ret = ioctl(info->gpio_fd, GPIOHANDLE_SET_LINE_VALUES_IOCTL, &data);
+
+	if (ret == -1) {
+		GPTP_LOG_ERROR("%s,Failed to issue GPIOHANDLE_SET_LINE_VALUES_IOCTL (%d) %s\n",
+		               __func__, errno, strerror(errno));
+	}
+
+	data.values[0] = 1;
+	ret = ioctl(info->gpio_fd, GPIOHANDLE_SET_LINE_VALUES_IOCTL, &data);
+
+	if (ret == -1) {
+		GPTP_LOG_ERROR("%s,Failed to issue GPIOHANDLE_SET_LINE_VALUES_IOCTL (%d) %s\n",
+		               __func__, errno, strerror(errno));
+	}
+#endif
 
     info->port_init->timestamper->HWTimestamper_getptptime(&snd_buff.ptp_time);
     snd_buff.sync = info->port_init->clock->getSyncStatus();
@@ -323,33 +403,52 @@ void rgptpDeInit(void)
         rgptp.thread_id = 0;
     }
 
-    if(rgptp.gpio_fd > 0) {
-        int fd = 0;
+#ifndef GPIO_CHIP
 
-        ret = close(rgptp.gpio_fd);
-        if(ret){
-            GPTP_LOG_ERROR("%s, failure while closing GPIO fd : %s\n",
-                                                        __func__, strerror(errno));
-        }
-        rgptp.gpio_fd = 0;
-        //Unexport the GPIO
-        fd = open(GPIO_UNEXP_PATH, O_WRONLY);
-        if(fd < 0) {
-            GPTP_LOG_ERROR("Cannot open GPIO to unexport it\n");
-        }
-        else {
-            int n = 0;
-            n = write(fd, SPARE_GPIO_PIN, 3);
-            if(n < 0) {
-                GPTP_LOG_ERROR("GPIO %s unexport failed:%s\n", SPARE_GPIO_PIN, strerror(errno));
-            }
-            else {
-                GPTP_LOG_INFO("GPIO %s unexported succesfully\n", SPARE_GPIO_PIN);
-            }
-        }
-        close(fd);
-    }
-    return;
+	if (rgptp.gpio_fd > 0) {
+		int fd = 0;
+		ret = close(rgptp.gpio_fd);
+
+		if (ret) {
+			GPTP_LOG_ERROR("%s, failure while closing GPIO fd : %s\n",
+			               __func__, strerror(errno));
+		}
+
+		rgptp.gpio_fd = 0;
+		//Unexport the GPIO
+		fd = open(GPIO_UNEXP_PATH, O_WRONLY);
+
+		if (fd < 0) {
+			GPTP_LOG_ERROR("Cannot open GPIO to unexport it\n");
+		} else {
+			int n = 0;
+			n = write(fd, SPARE_GPIO_PIN, 3);
+
+			if (n < 0) {
+				GPTP_LOG_ERROR("GPIO %s unexport failed:%s\n", SPARE_GPIO_PIN, strerror(errno));
+			} else {
+				GPTP_LOG_INFO("GPIO %s unexported succesfully\n", SPARE_GPIO_PIN);
+			}
+		}
+
+		close(fd);
+	}
+
+#else
+
+	if (rgptp.gpio_fd > 0) {
+		ret = close(rgptp.gpio_fd);
+
+		if (ret) {
+			GPTP_LOG_ERROR("%s, failure while closing GPIO fd : %s\n",
+			               __func__, strerror(errno));
+		}
+
+		rgptp.gpio_fd = 0;
+	}
+
+#endif
+	return;
 }
 
 void rgptpInit(PortInit_t *portInit)

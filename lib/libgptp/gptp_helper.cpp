@@ -231,17 +231,23 @@ static int gptpScaling(gPtpTimeData * td, char *memory_offset_buffer)
 	uint32_t a,b;
 	gPtpTimeData *ptimedata;
 	int count = 0;
+	char *dest = (char*)td;
+	char *src = NULL;
 	buf_offset += (2 * sizeof(std::atomic<uint32_t>));
 
 	seq0 = (std::atomic<uint32_t> *)memory_offset_buffer;
 	seq1 = (std::atomic<uint32_t> *)(memory_offset_buffer + sizeof(std::atomic<uint32_t>));
 	ptimedata   = (gPtpTimeData *) (memory_offset_buffer + buf_offset);
-
+	src = (char *)ptimedata;
 	do {
 	a = seq0->load();
 	b = seq1->load();
 
-	memcpy(td, ptimedata, sizeof(*td));
+	//memcpy(td, ptimedata, sizeof(*td)); //commented due to bus error issue
+	for(int i=0; i<sizeof(gPtpTimeData); i++ )
+	{
+	    dest[i]=src[i];
+	}
 	count++;
 
 	}while((a!=b || a!=seq0->load() || b != seq1->load())&&count<3);

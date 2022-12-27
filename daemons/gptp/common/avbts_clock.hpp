@@ -234,7 +234,7 @@ public:
    * @param  count [inout] Provides the size of buffer. Its decremented internally
    * @return TRUE in case of success, FALSE when the count should be updated with the right size.
    */
-  bool serializeState( void *buf, long *count );
+  bool serializeState( void *buf, off_t *count );
 
   /**
    * @brief  Restores the frequencyRatio with the serialized input buffer data
@@ -242,7 +242,7 @@ public:
    * @param  count [inout] Size of buffer. It is incremented internally
    * @return TRUE in case of success, FALSE otherwise.
    */
-  bool restoreSerializedState( void *buf, long *count );
+  bool restoreSerializedState( void *buf, off_t *count );
 
   /**
    * @brief  Gets the current time from system clock

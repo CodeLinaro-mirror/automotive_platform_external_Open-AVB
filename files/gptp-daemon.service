@@ -1,0 +1,21 @@
+#Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+#SPDX-License-Identifier: BSD-3-Clause-Clear
+
+[Unit]
+Description=gptp daemon Service
+SourcePath=/usr/bin/gptp/daemon_cl
+
+[Service]
+User=vnw
+Group=vnw
+Restart=on-failure
+ExecStartPre=+/bin/chmod 0660 /dev/ptp0
+ExecStartPre=+/bin/chown vnw:vnw /dev/ptp0
+ExecStart=/usr/bin/gptp/daemon_cl eth0
+SupplementaryGroups=net_admin net_raw
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
+

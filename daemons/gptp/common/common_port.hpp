@@ -499,7 +499,7 @@ public:
 	 * or if buf is NULL.
 	 * FALSE if count should be updated with the right size.
 	 */
-	bool serializeState( void *buf, long *count );
+	bool serializeState( void *buf, off_t *count );
 
 	/**
 	 * @brief  Restores the serialized state from the buffer. Copies the
@@ -515,7 +515,7 @@ public:
 	 * being copied.
 	 * @return TRUE if everything was copied successfully, FALSE otherwise.
 	 */
-	bool restoreSerializedState( void *buf, long *count );
+	bool restoreSerializedState( void *buf, off_t *count );
 
 	/**
 	 * @brief  Sets the internal variabl sync_receipt_thresh, which is the
