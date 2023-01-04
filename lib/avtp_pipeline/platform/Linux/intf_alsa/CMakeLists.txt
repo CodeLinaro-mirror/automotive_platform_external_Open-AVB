@@ -11,6 +11,14 @@ if (AVB_FEATURE_INTF_ALSA2)
 	)
 endif()
 
+if (AVB_FEATURE_INTF_PAL)
+	SET (SRC_FILES ${SRC_FILES}
+		${AVB_OSAL_DIR}/intf_alsa/openavb_intf_alsa.c
+		${AVB_OSAL_DIR}/intf_alsa/openavb_intf_pal.c
+		PARENT_SCOPE
+	)
+endif()
+
 if (TINYALSA_SUPPORT_INCLUDED)
 	SET (SRC_FILES ${SRC_FILES}
 		${AVB_OSAL_DIR}/intf_alsa/openavb_intf_tinyalsa.c

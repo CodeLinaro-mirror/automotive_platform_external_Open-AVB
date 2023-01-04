@@ -47,6 +47,7 @@
 #include <linux/ptp_clock.h>
 #ifdef ANDROID
 #include <sys/syscall.h>
+#include <sys/timex.h>
 #else
 #include <syscall.h>
 #endif
@@ -216,7 +217,7 @@ LinuxTimestamperGeneric::LinuxTimestamperGeneric() {
 }
 
 bool LinuxTimestamperGeneric::Adjust( void *tmx ) const {
-	if( syscall(__NR_clock_adjtime, _private->clockid, tmx ) != 0 ) {
+	if( clock_adjtime(_private->clockid, (struct timex*)tmx ) != 0 ) {
 		GPTP_LOG_ERROR("Failed to adjust PTP clock rate");
 		return false;
 	}
