@@ -248,7 +248,7 @@ static int gptpScaling(gPtpTimeData * td, char *memory_offset_buffer)
 	//memcpy(td, ptimedata, sizeof(*td)); //commented due to bus error issue
 	for(int i=0; i<sizeof(gPtpTimeData); i++ )
 	{
-	    dest[i]=src[i];
+	    dest[i] = *(volatile char *)(&src[i]);
 	}
 	count++;
 
