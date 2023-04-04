@@ -181,7 +181,7 @@ void openavbIntfClkRefTxInitCB(media_q_t *pMediaQ)
 		pPvtData->timestampsPerPacket =
 			pPubMapInfo->timestampsPerPacket;
 		pPvtData->timestampBufferSize =
-			pPvtData->timestampsPerPacket * 2;
+			pPvtData->timestampsPerPacket * 20;
 		pPvtData->timestampBuffer = malloc(CRF_TIMESTAMP_SIZE *
 			pPvtData->timestampBufferSize);
 		if (pPvtData->timestampBuffer == NULL) {
