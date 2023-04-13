@@ -151,7 +151,7 @@ bool gptplocaltime(const gPtpTimeData * td, uint64_t* now_local)
 #define CPTP_DEVICE "/dev/ptp0"
 static inline struct ptp_clock_time cpct_diff( struct ptp_clock_time *a, struct ptp_clock_time *b )
 {
-	struct ptp_clock_time result;
+	struct ptp_clock_time result = {0};
 	if( a->nsec >= b->nsec ) {
 		result.nsec = a->nsec - b->nsec;
 	} else {

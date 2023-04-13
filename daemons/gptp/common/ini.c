@@ -23,7 +23,12 @@ http://code.google.com/p/inih/
 /* Strip whitespace chars off end of given string, in place. Return s. */
 static char* rstrip(char* s)
 {
-    char* p = s + strlen(s);
+    char* p;
+
+    if(s == NULL)
+    return NULL;
+
+    p = s + strlen(s);
     while (p > s && isspace(*--p))
         *p = '\0';
     return s;
