@@ -70,6 +70,8 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #define PERIOD_SIZE 256
 #define PERIOD_COUNT 4
 
+static int pal_init_status = 0;
+
 #if 0 // set to 1 to enable MCR debug logs
 #define MCR_DEBUG_LOG AVB_LOG_ERROR
 #define MCR_DEBUG_LOGF AVB_LOGF_ERROR
@@ -299,11 +301,77 @@ static void parsePcmDeviceName(char *pDeviceName, U32 *cardID, U32 *deviceID)
     }
 
     *cardID = card;
-    *deviceID = device;
     return;
 }
 
-void get_in_device_id (avb_pal_in_device_id_t inDeviceId, struct pal_device *devices)
+
+void channel_map(uint8_t* ch_map, int channels)
+{
+    switch (channels) {
+        case 1:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            break;
+
+        case 2:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            break;
+
+        case 3:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[2] = PAL_CHMAP_CHANNEL_C;
+            break;
+
+        case 4:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[2] = PAL_CHMAP_CHANNEL_LB;
+            ch_map[3] = PAL_CHMAP_CHANNEL_RB;
+            break;
+
+        case 5:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[2] = PAL_CHMAP_CHANNEL_LB;
+            ch_map[3] = PAL_CHMAP_CHANNEL_RB;
+            ch_map[4] = PAL_CHMAP_CHANNEL_C;
+            break;
+
+        case 6:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[2] = PAL_CHMAP_CHANNEL_C;
+            ch_map[3] = PAL_CHMAP_CHANNEL_LFE;
+            ch_map[4] = PAL_CHMAP_CHANNEL_LB;
+            ch_map[5] = PAL_CHMAP_CHANNEL_RB;
+            break;
+
+        case 7:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[2] = PAL_CHMAP_CHANNEL_C;
+            ch_map[3] = PAL_CHMAP_CHANNEL_LFE;
+            ch_map[4] = PAL_CHMAP_CHANNEL_LB;
+            ch_map[5] = PAL_CHMAP_CHANNEL_RB;
+            ch_map[6] = PAL_CHMAP_CHANNEL_RC;
+            break;
+
+        case 8:
+            ch_map[0] = PAL_CHMAP_CHANNEL_FL;
+            ch_map[1] = PAL_CHMAP_CHANNEL_C;
+            ch_map[2] = PAL_CHMAP_CHANNEL_FR;
+            ch_map[3] = PAL_CHMAP_CHANNEL_SL;
+            ch_map[4] = PAL_CHMAP_CHANNEL_SR;
+            ch_map[5] = PAL_CHMAP_CHANNEL_LB;
+            ch_map[6] = PAL_CHMAP_CHANNEL_RB;
+            ch_map[7] = PAL_CHMAP_CHANNEL_LFE;
+            break;
+    }
+}
+
+void get_in_device_id (avb_pal_in_device_id_t inDeviceId,
+                       struct pal_device *devices)
 {
     switch (inDeviceId) {
         case AVB_PAL_DEVICE_IN_MIN:
@@ -386,10 +454,10 @@ void get_in_device_id (avb_pal_in_device_id_t inDeviceId, struct pal_device *dev
             AVB_LOG_ERROR("Invalid input device id");
             break;
     }
-
 }
 
-void get_out_device_id (avb_pal_out_device_id_t outDeviceId, struct pal_device *devices)
+void get_out_device_id (avb_pal_out_device_id_t outDeviceId,
+                        struct pal_device *devices)
 {
     switch (outDeviceId) {
         case AVB_PAL_DEVICE_OUT_MIN:
@@ -468,7 +536,6 @@ void get_out_device_id (avb_pal_out_device_id_t outDeviceId, struct pal_device *
             AVB_LOG_ERROR("Invalid output device id");
             break;
     }
-
 }
 
 // Each configuration name value pair for this mapping will result in this callback being called.
@@ -686,29 +753,25 @@ void openavbIntfPalCfgCB(media_q_t *pMediaQ, const char *name,
             pPvtData->alsaStopThreshold = strtol(value,
                                                  &pEnd, 10);
             AVB_LOGF_INFO("intf_nv_alsa_stop_threshold = %d", pPvtData->alsaStopThreshold);
-        }
-
-        if (strcmp(name, "intf_nv_is_voice_call") ==
-                0) {
+        } else if (strcmp(name, "intf_nv_is_voice_call") ==
+                   0) {
             pPvtData->isVoiceCall = strtol(value,
-                    &pEnd, 10);
+                                           &pEnd, 10);
             AVB_LOGF_INFO("intf_nv_is_voice_call = %d", pPvtData->isVoiceCall);
-
-            if((pPvtData->isVoiceCall == 0) || (pPvtData->isVoiceCall == 1)) {
-                if (strcmp(name, "intf_nv_pal_in_device_id") ==
-                        0) {
-                    inDeviceId = strtol(value, &pEnd, 10);
-                    AVB_LOGF_INFO("intf_nv_pal_in_device_id= %d", inDeviceId);
-                    get_in_device_id(inDeviceId, &(pPvtData->devices));
-                } else if (strcmp(name, "intf_nv_pal_out_device_id") ==
-                        0) {
-                    outDeviceId = strtol(value, &pEnd, 10);
-                    AVB_LOGF_INFO("intf_nv_pal_out_device_id= %d", outDeviceId);
-                    get_out_device_id(outDeviceId, &(pPvtData->devices));
-                }
-            } else {
-                AVB_LOG_ERROR("Invalid intf_nv_is_voice_call");
-            }
+        } else if (strcmp(name, "intf_nv_pal_in_device_id") ==
+                   0) {
+            inDeviceId = strtol(value, &pEnd, 10);
+            AVB_LOGF_INFO("intf_nv_pal_in_device_id = %d", inDeviceId);
+            get_in_device_id(inDeviceId, &(pPvtData->devices));
+            pPvtData->deviceId = pPvtData->devices.id;
+            AVB_LOGF_INFO("in Device Id = %d", pPvtData->deviceId);
+        } else if (strcmp(name, "intf_nv_pal_out_device_id") ==
+                   0) {
+            outDeviceId = strtol(value, &pEnd, 10);
+            AVB_LOGF_INFO("intf_nv_pal_out_device_id = %d", outDeviceId);
+            get_out_device_id(outDeviceId, &(pPvtData->devices));
+            pPvtData->deviceId = pPvtData->devices.id;
+            AVB_LOGF_INFO("out device id= %d", pPvtData->deviceId);
         }
     }
 
@@ -789,9 +852,6 @@ static void handleClockTick(void *context, U64 timestamp,
 void openavbIntfPalTxInitCB(media_q_t *pMediaQ)
 {
     AVB_TRACE_ENTRY(AVB_TRACE_INTF);
-    uint8_t ch_map[8] = {PAL_CHMAP_CHANNEL_FL, PAL_CHMAP_CHANNEL_FR, PAL_CHMAP_CHANNEL_C, PAL_CHMAP_CHANNEL_LS,
-                         PAL_CHMAP_CHANNEL_RS, PAL_CHMAP_CHANNEL_LFE, PAL_CHMAP_CHANNEL_LB, PAL_CHMAP_CHANNEL_RB
-                        };
     int errval = 0;
 
     if (pMediaQ) {
@@ -807,24 +867,45 @@ void openavbIntfPalTxInitCB(media_q_t *pMediaQ)
             refClkRegisterObserver(handleClockTick, pPvtData);
         }
 
-        memset(&pPvtData->stream_attr, 0, sizeof(pPvtData->stream_attr));
-        pPvtData->stream_attr.type = PAL_STREAM_VOICE_CALL_RECORD;
-        pPvtData->stream_attr.info.voice_rec_info.record_direction =
-            INCALL_RECORD_VOICE_DOWNLINK;
-        pPvtData->stream_attr.flags = PAL_STREAM_FLAG_TIMESTAMP;
-        pPvtData->stream_attr.direction = PAL_AUDIO_INPUT;
-        pPvtData->stream_attr.in_media_config.ch_info.channels =
-            pPvtData->audioChannels;
-        pPvtData->stream_attr.in_media_config.sample_rate = pPvtData->audioRate;
-        memcpy(pPvtData->stream_attr.in_media_config.ch_info.ch_map, ch_map,
-               8 * sizeof(uint8_t));
-        pPvtData->stream_attr.in_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
-        pPvtData->devices.address.card_id = pPvtData->cardId;
-        pPvtData->devices.address.device_num = pPvtData->deviceId;
+        if (pPvtData->isVoiceCall == true) {
+            memset(&pPvtData->stream_attr, 0, sizeof(pPvtData->stream_attr));
+            pPvtData->stream_attr.type = PAL_STREAM_VOICE_CALL_RECORD;
+            pPvtData->stream_attr.info.voice_rec_info.record_direction =
+                INCALL_RECORD_VOICE_DOWNLINK;
+            pPvtData->stream_attr.flags = PAL_STREAM_FLAG_TIMESTAMP;
+            pPvtData->stream_attr.direction = PAL_AUDIO_INPUT;
+            pPvtData->stream_attr.in_media_config.ch_info.channels =
+                pPvtData->audioChannels;
+            pPvtData->stream_attr.in_media_config.sample_rate = pPvtData->audioRate;
+            channel_map(pPvtData->stream_attr.in_media_config.ch_info.ch_map,
+                        pPvtData->audioChannels);
+            pPvtData->stream_attr.in_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
+            AVB_LOG_INFO("Voice Call setup.");
+        } else {
+            memset(&pPvtData->stream_attr, 0, sizeof(pPvtData->stream_attr));
+            pPvtData->stream_attr.type = PAL_STREAM_LOW_LATENCY;
+            pPvtData->stream_attr.info.opt_stream_info.version = 1;
+            pPvtData->stream_attr.info.opt_stream_info.duration_us = -1;
+            pPvtData->stream_attr.info.opt_stream_info.has_video = false;
+            pPvtData->stream_attr.info.opt_stream_info.is_streaming = true;
+            pPvtData->stream_attr.flags = (pal_stream_flags_t)(PAL_STREAM_FLAG_TIMESTAMP |
+                                          PAL_STREAM_FLAG_NON_BLOCKING);;
+            pPvtData->stream_attr.direction = PAL_AUDIO_INPUT;
+            pPvtData->stream_attr.in_media_config.ch_info.channels =
+                pPvtData->audioChannels;
+            pPvtData->stream_attr.in_media_config.sample_rate = pPvtData->audioRate;
+            channel_map(pPvtData->stream_attr.in_media_config.ch_info.ch_map,
+                        pPvtData->audioChannels);
+            pPvtData->stream_attr.in_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
+            AVB_LOG_INFO("Direct audio setup.");
+        }
+
+        memset(&pPvtData->devices, 0, sizeof(pPvtData->devices));
+        pPvtData->devices.id = pPvtData->deviceId;
         pPvtData->devices.config.ch_info.channels = pPvtData->audioChannels;
         pPvtData->devices.config.sample_rate = pPvtData->audioRate;
         pPvtData->devices.config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
-        memcpy(pPvtData->devices.config.ch_info.ch_map, ch_map, 8 * sizeof(uint8_t));
+        channel_map(pPvtData->devices.config.ch_info.ch_map, pPvtData->audioChannels);
 
         switch (pPvtData->audioBitDepth) {
             case AVB_AUDIO_BIT_DEPTH_16BIT:
@@ -844,8 +925,9 @@ void openavbIntfPalTxInitCB(media_q_t *pMediaQ)
                 break;
         }
 
-        AVB_LOGF_INFO("%s: pcm_open cardId=%u deviceId=%u ", __func__, pPvtData->cardId,
-                      pPvtData->deviceId);
+        AVB_LOGF_INFO("%s: pcm_open cardId=%u deviceId=%u channels %d", __func__,
+                      pPvtData->cardId,
+                      pPvtData->deviceId, pPvtData->audioChannels);
         errval = pal_stream_open(&pPvtData->stream_attr, 1, &pPvtData->devices, 0, NULL,
                                  NULL, NULL,
                                  &pPvtData->pcmHandle);
@@ -863,7 +945,8 @@ void openavbIntfPalTxInitCB(media_q_t *pMediaQ)
             AVB_LOG_INFO("pcm open success");
         }
 
-        pPvtData->inBufSize = pPvtData->audioChannels * (pPvtData->audioBitDepth / 8);
+        pPvtData->inBufSize =
+            1920; //pPvtData->audioChannels * (pPvtData->audioBitDepth / 8); //hardcoded based on bala's input
         pPvtData->inBufCount = 4;
         errval = pal_stream_set_buffer_size(pPvtData->pcmHandle,
                                             (size_t*)&pPvtData->inBufSize, pPvtData->inBufCount,
@@ -897,7 +980,7 @@ static bool readAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
     if (!pPvtData->refClkStarted) {
         S32 rslt = pal_stream_read(pPvtData->pcmHandle, &in_buffer);
 
-        if (rslt != 0) {
+        if (rslt < 0) {
             AVB_LOGF_ERROR("readAudio - pal_stream_read() error: %d, %s",
                            rslt, strerror(rslt));
             return FALSE;
@@ -949,7 +1032,7 @@ static bool readAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
                                &in_buffer);
     pPvtData->audioBufferStartIdx = 0;
 
-    if (rslt != 0) {
+    if (rslt < 0) {
         AVB_LOGF_ERROR("pal_stream_read() error: %d, %s", rslt, strerror(rslt));
         return FALSE;
     }
@@ -1020,7 +1103,7 @@ static bool readAudio(pvt_data_t *pPvtData, uint8_t *buffer, U32 buflen)
                                    &in_buffer);
             pPvtData->audioBufferStartIdx = 0;
 
-            if (rslt != 0) {
+            if (rslt < 0) {
                 AVB_LOGF_ERROR("pal_stream_read() error: %d, %s", rslt, strerror(rslt));
                 // Return TRUE because we have already filled
                 // the output buffer.
@@ -1140,13 +1223,46 @@ void openavbIntfPalRxInitCB(media_q_t *pMediaQ)
         pPvtData->stream_attr.out_media_config.sample_rate = pPvtData->audioRate;
         memcpy(pPvtData->stream_attr.out_media_config.ch_info.ch_map, ch_map,
                8 * sizeof(uint8_t));
-        pPvtData->stream_attr.out_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
-        pPvtData->devices.address.card_id = pPvtData->cardId;
-        pPvtData->devices.address.device_num = pPvtData->deviceId;
+
+        if (pPvtData->isVoiceCall == true) {
+            memset(&pPvtData->stream_attr, 0, sizeof(pPvtData->stream_attr));
+            pPvtData->stream_attr.type = PAL_STREAM_VOICE_CALL_MUSIC;
+            pPvtData->stream_attr.info.voice_rec_info.record_direction =
+                INCALL_RECORD_VOICE_UPLINK;
+            pPvtData->stream_attr.flags = PAL_STREAM_FLAG_TIMESTAMP;
+            pPvtData->stream_attr.direction = PAL_AUDIO_OUTPUT;
+            pPvtData->stream_attr.out_media_config.ch_info.channels =
+                pPvtData->audioChannels;
+            pPvtData->stream_attr.out_media_config.sample_rate = pPvtData->audioRate;
+            channel_map(pPvtData->stream_attr.out_media_config.ch_info.ch_map,
+                        pPvtData->audioChannels);
+            pPvtData->stream_attr.out_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
+            AVB_LOG_INFO("Voice Call setup.");
+        } else {
+            memset(&pPvtData->stream_attr, 0, sizeof(pPvtData->stream_attr));
+            pPvtData->stream_attr.type = PAL_STREAM_LOW_LATENCY;
+            pPvtData->stream_attr.info.opt_stream_info.version = 1;
+            pPvtData->stream_attr.info.opt_stream_info.duration_us = -1;
+            pPvtData->stream_attr.info.opt_stream_info.has_video = false;
+            pPvtData->stream_attr.info.opt_stream_info.is_streaming = true;
+            pPvtData->stream_attr.flags = (pal_stream_flags_t)(PAL_STREAM_FLAG_TIMESTAMP |
+                                          PAL_STREAM_FLAG_NON_BLOCKING);;
+            pPvtData->stream_attr.direction = PAL_AUDIO_OUTPUT;
+            pPvtData->stream_attr.out_media_config.ch_info.channels =
+                pPvtData->audioChannels;
+            pPvtData->stream_attr.out_media_config.sample_rate = pPvtData->audioRate;
+            channel_map(pPvtData->stream_attr.out_media_config.ch_info.ch_map,
+                        pPvtData->audioChannels);
+            pPvtData->stream_attr.out_media_config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
+            AVB_LOG_INFO("Direct audio setup.");
+        }
+
+        memset(&pPvtData->devices, 0, sizeof(pPvtData->devices));
+        pPvtData->devices.id = pPvtData->deviceId;
         pPvtData->devices.config.ch_info.channels = pPvtData->audioChannels;
         pPvtData->devices.config.sample_rate = pPvtData->audioRate;
         pPvtData->devices.config.aud_fmt_id = PAL_AUDIO_FMT_DEFAULT_PCM;
-        memcpy(pPvtData->devices.config.ch_info.ch_map, ch_map, 8 * sizeof(uint8_t));
+        channel_map(pPvtData->devices.config.ch_info.ch_map, pPvtData->audioChannels);
 
         switch (pPvtData->audioBitDepth) {
             case AVB_AUDIO_BIT_DEPTH_16BIT:
@@ -1185,7 +1301,8 @@ void openavbIntfPalRxInitCB(media_q_t *pMediaQ)
             AVB_LOG_INFO("pcm open success");
         }
 
-        pPvtData->outBufSize = pPvtData->audioChannels * (pPvtData->audioBitDepth / 8);
+        pPvtData->outBufSize =
+            1024;//pPvtData->audioChannels * (pPvtData->audioBitDepth / 8); //based on bala's input
         pPvtData->outBufCount = 4;
         errval = pal_stream_set_buffer_size(pPvtData->pcmHandle,
                                             (size_t*)&pPvtData->inBufSize, pPvtData->inBufCount,
@@ -1214,8 +1331,6 @@ static void consumeAudio(pvt_data_t *pPvtData, void *data, U32 dataLen)
     rslt = pal_stream_write(pPvtData->pcmHandle, &out_buffer);
 
     if (rslt) {
-        AVB_LOGF_ERROR("pal_stream_write: %d %d %d", rslt, errno, dataLen);
-
         if (errno == EPIPE) {
             pal_stream_stop(pPvtData->pcmHandle);
             pal_stream_close(pPvtData->pcmHandle);
@@ -1326,6 +1441,12 @@ void openavbIntfPalEndCB(media_q_t *pMediaQ)
         if (pPvtData->pcmHandle) {
             pal_stream_stop(pPvtData->pcmHandle);
             pal_stream_close(pPvtData->pcmHandle);
+
+            if (pal_init_status == 1) {
+                pal_deinit();
+            }
+
+            pal_init_status--;
             pPvtData->pcmHandle = NULL;
         }
 
@@ -1359,6 +1480,17 @@ extern DLL_EXPORT bool openavbIntfPalInitialize(media_q_t *pMediaQ,
             return FALSE;
         }
 
+        int32_t err;
+
+        if (pal_init_status == 0) {
+            err = pal_init();
+
+            if (err) {
+                AVB_LOG_ERROR("pal_init failed");
+            }
+        }
+
+        pal_init_status++;
         pvt_data_t *pPvtData = pMediaQ->pPvtIntfInfo;
         pIntfCB->intf_cfg_cb = openavbIntfPalCfgCB;
         pIntfCB->intf_gen_init_cb = openavbIntfPalGenInitCB;

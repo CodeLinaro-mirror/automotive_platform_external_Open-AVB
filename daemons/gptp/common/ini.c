@@ -32,6 +32,7 @@ static char* rstrip(char* s)
 /* Return pointer to first non-whitespace char in given string. */
 static char* lskip(const char* s)
 {
+
     while (*s && isspace(*s))
         s++;
     return (char*)s;
@@ -91,6 +92,10 @@ int ini_parse_file(FILE* file,
         lineno++;
 
         start = line;
+
+        if(start == NULL)
+        continue;
+
 #if INI_ALLOW_BOM
         if (lineno == 1 && (unsigned char)start[0] == 0xEF &&
                            (unsigned char)start[1] == 0xBB &&
