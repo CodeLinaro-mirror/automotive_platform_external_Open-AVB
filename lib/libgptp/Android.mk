@@ -7,14 +7,23 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_SHARED_LIBRARIES := libcutils
 
-LOCAL_C_INCLUDES:= \
+LOCAL_C_INCLUDES += \
         $(LOCAL_PATH) \
 		external/open-avb/daemons/gptp/linux/src/ \
 		external/open-avb/daemons/gptp/common
 
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
 
-LOCAL_CFLAGS += -Wno-multichar -Werror -Wall
+LOCAL_CFLAGS += -Wno-multichar -Werror -Wall -Wno-unused-parameter
+ifeq ($(TARGET_PRODUCT), msmnile_gvmq)
+LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
+LOCAL_C_INCLUDES += \
+        vendor/qcom/proprietary/mm-hab/uhab \
+        system/core/libion/include/ion \
+        system/core/libion/kernel-headers
+
+LOCAL_SHARED_LIBRARIES := libuhab libion
+endif
 LOCAL_CLANG := true
 
 LOCAL_MODULE_TAGS := optional

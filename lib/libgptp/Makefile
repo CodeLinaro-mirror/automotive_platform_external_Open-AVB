@@ -1,6 +1,6 @@
 .PHONY : clean
 
-CPPFLAGS= -fpic -g -I../../daemons/gptp/linux/src -I../../daemons/gptp/common
+CPPFLAGS+= -fpic -g -I../../daemons/gptp/linux/src -I../../daemons/gptp/common
 ifeq ($(GPTP_AUTO_START),1)
 	CPPFLAGS += -DGPTP_AUTO_START
 endif
@@ -14,6 +14,10 @@ ifeq ($(RGPTP_CLNT_ENABLED),1)
 	CPPFLAGS += -DRGPTP_CLNT_ENABLED
 endif
 LDFLAGS= -shared -lrt -lpthread
+
+ifeq ($(AVB_FEATURE_GVM_MODE),1)
+	LDFLAGS+= -luhab
+endif
 
 SOURCES= gptp_helper.cpp
 OBJECTS= gptp_helper.o

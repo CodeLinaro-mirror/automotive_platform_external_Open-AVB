@@ -58,6 +58,9 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #ifndef __GPTP_HELPER_H__
 #define __GPTP_HELPER_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 /* Get PTP time in nanoseconds for system time in nanoseconds */
 bool gptpGetTime(uint64_t *gptp_time_ns, uint64_t time_sys_ns);
 
@@ -76,6 +79,16 @@ bool gptpGetCurPtpTime(uint64_t *gptp_time_ns);
 /* Get current PTP time and monolithic time in nanoseconds */
 bool gptpGetCurgPtpMonotonicPair(uint64_t *gptp_time_cur, uint64_t *mono_time_cur);
 
+struct gptp_update {
+	uint64_t curr_gptp_time;
+	int64_t clock_adjust;
+};
+
+
+typedef void(*GPTP_UPDATE_NOTIFY_CALLBACK)(struct gptp_update update);
+
+bool gptpRegisterCallback(GPTP_UPDATE_NOTIFY_CALLBACK fn_ptr);
+
 
 bool gptpInit(void);
 
@@ -88,6 +101,10 @@ bool rgptpGetCurPtpTime(uint64_t *rgptp_time_ns);
 bool rgptpInit(void);
 
 bool rgptpDeinit(void);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif		/* __GPTP_HELPER_H__ */

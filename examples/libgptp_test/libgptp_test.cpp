@@ -45,6 +45,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <gptp_helper.h>
 
+#define CLOCKFD 3
+#define FD_TO_CLOCKID(fd)	((~(clockid_t) (fd) << 3) | CLOCKFD)
+
 uint64_t systemTime(int clock)
 {
     uint64_t ret;
@@ -163,6 +166,11 @@ void do_some_tests_ptp() {
     }
 }
 
+void callback_handler(struct gptp_update update)
+{
+	printf("callback_handler:: got callback %" PRIu64 " %" PRId64 " \n",update.curr_gptp_time,update.clock_adjust);
+}
+
 void do_some_tests_gptp_mono() {
     int i=0;
     uint64_t ptp_time = 0;
@@ -173,6 +181,39 @@ void do_some_tests_gptp_mono() {
             printf("ns ptp_time %" PRIu64 "ns mono_time %" PRIu64 "\n",ptp_time,mono_time);
         }
     }
+}
+
+void get_gptp_time()
+{
+    struct timespec ts;
+    static clockid_t gPtpClockid = -1;
+    uint64_t curr_gptp_time;
+#ifdef AVB_FEATURE_GVM_MODE
+
+    int gptp_phc_fd = open("/dev/ptp0", O_RDWR );
+
+    if( gptp_phc_fd == -1 ||
+        (gPtpClockid = FD_TO_CLOCKID(gptp_phc_fd)) == -1 ) {
+        printf("Failed to open PTP clock device error 0x%x(%s)\n", errno, strerror(errno));
+        return;
+    }
+
+    if (clock_gettime(gPtpClockid, &ts)) {
+        printf("clock_gettime failed 0x%x (%s)\n", errno, strerror(errno));
+        close(gptp_phc_fd);
+        return;
+    }
+
+    if(ts.tv_sec == 0 && ts.tv_nsec == 0) {
+        printf("gptp time read taking longer time\n");
+        close(gptp_phc_fd);
+        return;
+    }
+    curr_gptp_time = (ts.tv_sec) * 1000000000LL + ts.tv_nsec;
+    printf("current gptp time = %ld\n", curr_gptp_time);
+    close(gptp_phc_fd);
+#endif
+    return;
 }
 
 #ifdef RGPTP_CLNT_ENABLED
@@ -254,6 +295,7 @@ int main(int argc, char *argv[])
     uint64_t test_vec_time;
     uint64_t test_gptp_time;
     bool gptp_scaling_available = false;
+    int retry = 0;
 #ifdef GPTP_AUTO_START
     struct timespec ts = { 0, 1000000 };
 #endif
@@ -266,7 +308,8 @@ int main(int argc, char *argv[])
         printf("GPTP Scaling Not Available\n");
         return 0;
     }
-
+    printf("Real time test start...\n");
+#ifndef AVB_FEATURE_GVM_MODE
 #ifdef GPTP_AUTO_START
     while(1){
         test_vec_time = systemTime(CLOCK_REALTIME);
@@ -277,10 +320,11 @@ int main(int argc, char *argv[])
                     test_gptp_time/1000000000UL, test_gptp_time%1000000000UL);
             break;
         } else {
-            printf("Real time test failed\n");
+            retry++;
         }
         nanosleep(&ts,NULL);
     }
+    printf("Real time test successfully, retry %d\n", retry);
 #else
     test_vec_time = systemTime(CLOCK_REALTIME);
     if (gptpGetTime(&test_gptp_time, test_vec_time)) {
@@ -318,7 +362,7 @@ int main(int argc, char *argv[])
     } else {
         printf("Monotonic time test failed\n");
     }
-
+#endif
     if (gptpGetCurPtpTime(&test_gptp_time)) {
             printf("gptp time %" PRIu64 ".%" PRIu64 "\n",
 					test_gptp_time/1000000000UL, test_gptp_time%1000000000UL);
@@ -341,13 +385,28 @@ int main(int argc, char *argv[])
 		else if(argv[1][0] == 'm') {
 			 printf("\n\n\n====================gPTP Monotonic pair based test=====================\n\n\n");
             do_some_tests_gptp_mono();
-		}
+		} else if (argv[1][0] == 'g') {
+            printf("\n\n=======================clock_gettime based test=========================\n\n");
+            get_gptp_time();
+        }
 #ifdef RGPTP_CLNT_ENABLED
         else if(argv[1][0] == 'r') {
             rgptp_test();
         }
 #endif
     }
+	else if (argc == 3) {
+
+		if(argv[1][0] == 'm') {
+			printf("\n\n\n====================gPTP Monotonic pair based test=====================\n\n\n");
+			int sleepduration = atoi(argv[2]);
+			gptpRegisterCallback(&callback_handler);
+			do_some_tests_gptp_mono();
+			sleep(sleepduration);
+			do_some_tests_gptp_mono();
+			gptpRegisterCallback(NULL);
+			}
+		}
 #ifdef RGPTP_CLNT_ENABLED
     if (argc == 3) {
         if(argv[1][0] == 's') {
