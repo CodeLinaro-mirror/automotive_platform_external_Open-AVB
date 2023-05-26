@@ -23,12 +23,7 @@ http://code.google.com/p/inih/
 /* Strip whitespace chars off end of given string, in place. Return s. */
 static char* rstrip(char* s)
 {
-    char* p;
-
-    if(s == NULL)
-    return NULL;
-
-    p = s + strlen(s);
+    char* p = s + strlen(s);
     while (p > s && isspace(*--p))
         *p = '\0';
     return s;
@@ -37,6 +32,7 @@ static char* rstrip(char* s)
 /* Return pointer to first non-whitespace char in given string. */
 static char* lskip(const char* s)
 {
+
     while (*s && isspace(*s))
         s++;
     return (char*)s;
@@ -96,6 +92,10 @@ int ini_parse_file(FILE* file,
         lineno++;
 
         start = line;
+
+        if(start == NULL)
+        continue;
+
 #if INI_ALLOW_BOM
         if (lineno == 1 && (unsigned char)start[0] == 0xEF &&
                            (unsigned char)start[1] == 0xBB &&

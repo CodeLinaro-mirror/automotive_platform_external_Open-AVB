@@ -259,6 +259,7 @@ int main(int argc, char *argv[])
     uint64_t test_vec_time;
     uint64_t test_gptp_time;
     bool gptp_scaling_available = false;
+    int retry = 0;
 #ifdef GPTP_AUTO_START
     struct timespec ts = { 0, 1000000 };
 #endif
@@ -271,6 +272,7 @@ int main(int argc, char *argv[])
         printf("GPTP Scaling Not Available\n");
         return 0;
     }
+    printf("Real time test start...\n");
 #ifndef AVB_FEATURE_GVM_MODE
 #ifdef GPTP_AUTO_START
     while(1){
@@ -282,10 +284,11 @@ int main(int argc, char *argv[])
                     test_gptp_time/1000000000UL, test_gptp_time%1000000000UL);
             break;
         } else {
-            printf("Real time test failed\n");
+            retry++;
         }
         nanosleep(&ts,NULL);
     }
+    printf("Real time test successfully, retry %d\n", retry);
 #else
     test_vec_time = systemTime(CLOCK_REALTIME);
     if (gptpGetTime(&test_gptp_time, test_vec_time)) {
