@@ -76,7 +76,11 @@ https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 #endif
 #include "gptp_helper.h"
 #include <atomic>
+#include <limits.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
 #define LOCK()  	pthread_mutex_lock(&gInitMutex)
 #define UNLOCK()	pthread_mutex_unlock(&gInitMutex)
@@ -116,6 +120,25 @@ static pthread_t thread_id;
 static int sock = -1;
 #endif
 
+GPTP_UPDATE_NOTIFY_CALLBACK gptp_update_callback = NULL;
+
+#ifdef AVB_FEATURE_GVM_MODE
+
+bool hab_thread_running = false;
+pthread_t hab_Thread;
+int32_t hab_hdl;
+
+#define HABMM_SOCKET_RECV_FLAGS_NON_BLOCKING 0x00000001
+#define HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE 0x00000002
+#define HABMM_VNW_1 1401
+
+extern "C" int32_t habmm_socket_open(int32_t *handle, uint32_t mm_ip_id,uint32_t timeout, uint32_t flags);
+extern "C" int32_t habmm_socket_recv(int32_t handle, void *dst_buff, uint32_t *size_bytes,uint32_t timeout, uint32_t flags);
+extern "C" int32_t habmm_socket_close(int32_t handle);
+
+#endif
+
+
 static int gptpClkInit(int *gptp_phc_fd)
 {
     *gptp_phc_fd = open("/dev/ptp0", O_RDWR );
@@ -150,6 +173,7 @@ static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
 	*gptp_shm_fd = shm_open(SHM_NAME, O_RDWR, 0);
 #endif
 #endif
+	printf("gptpMemInit %s",SHM_NAME);
 	if (*gptp_shm_fd == -1) {
 		perror("shm_open()");
 		return false;
@@ -210,23 +234,115 @@ static int gptpScaling(gPtpTimeData * td, char *memory_offset_buffer)
 	uint32_t a,b;
 	gPtpTimeData *ptimedata;
 	int count = 0;
+	char *dest = (char*)td;
+	char *src = NULL;
 	buf_offset += (2 * sizeof(std::atomic<uint32_t>));
 
 	seq0 = (std::atomic<uint32_t> *)memory_offset_buffer;
 	seq1 = (std::atomic<uint32_t> *)(memory_offset_buffer + sizeof(std::atomic<uint32_t>));
 	ptimedata   = (gPtpTimeData *) (memory_offset_buffer + buf_offset);
-
+	src = (char *)ptimedata;
 	do {
 	a = seq0->load();
 	b = seq1->load();
 
-	memcpy(td, ptimedata, sizeof(*td));
+	//memcpy(td, ptimedata, sizeof(*td)); //commented due to bus error issue
+	for(int i=0; i<sizeof(gPtpTimeData); i++ )
+	{
+	    dest[i] = *(volatile char *)(&src[i]);
+	}
 	count++;
 
 	}while((a!=b || a!=seq0->load() || b != seq1->load())&&count<3);
 
 #endif
 	return true;
+}
+
+
+#ifdef AVB_FEATURE_GVM_MODE
+
+void* habLoop(void* param) {
+
+	int32_t ret;
+	struct gptp_update update;
+	uint32_t len = sizeof(update);
+
+	while(hab_thread_running){
+
+			memset(&update,0,sizeof(update));
+
+			do {
+			ret = habmm_socket_recv(hab_hdl,&update, &len, 0,
+				HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE);
+			} while (-EINTR == ret);
+
+
+		if (ret) {
+			printf("habmm_socket_recv failed, ret= 0x%x\n", ret);
+			return NULL;
+		}
+
+
+		if(gptp_update_callback) {
+			gptp_update_callback(update);
+		}
+
+	}
+
+	return NULL;
+
+}
+
+#endif
+
+bool gptpRegisterCallback(GPTP_UPDATE_NOTIFY_CALLBACK fn_ptr)
+{
+
+	if(fn_ptr == NULL && gptp_update_callback == NULL)
+	return false;
+
+#ifdef AVB_FEATURE_GVM_MODE
+
+	int err = 0;
+	int32_t ret;
+
+
+	if(gptp_update_callback!=NULL && hab_thread_running)
+	{
+		hab_thread_running = false;
+		habmm_socket_close(hab_hdl);
+	}
+
+	gptp_update_callback = fn_ptr;
+
+	if(fn_ptr!=NULL)
+	{
+		ret = habmm_socket_open(&hab_hdl, HABMM_VNW_1, 0, 0);
+
+		if (ret < 0)
+		{
+			 printf("habmm_socket_open: socket create failed\n");
+	         return false;
+		}
+
+		hab_thread_running = true;
+
+		if ((err = pthread_create(&hab_Thread, NULL, habLoop, (void *) NULL))
+				< 0) {
+			hab_thread_running = false;
+			printf("Error during creation of the thread %d\n",err);
+			return false;
+		}
+		else
+		{
+			hab_thread_running = true;
+		}
+	}
+#endif
+
+	return true;
+
 }
 
 /* gptp core function query gptp time */
@@ -578,6 +694,11 @@ bool gptpGetCurPtpTime(uint64_t *gptp_time_cur) {
 
 bool gptpGetCurgPtpMonotonicPair(uint64_t *gptp_time_cur, uint64_t *mono_time_cur) {
 
+	*gptp_time_cur = 0;
+	*mono_time_cur = 0;
+
+#ifdef AVB_FEATURE_GVM_MODE
+
 	uint64_t *gptp_mem;
     uint64_t *mono_mem;
 	struct timespec ts;
@@ -586,25 +707,24 @@ bool gptpGetCurgPtpMonotonicPair(uint64_t *gptp_time_cur, uint64_t *mono_time_cu
 	uint32_t a,b;
 	int count = 0;
 
-    ts.tv_sec = ts.tv_nsec = 0;
-    *gptp_time_cur = 0;
+	ts.tv_sec = ts.tv_nsec = 0;
+	*gptp_time_cur = 0;
 	*mono_time_cur =0;
 
-    if (!bInitialized) {
-	return false;
-    }
+	if (!bInitialized) {
+		return false;
+	}
 
-#ifdef AVB_FEATURE_GVM_MODE
 	seq0 = (std::atomic<uint32_t> *)gPtpMmap;
 	seq1 = (std::atomic<uint32_t> *)(gPtpMmap + sizeof(std::atomic<uint32_t>));
 
 	do {
 	a = seq0->load();
 	b = seq1->load();
-    if (clock_gettime(gPtpClockid, &ts)) {
-	printf("clock_gettime failed");
-	return false;
-    }
+	if (clock_gettime(gPtpClockid, &ts)) {
+		printf("clock_gettime failed 0x%x (%s)", errno, strerror(errno));
+		return false;
+	}
 
 	if(ts.tv_sec == 0 && ts.tv_nsec == 0) {
 	printf("gptp time read taking longer time\n");
@@ -687,5 +807,9 @@ bool rgptpDeinit(void) {
     rgptp_clkid = -1;
 
     return true;
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif

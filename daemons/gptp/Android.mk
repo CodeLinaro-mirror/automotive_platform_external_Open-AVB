@@ -4,6 +4,9 @@ include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -DWITHOUT_IFADDRS -Wno-unused-parameter -frtti -Wno-unused-private-field
 LOCAL_CFLAGS += -DPTP_SW_QTIMER=1
+ifeq ($(TARGET_PRODUCT), msmnile_gvmq)
+LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
+endif
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/common \
                     $(LOCAL_PATH)/linux/src
