@@ -15,14 +15,12 @@ LOCAL_C_INCLUDES += \
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
 
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wall -Wno-unused-parameter
-ifeq ($(TARGET_PRODUCT), msmnile_gvmq)
+ifeq ($(call is-board-platform,msmnile),true)
+ifeq ($(TARGET_BOARD_SUFFIX),_gvmq)
 LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
-LOCAL_C_INCLUDES += \
-        vendor/qcom/proprietary/mm-hab/uhab \
-        system/core/libion/include/ion \
-        system/core/libion/kernel-headers
 
 LOCAL_SHARED_LIBRARIES := libuhab libion
+endif
 endif
 LOCAL_CLANG := true
 

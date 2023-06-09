@@ -4,8 +4,10 @@ include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -DWITHOUT_IFADDRS -Wno-unused-parameter -frtti -Wno-unused-private-field
 LOCAL_CFLAGS += -DPTP_SW_QTIMER=1
-ifeq ($(TARGET_PRODUCT), msmnile_gvmq)
+ifeq ($(call is-board-platform,msmnile),true)
+ifeq ($(TARGET_BOARD_SUFFIX),_gvmq)
 LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
+endif
 endif
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/common \
