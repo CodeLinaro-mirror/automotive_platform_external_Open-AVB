@@ -73,6 +73,7 @@ bool parse_mac(const char *str, cfg_mac_t *mac)
 	memset(&mac->buffer, 0, sizeof(struct ether_addr));
 #ifdef ANDROID
 	mac->mac = ether_aton(str);
+	if(mac->mac)
 	memcpy(&mac->buffer, mac->mac, ETH_ALEN);
 #else
 	mac->mac = ether_aton_r(str, &mac->buffer);
