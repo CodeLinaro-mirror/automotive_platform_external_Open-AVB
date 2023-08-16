@@ -67,6 +67,9 @@ static void openavbTLSigHandler(int signal)
 	}
 	else if (signal == SIGUSR1) {
 		AVB_LOG_DEBUG("Waking up streaming thread");
+	} else if (signal == SIGTERM) {
+		AVB_LOG_INFO("Host shutting down with SIGTERM\n");
+		bRunning = FALSE;
 	}
 	else {
 		AVB_LOG_ERROR("Unexpected signal");
@@ -160,6 +163,7 @@ int main(int argc, char *argv[])
 	sa.sa_flags = 0; // not SA_RESTART
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGUSR1, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 
 	// Process command line
 	programName = strrchr(argv[0], '/');
