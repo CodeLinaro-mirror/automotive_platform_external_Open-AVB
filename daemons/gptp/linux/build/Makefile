@@ -144,6 +144,7 @@ all: $(OBJ_DIR)/daemon_cl
 rebuild: clean all
 
 $(OBJ_DIR)/daemon_cl: $(SRC_DIR)/daemon_cl.cpp $(OBJ_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_FILES) $(SRC_DIR)/daemon_cl.cpp -o $(OBJ_DIR)/qgptp $(LDFLAGS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OBJ_FILES) $(SRC_DIR)/daemon_cl.cpp -o $(OBJ_DIR)/daemon_cl $(LDFLAGS)
 
 ifeq ($(RGPTP_ENABLED),1)
@@ -202,5 +203,7 @@ $(OBJ_DIR)/ini.o: $(COMMON_DIR)/ini.c $(HEADER_FILES)
 $(OBJ_DIR)/watchdog.o: $(SRC_DIR)/watchdog.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/watchdog.cpp -o $(OBJ_DIR)/watchdog.o
 clean:
+	$(RM) *~ $(OBJ_DIR)/*.o  $(OBJ_DIR)/qgptp
 	$(RM) *~ $(OBJ_DIR)/*.o  $(OBJ_DIR)/daemon_cl
 
+.PHONY: FORCE
