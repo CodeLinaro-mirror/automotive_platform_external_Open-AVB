@@ -941,7 +941,7 @@ bool LinuxSharedMemoryIPC::init( OS_IPC_ARG *barg ) {
 #ifdef ANDROID
     shm_fd = open( SHM_NAME, O_RDWR | O_CREAT, 0666 );
 #else
-    shm_fd = shm_open( SHM_NAME, O_RDWR | O_CREAT, 0666 );
+    shm_fd = shm_open( SHM_NAME, O_RDWR | O_CREAT, 0660 );
 #endif
 
 	if( shm_fd == -1 ) {
