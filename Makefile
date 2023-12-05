@@ -47,11 +47,17 @@ mrpd:
 mrpd_clean:
 	$(call descend,daemons/mrpd/,clean)
 
-gptp:
+gptp: FORCE
 	$(call descend,daemons/$@/linux/build/)
 
 gptp_clean:
 	$(call descend,daemons/gptp/linux/build/,clean)
+
+gptp_install: FORCE
+ifeq ($(ENABLE_GPTP),1)
+	mkdir -p $(DESTDIR)$(bindir)
+	install -m 0755 daemons/gptp/linux/build/obj/daemon_cl $(DESTDIR)$(bindir)
+endif
 
 maap:
 	$(call descend,daemons/$@/linux/)
@@ -115,11 +121,25 @@ libgptp:
 libgptp_clean:
 	$(call descend,lib/libgptp/,clean)
 
+libgptp_install: FORCE
+ifeq ($(ENABLE_LIBGPTP),1)
+	mkdir -p $(DESTDIR)$(libdir)
+	mkdir -p $(DESTDIR)$(includedir)
+	install -m 0755 lib/libgptp/*.so $(DESTDIR)$(libdir)
+	install -m 0644 lib/libgptp/gptp_helper.h ${DESTDIR}${includedir}
+endif
+
 libgptp_test:
 	$(call descend,examples/$@)
 
 libgptp_test_clean:
 	$(call descend,examples/libgptp_test/,clean)
+
+libgptp_test_install: FORCE
+ifeq ($(ENABLE_LIBGPTP_TEST),1)
+	mkdir -p $(DESTDIR)$(bindir)
+	install -m 0755 examples/libgptp_test/libgptp_test $(DESTDIR)$(bindir)
+endif
 
 examples_all: simple_talker simple_listener mrp_client live_stream jackd-talker \
 	jackd-listener
@@ -128,6 +148,8 @@ examples_all_clean: simple_talker_clean simple_listener_clean mrp_client_clean \
 	jackd-talker_clean jackd-listener_clean live_stream_clean
 
 all: daemons_all avtp_pipeline libgptp libgptp_test
+
+install: gptp_install libgptp_install libgptp_test_install
 
 clean: daemons_all_clean avtp_pipeline_clean libgptp_clean libgptp_test_clean
 
