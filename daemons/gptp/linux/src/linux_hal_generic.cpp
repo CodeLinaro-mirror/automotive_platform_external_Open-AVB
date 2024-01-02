@@ -436,7 +436,7 @@ static inline Timestamp pctTimestamp( struct ptp_clock_time *t ) {
 
 // Use HW cross-timestamp if available
 bool LinuxTimestamperGeneric::HWTimestamper_gettime
-( Timestamp *system_time,Timestamp *mono_time, Timestamp *device_time, uint32_t *local_clock,
+( Timestamp *system_time,Timestamp *q_time, Timestamp *device_time, uint32_t *local_clock,
   uint32_t *nominal_clock_rate ) const
 {
 	if( phc_fd == -1 )
@@ -493,7 +493,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
 	{
 
 		int64_t interval = 0;
-		int64_t calculated_mono_time = 0;
+		int64_t calculated_q_time = 0;
 
 		// Find average delta between qtimer and system time
 		for(int i = 0; i < QTIMER_RESAMPLING; ++i ) {
@@ -502,7 +502,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
 			struct ptp_clock_time qtimer_pct;
 			uint64_t qTimerCount = 0, qTimerFreq = 0, qTimerNanosSec = 0, qTimerNanosNSec = 0;
 
-			clock_gettime(CLOCK_REALTIME, &real);
+			clock_gettime(_private->clockid, &real);
 #if __aarch64__
 			asm volatile("mrs %0, cntvct_el0" : "=r" (qTimerCount));
 			asm volatile("mrs %0, cntfrq_el0" : "=r"(qTimerFreq));
@@ -527,9 +527,9 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
 
 		// Calculate monotonic qtimer time equivanlent to system time above, which
 		// will allow us to easily calculate qtimer<->gptp time offset.
-		calculated_mono_time = TIMESTAMP_TO_NS(*system_time);
-		calculated_mono_time -= (interval / QTIMER_RESAMPLING);
-		mono_time->set64(calculated_mono_time);
+		calculated_q_time = TIMESTAMP_TO_NS(*device_time);
+		calculated_q_time -= (interval / QTIMER_RESAMPLING);
+		q_time->set64(calculated_q_time);
 
 		/*GPTP_LOG_WARNING("system_time = %d.%d, mono_time = %d.%d, device_time_l = %d.%d",
 				system_time->seconds_ls, system_time->nanoseconds,

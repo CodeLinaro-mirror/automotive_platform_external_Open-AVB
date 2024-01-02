@@ -310,18 +310,18 @@ void IEEE1588Clock::deleteEventTimerLocked
     if( putTimerQLock() == oslock_fail ) return;
 }
 
-FrequencyRatio IEEE1588Clock::calcLocalSystemClockRateDifference( Timestamp local_time, Timestamp system_time, Timestamp mono_time, FrequencyRatio *local_mono_freq_offset ) {
+FrequencyRatio IEEE1588Clock::calcLocalSystemClockRateDifference( Timestamp local_time, Timestamp system_time, Timestamp q_time, FrequencyRatio *local_q_freq_offset ) {
 	unsigned long long inter_system_time;
-	unsigned long long inter_mono_time;
+	unsigned long long inter_q_time;
 	unsigned long long inter_local_time;
-	FrequencyRatio ppt_offset;
-	FrequencyRatio ppt_offset_mono;
+	FrequencyRatio ptp_offset;
+	FrequencyRatio ptp_offset_q;
 
 	GPTP_LOG_DEBUG( "Calculated local to system clock rate difference" );
 
 	if( !_local_system_freq_offset_init ) {
 		_prev_system_time = system_time;
-		_prev_mono_time = mono_time;
+		_prev_q_time = q_time;
 		_prev_local_time = local_time;
 
 		_local_system_freq_offset_init = true;
@@ -331,46 +331,46 @@ FrequencyRatio IEEE1588Clock::calcLocalSystemClockRateDifference( Timestamp loca
 
 	inter_system_time =
 		TIMESTAMP_TO_NS(system_time) - TIMESTAMP_TO_NS(_prev_system_time);
-	inter_mono_time =
-		TIMESTAMP_TO_NS(mono_time) - TIMESTAMP_TO_NS(_prev_mono_time);
+	inter_q_time =
+		TIMESTAMP_TO_NS(q_time) - TIMESTAMP_TO_NS(_prev_q_time);
 	inter_local_time  =
 		TIMESTAMP_TO_NS(local_time) -  TIMESTAMP_TO_NS(_prev_local_time);
 
 
 	if( inter_system_time != 0 ) {
-		ppt_offset = ((FrequencyRatio)inter_local_time)/inter_system_time;
+		ptp_offset = ((FrequencyRatio)inter_local_time)/inter_system_time;
 	} else {
-		ppt_offset = 1.0;
+		ptp_offset = 1.0;
 	}
 
-	if( inter_mono_time != 0 ) {
-		ppt_offset_mono = ((FrequencyRatio)inter_local_time)/inter_mono_time;
+	if( inter_q_time != 0 ) {
+		ptp_offset_q = ((FrequencyRatio)inter_local_time)/inter_q_time;
 	} else {
-		ppt_offset_mono = 1.0;
+		ptp_offset_q = 1.0;
 	}
 
 	// Check for jumps in system time or local time
-	if ((fabs(ppt_offset) < MIN_LS_RATIO) || (fabs(ppt_offset) > MAX_LS_RATIO)) {
+	if ((fabs(ptp_offset) < MIN_LS_RATIO) || (fabs(ptp_offset) > MAX_LS_RATIO)) {
 		GPTP_LOG_WARNING("Local to system clock ratio (%Lf) exceeding threshold",
-				ppt_offset);
-		ppt_offset = 1.0;
+				ptp_offset);
+		ptp_offset = 1.0;
 	}
-	if ((fabs(ppt_offset_mono) < MIN_LS_RATIO) || (fabs(ppt_offset_mono) > MAX_LS_RATIO)) {
+	if ((fabs(ptp_offset_q) < MIN_LS_RATIO) || (fabs(ptp_offset_q) > MAX_LS_RATIO)) {
 		GPTP_LOG_WARNING("Local to mono clock ratio (%Lf) exceeding threshold",
-				ppt_offset_mono);
-		ppt_offset_mono = 1.0;
+				ptp_offset_q);
+		ptp_offset_q = 1.0;
 	}
 	/*GPTP_LOG_WARNING("Local-system clock ratio = %Lf, local-mono clock ratio = %Lf",
 	        ppt_offset, ppt_offset_mono);*/
 
 	_prev_system_time = system_time;
-	_prev_mono_time = mono_time;
+	_prev_q_time = q_time;
 	_prev_local_time = local_time;
 
-	if (local_mono_freq_offset != nullptr) {
-		*local_mono_freq_offset = ppt_offset_mono;
+	if (local_q_freq_offset != nullptr) {
+		*local_q_freq_offset = ptp_offset_q;
 	}
-  return ppt_offset;
+  return ptp_offset;
 }
 
 
@@ -504,19 +504,19 @@ private:
 
 #define FREQ_OFFSET_MAX 0.1 // Could be reduced to 0.001. "typical" observed ratio is around 0.999976
 
-#define AVERAGE_WINDOW 64 //TODO: adjust as needed, probably too wide a window
+#define AVERAGE_WINDOW 2 //TODO: adjust as needed, probably too wide a window
 static ValueAverage_int64 local_system_offset_avg(AVERAGE_WINDOW);
 static ValueAverage_FR local_system_freq_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_int64 local_mono_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_FR local_mono_freq_offset_avg(AVERAGE_WINDOW);
+static ValueAverage_int64 local_q_offset_avg(AVERAGE_WINDOW);
+static ValueAverage_FR local_q_freq_offset_avg(AVERAGE_WINDOW);
 
 void IEEE1588Clock::setMasterOffset
 ( CommonPort *port, int64_t master_local_offset,
   Timestamp local_time, FrequencyRatio master_local_freq_offset,
   int64_t local_system_offset, Timestamp system_time,
   FrequencyRatio local_system_freq_offset,
-  int64_t local_mono_offset, Timestamp mono_time,
-  FrequencyRatio local_mono_freq_offset, unsigned sync_count,
+  int64_t local_q_offset, Timestamp q_time,
+  FrequencyRatio local_q_freq_offset, unsigned sync_count,
   unsigned pdelay_count, PortState port_state, bool asCapable )
 {
 	_master_local_freq_offset = master_local_freq_offset;
@@ -545,15 +545,15 @@ void IEEE1588Clock::setMasterOffset
 		        (local_system_freq_offset > (1.0 + FREQ_OFFSET_MAX)) ){
 		    local_system_freq_offset = 1.0;
 		}
-		if ((local_mono_freq_offset < (1.0 - FREQ_OFFSET_MAX)) ||
-		        (local_mono_freq_offset > (1.0 + FREQ_OFFSET_MAX)) ){
-		    local_mono_freq_offset = 1.0;
+		if ((local_q_freq_offset < (1.0 - FREQ_OFFSET_MAX)) ||
+		        (local_q_freq_offset > (1.0 + FREQ_OFFSET_MAX)) ){
+		    local_q_freq_offset = 1.0;
 		}
 
 		local_system_offset_avg.push(local_system_offset);
 		local_system_freq_offset_avg.push(local_system_freq_offset);
-		local_mono_offset_avg.push(local_mono_offset);
-		local_mono_freq_offset_avg.push(local_mono_freq_offset);
+		local_q_offset_avg.push(local_q_offset);
+		local_q_freq_offset_avg.push(local_q_freq_offset);
 
 
 	if (port->getTestMode()) {
@@ -562,12 +562,12 @@ void IEEE1588Clock::setMasterOffset
 		GPTP_LOG_STATUS("SYSTEM Clock offset:%lld  (avg:%lld)  Clock rate ratio:%Lf  avg(%Lf)   Sync Count:%u   PDelay Count:%u",
 						local_system_offset, local_system_offset_avg.get(), local_system_freq_offset, local_system_freq_offset_avg.get(), sync_count, pdelay_count);
 		GPTP_LOG_STATUS("QTIMER Clock offset:%lld  (avg:%lld)  Clock rate ratio:%Lf  avg(%Lf)   Sync Count:%u   PDelay Count:%u",
-						local_mono_offset, local_mono_offset_avg.get(), local_mono_freq_offset, local_mono_freq_offset_avg.get(), sync_count, pdelay_count);
+						local_q_offset, local_q_offset_avg.get(), local_q_freq_offset, local_q_freq_offset_avg.get(), sync_count, pdelay_count);
 	}
 
 		ipc->update(
-			master_local_offset, local_system_offset_avg.get(), local_mono_offset_avg.get(),
-			master_local_freq_offset, local_system_freq_offset_avg.get(), local_mono_freq_offset_avg.get(),
+			master_local_offset, local_system_offset_avg.get(), local_q_offset_avg.get(),
+			master_local_freq_offset, local_system_freq_offset_avg.get(), local_q_freq_offset_avg.get(),
 			TIMESTAMP_TO_NS(local_time),
 			sync_count, pdelay_count, port_state, asCapable);
 

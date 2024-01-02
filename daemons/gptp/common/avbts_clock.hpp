@@ -144,7 +144,7 @@ private:
 	bool _local_system_freq_offset_init;
 	Timestamp _prev_local_time;
 	Timestamp _prev_system_time;
-	Timestamp _prev_mono_time;
+	Timestamp _prev_q_time;
 
 	OS_IPC *ipc;
 
@@ -591,7 +591,7 @@ public:
     Timestamp local_time, FrequencyRatio master_local_freq_offset,
     int64_t local_system_offset, Timestamp system_time,
     FrequencyRatio local_system_freq_offset,
-    int64_t local_mono_offset, Timestamp mono_time,
+    int64_t local_q_offset, Timestamp q_time,
     FrequencyRatio local_mono_freq_offset, unsigned sync_count,
     unsigned pdelay_count, PortState port_state, bool asCapable );
 

@@ -101,10 +101,10 @@ void APMessageTestStatus::sendPort( EtherPort * port )
 	memcpy(buf_ptr + AP_TEST_STATUS_COUNTER_LINKDOWN(AP_TEST_STATUS_OFFSET), &tmp32, sizeof(tmp32));
 
 	Timestamp system_time;
-	Timestamp mono_time;
+	Timestamp q_time;
 	Timestamp device_time;
 	uint32_t local_clock, nominal_clock_rate;
-	port->getDeviceTime(system_time, mono_time, device_time, local_clock, nominal_clock_rate);
+	port->getDeviceTime(system_time, q_time, device_time, local_clock, nominal_clock_rate);
 	tmp64 = PLAT_htonll(TIMESTAMP_TO_NS(system_time));
 	memcpy(buf_ptr + AP_TEST_STATUS_MESSAGE_TIMESTAMP(AP_TEST_STATUS_OFFSET), &tmp64, sizeof(tmp64));
 

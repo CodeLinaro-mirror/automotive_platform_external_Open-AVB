@@ -988,11 +988,11 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 	uint64_t delay;
 	Timestamp sync_arrival;
 	Timestamp system_time(0, 0, 0);
-	Timestamp mono_time(0, 0, 0);
+	Timestamp q_time(0, 0, 0);
 	Timestamp device_time(0, 0, 0);
 
 	signed long long local_system_offset;
-	signed long long local_mono_offset;
+	signed long long local_q_offset;
 	signed long long scalar_offset;
 
 	FrequencyRatio local_clock_adjustment;
@@ -1091,7 +1091,7 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 	uint32_t local_clock, nominal_clock_rate;
 	uint32_t device_sync_time_offset;
 
-	port->getDeviceTime(system_time, mono_time, device_time, local_clock,
+	port->getDeviceTime(system_time, q_time, device_time, local_clock,
 			    nominal_clock_rate);
 	GPTP_LOG_VERBOSE
 		( "Device Time = %llu,System Time = %llu",
@@ -1128,20 +1128,16 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 		local_system_freq_offset =
 			port->getClock()
 			->calcLocalSystemClockRateDifference
-			( device_time, system_time, mono_time, &local_mono_freq_offset );
-		TIMESTAMP_SUB_NS
-			( system_time, (uint64_t)
-			  (((FrequencyRatio) device_sync_time_offset)/
-			   local_system_freq_offset) );
+			( device_time, system_time, q_time, &local_mono_freq_offset );
 		local_system_offset =
-			TIMESTAMP_TO_NS(system_time) - TIMESTAMP_TO_NS(sync_arrival);
-		local_mono_offset =
-			TIMESTAMP_TO_NS(mono_time) - TIMESTAMP_TO_NS(sync_arrival);
+			TIMESTAMP_TO_NS(system_time) - TIMESTAMP_TO_NS(device_time);
+		local_q_offset =
+			TIMESTAMP_TO_NS(q_time) - TIMESTAMP_TO_NS(device_time);
 
 		port->getClock()->setMasterOffset
 			( port, scalar_offset, sync_arrival, local_clock_adjustment,
 			  local_system_offset, system_time, local_system_freq_offset,
-			  local_mono_offset, mono_time, local_mono_freq_offset,
+			  local_q_offset, q_time, local_mono_freq_offset,
 			  port->getSyncCount(), port->getPdelayCount(),
 			  port->getPortState(), port->getAsCapable() );
 		port->syncDone();
