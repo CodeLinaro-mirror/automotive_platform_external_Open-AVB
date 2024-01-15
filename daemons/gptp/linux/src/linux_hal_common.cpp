@@ -1195,7 +1195,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 	if( ifname == NULL ){
 		GPTP_LOG_ERROR( "ifname == NULL");
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 
@@ -1203,7 +1202,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 	if( net_iface_l->sd_general == -1 ) {
 		GPTP_LOG_ERROR( "failed to open general socket: %s", strerror(errno));
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 	net_iface_l->sd_event = socket( PF_PACKET, SOCK_DGRAM, 0 );
@@ -1212,7 +1210,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 			( "failed to open event socket: %s ", strerror(errno));
 		close(net_iface_l->sd_general);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 
@@ -1225,7 +1222,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 
@@ -1238,7 +1234,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 	ifindex = device.ifr_ifindex;
@@ -1258,7 +1253,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 
@@ -1274,7 +1268,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 
@@ -1285,7 +1278,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 	if( !net_iface_l->timestamper->post_init
@@ -1294,7 +1286,6 @@ bool LinuxNetworkInterfaceFactory::createInterface
 		close(net_iface_l->sd_general);
 		close(net_iface_l->sd_event);
 		delete net_iface_l;
-		delete ifname;
 		return false;
 	}
 	*net_iface = net_iface_l;
