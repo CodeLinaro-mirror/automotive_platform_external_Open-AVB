@@ -914,6 +914,95 @@ bool rgptpDeinit(void)
 }
 #endif
 
+
+bool handleGptpGetTimeIf(uint64_t *gptp_time_ns, uint64_t time_sys_ns)
+{
+   return gptpGetTime(gptp_time_ns, time_sys_ns);
+}
+
+bool handleGptpGetPtpTimeFromQTimeNsIf(uint64_t *gptp_time_ns,
+                                      uint64_t time_qtimer_ns)
+{
+  return gptpGetPtpTimeFromQTimeNs(gptp_time_ns, time_qtimer_ns);
+}
+
+bool handleGptpGetPtpTimeFromQTimeTickCountIf(uint64_t *gptp_time_ns,
+                                      uint64_t qtime_ticks)
+{
+   return gptpGetPtpTimeFromQTimeTickCount(gptp_time_ns, qtime_ticks);
+}
+
+bool handleGptpGetPtpTimeFromMonoTimeIf(uint64_t *gptp_time_ns,
+                                      uint64_t time_mono_ns)
+{
+   return gptpGetPtpTimeFromMonoTime(gptp_time_ns, time_mono_ns);
+}
+
+bool handleGptpGetCurPtpTimeIf(uint64_t *gptp_time_ns)
+{
+   return gptpGetCurPtpTime(gptp_time_ns);
+}
+
+bool handleGptpGetCurgPtpMonotonicPairIf(uint64_t *gptp_time_cur,
+                                      uint64_t *mono_time_cur)
+{
+   return gptpGetCurgPtpMonotonicPair(gptp_time_cur, mono_time_cur);
+}
+
+bool handleGptpGetBootTimeFromPtpTimeIf(uint64_t *boot_time_ns,
+                                      uint64_t ptp_time_ns)
+{
+   return gptpGetBootTimeFromPtpTime(boot_time_ns, ptp_time_ns);
+}
+
+bool handleGptpInitIf(void)
+{
+   return gptpInit();
+}
+
+bool handleGptpDeinitIf(void)
+{
+   return gptpDeinit();
+}
+
+const gPTPLibInterfaceEvent* gPTPEventIf = nullptr;
+
+bool handleGptpRegisterEvent(void)
+{
+   gptpRegisterCallback(gPTPEventIf->gPTP_Update_Event);
+   return true;
+}
+
+bool handleGptpUnregisterEvent(void)
+{
+   gptpRegisterCallback(nullptr);
+   return true;
+}
+
+const static gPTPLibInterfaceReq gPTPReqIf {
+     handleGptpGetTimeIf,
+     handleGptpGetPtpTimeFromQTimeNsIf,
+     handleGptpGetPtpTimeFromQTimeTickCountIf,
+     handleGptpGetPtpTimeFromMonoTimeIf,
+     handleGptpGetCurPtpTimeIf,
+     handleGptpGetCurgPtpMonotonicPairIf,
+     handleGptpGetBootTimeFromPtpTimeIf,
+     handleGptpInitIf,
+     handleGptpDeinitIf,
+     handleGptpRegisterEvent,
+     handleGptpUnregisterEvent
+};
+
+const gPTPLibInterfaceReq* get_gPTPLib_if(const gPTPLibInterfaceEvent* eventCallback)
+{
+    if ((nullptr != eventCallback) &&
+        (nullptr != eventCallback->gPTP_Update_Event)) {
+       gPTPEventIf = eventCallback;
+    }
+
+    return (&gPTPReqIf);
+}
+
 #ifdef __cplusplus
 }
 #endif

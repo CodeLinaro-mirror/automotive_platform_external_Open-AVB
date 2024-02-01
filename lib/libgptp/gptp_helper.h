@@ -108,6 +108,37 @@ bool rgptpInit(void);
 bool rgptpDeinit(void);
 #endif
 
+typedef struct {
+
+  GPTP_UPDATE_NOTIFY_CALLBACK gPTP_Update_Event;
+
+} gPTPLibInterfaceEvent;
+
+typedef struct {
+
+   bool (*gptpGetTimeIf)(uint64_t *gptp_time_ns, uint64_t time_sys_ns);
+   bool (*gptpGetPtpTimeFromQTimeNsIf)(uint64_t *gptp_time_ns,
+                                      uint64_t time_qtimer_ns);
+   bool (*gptpGetPtpTimeFromQTimeTickCountIf) (uint64_t *gptp_time_ns,
+                                      uint64_t qtime_ticks);
+   bool (*gptpGetPtpTimeFromMonoTimeIf)(uint64_t *gptp_time_ns,
+                                      uint64_t time_mono_ns);
+   bool (*gptpGetCurPtpTimeIf)(uint64_t *gptp_time_ns);
+   bool (*gptpGetCurgPtpMonotonicPairIf)(uint64_t *gptp_time_cur,
+                                      uint64_t *mono_time_cur);
+   bool (*gptpGetBootTimeFromPtpTimeIf)(uint64_t *boot_time_ns,
+                                      uint64_t ptp_time_ns);
+   bool (*gptpInitIf)(void);
+   bool (*gptpDeinitIf)(void);
+   bool (*gptpRegisterEvent)(void);
+   bool (*gptpUnregisterEvent)(void);
+
+} gPTPLibInterfaceReq;
+
+
+typedef const gPTPLibInterfaceReq* (*get_gPTPLib_if_t)(const gPTPLibInterfaceEvent* eventCallback);
+const gPTPLibInterfaceReq* get_gPTPLib_if(const gPTPLibInterfaceEvent* eventCallback);
+
 #ifdef __cplusplus
 }
 #endif
