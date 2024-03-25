@@ -55,6 +55,13 @@ Complete license and copyright information can be found at
 https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 ============================================================================ */
 
+/*
+Changes from Qualcomm Innovation Center are provided under the following license:
+Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause-Clear
+*/
+
+
 #ifndef __GPTP_HELPER_H__
 #define __GPTP_HELPER_H__
 
