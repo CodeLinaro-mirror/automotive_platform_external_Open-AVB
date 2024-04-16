@@ -54,6 +54,12 @@ Brush Technology and Ben Hoyt - Copyright (c) 2009, Brush Technology and Copyrig
 Complete license and copyright information can be found at
 https://github.com/benhoyt/inih/commit/74d2ca064fb293bc60a77b0bd068075b293cf175.
 ============================================================================ */
+/*
+Changes from Qualcomm Innovation Center are provided under the following license:
+Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause-Clear
+*/
+
 #include <linux/ptp_clock.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
@@ -816,7 +822,7 @@ bool gptpGetBootTimeFromPtpTime(uint64_t *boot_time_ns, uint64_t ptp_time_ns)
         if (gptpdiff > GPTP_BOOTTIME_VALIDTY_RANGE || gptpdiff < 0) {
             prev_boot = 0;
             boot_gptp_ratio = 1.0;
-            printf(" gptpdiff out of range %d \n", gptpdiff);
+            //printf("reset boot ratio as gptpdiff is out of range %d prev_gptp %ld\n", gptpdiff,prev_gptp);
         }
 
         if (prev_gptp != 0 && prev_boot != 0) {
@@ -824,7 +830,7 @@ bool gptpGetBootTimeFromPtpTime(uint64_t *boot_time_ns, uint64_t ptp_time_ns)
                                prev_boot)) / (*gptp_mem - prev_gptp) ) / 3;
         }
 
-        *boot_time_ns = *boot_time_mem - (*gptp_mem - ptp_time_ns) * boot_gptp_ratio;
+        *boot_time_ns = *boot_time_mem - ((int64_t)(*gptp_mem - ptp_time_ns)) * boot_gptp_ratio;
         prev_boot = *boot_time_mem;
         prev_gptp = *gptp_mem;
     } else {
