@@ -120,6 +120,14 @@ ifeq ($(LE_SHARED_MEM),1)
     CPPFLAGS_G += -DLE_SHARED_MEM
 endif
 
+ifeq ($(GPTP_VFIO),1)
+    CFLAGS_G += -DGPTP_VFIO
+    CPPFLAGS_G += -DGPTP_VFIO
+    CFLAGS_G += -DUSE_CARVEOUT_GPTP
+    CPPFLAGS_G += -DUSE_CARVEOUT_GPTP
+    LDFLAGS_G += -lvfioptp
+endif
+
 LDFLAGS_G += -lpthread -lrt
 
 CFLAGS = $(CFLAGS_G)

@@ -916,6 +916,9 @@ bool gptpGetPtpTimeFromBootTime(uint64_t *gptp_time_bt, uint64_t time_boot_ns)
         return false;
     }
 
+    GPTP_LOG_DEBUG("gptpGetPtpTimeFromBootTime offset %lld freqoffset %Lf qtimeoffset %lld \n",
+                   gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, gPtpTD.qtime_to_mono_offset);
+
     if (gPtpTD.port_state == PTP_SLAVE) {
         if (gPtpTD.sync_status == false) {
             return false;
@@ -1021,7 +1024,7 @@ bool gptpGetBootTimeFromPtpTime(uint64_t *boot_time_ns, uint64_t ptp_time_ns)
         return false;
     }
 
-    GPTP_LOG_ERROR("gptpGetBootTimeFromPtpTime offset %ld freqoffset %f qtimeoffset %ld \n",
+    GPTP_LOG_DEBUG("gptpGetBootTimeFromPtpTime offset %lld freqoffset %Lf qtimeoffset %lld \n",
                    gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, gPtpTD.qtime_to_mono_offset);
     *boot_time_ns = gPtpTD.local_time + gPtpTD.lb_phoffset; //curr boot time
 
@@ -1188,7 +1191,7 @@ int setRsyncStatus(RsyncStatus_t *status)
     return 0;
 }
 
-int getTimeError(int16_t *timeError)
+int getTimeError(int64_t *timeError)
 {
     gPtpTimeData gPtpTD;
 

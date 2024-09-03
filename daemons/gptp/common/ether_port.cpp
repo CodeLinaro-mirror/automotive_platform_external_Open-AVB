@@ -814,6 +814,24 @@ bool EtherPort::_processEvent( Event e )
                 }
             }
             break;
+        case POWERDOWN:
+            //to ensure no processing happens for already expired events
+            stopPDelay();
+            setAsCapable(false);
+
+            clock->deleteEventTimerLocked( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
+            clock->deleteEventTimerLocked( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
+            clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+            clock->deleteEventTimerLocked( this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES);
+            clock->deleteEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED);
+            clock->deleteEventTimerLocked( this, RSYNC_INTERVAL_TIMEOUT_EXPIRES );
+
+            stopSyncReceiptTimer();
+
+            GPTP_LOG_EXCEPTION("gptp powering down");
+
+            ret = true;
+            break;
 
         default:
             GPTP_LOG_ERROR
@@ -899,6 +917,11 @@ void EtherPort::becomeSlave( bool restart_syntonization )
 
     getClock()->updateFUPInfo();
     return;
+}
+
+int8_t EtherPort::getRsync(void)
+{
+    return reverseSyncEnabled;
 }
 
 void EtherPort::enableRsync( int8_t RSyncDomain, double RSyncRate)

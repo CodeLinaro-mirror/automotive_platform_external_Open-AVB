@@ -587,7 +587,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
 #endif
-#ifdef PTP_SW_BOOTTIME
+
     {
         int64_t interval = 0;
         int64_t calculated_boot_time = 0;
@@ -619,7 +619,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 mono_time->seconds_ls, mono_time->nanoseconds,
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
-#endif
+
     return true;
 }
 

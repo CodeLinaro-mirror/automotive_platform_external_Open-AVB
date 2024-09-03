@@ -31,6 +31,11 @@ ifeq ($(RGPTP_CLNT_ENABLED),1)
 	CPPFLAGS += -DRGPTP_CLNT_ENABLED
 endif
 
+ifeq ($(GPTP_VFIO),1)
+	CFLAGS += -DGPTP_VFIO
+	CPPFLAGS += -DGPTP_VFIO
+endif
+
 all: libgptp_test
 libgptp_test: libgptp_test.cpp
 	$(CC) -o $(BUILD_DIR)/libgptp_test $(INCFLAGS) libgptp_test.cpp $(CFLAGS) $(CXXFLAGS) $(LDLIBS) $(LDFLAGS)

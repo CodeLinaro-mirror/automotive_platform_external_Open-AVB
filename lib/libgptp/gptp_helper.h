@@ -202,7 +202,7 @@ bool gptpRegisterCallback(GPTP_UPDATE_NOTIFY_CALLBACK fn_ptr);
 int setRsyncStatus(RsyncStatus_t *status);
 
 /* get Rsync slave clock offset*/
-int getTimeError(int16_t *timeError);
+int getTimeError(int64_t *timeError);
 
 bool gptpInit(void);
 
