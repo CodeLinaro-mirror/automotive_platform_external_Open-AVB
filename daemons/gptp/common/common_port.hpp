@@ -1491,6 +1491,13 @@ class CommonPort
          */
         virtual void becomeSlave( bool restart_syntonization ) = 0;
 
+        /**
+        * @brief  get reverse sync.
+        * @param  void
+        * @return int8_t
+        */
+        virtual int8_t getRsync(void) = 0;
+
          /**
          * @brief  enable reverse sync.
          * @param  void

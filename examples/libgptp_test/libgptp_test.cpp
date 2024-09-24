@@ -112,7 +112,7 @@ void do_some_tests_qtimer()
     prev_vec_time = test_vec_time = getQtimerTime();
     gptpGetPtpTimeFromQTimeNs(&prev_gptp_time, prev_vec_time);
 
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < 100000; i++)
         if (gptpGetPtpTimeFromQTimeNs(&test_gptp_time, test_vec_time)) {
             delta_vec_time = test_vec_time;
             delta_vec_time -= prev_vec_time;
@@ -142,7 +142,7 @@ void do_some_tests_sys()
     prev_vec_time = test_vec_time = systemTime(CLOCK_REALTIME);
     gptpGetPtpTimefromSystime(&prev_gptp_time, prev_vec_time);
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 100000; i++) {
         if (gptpGetPtpTimefromSystime(&test_gptp_time, test_vec_time)) {
             delta_vec_time = test_vec_time;
             delta_vec_time -= prev_vec_time;
@@ -172,12 +172,12 @@ void loop_test(int time_us)
     int64_t delta_qtimer_time;
     int64_t delta_ptp_time;
     int64_t delta_qtimer_ptp;
-    int16_t time_error;
+    int64_t time_error;
     int rcvid = 0;
     prev_qtimer_time = getQtimerTime();
     gptpGetCurPtpTime(&prev_ptp_time);
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 100000; i++) {
         qtimer_time = getQtimerTime();
 
         if (gptpGetCurPtpTime(&ptp_time)) {
@@ -255,10 +255,11 @@ void loop_test(int time_us)
             printf("Failed to get Path Delay Measurement Data\n");
         }
 
-        if( 0 == getTimeError(&time_error)) {
+        rcvid = getTimeError(&time_error);
+        if ( rcvid == 0) {
             printf("loop_test: ********************** Reverse sync - Slave clock offset ********************\n");
             printf("loop_test: time error %d\n", time_error);
-        } else {
+        } else if (rcvid < 0) {
             printf("Failed to get time error\n");
         }
         usleep(time_us);
@@ -271,7 +272,7 @@ void do_some_tests_ptp()
     int i = 0;
     uint64_t ptp_time = 0;
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 100000; i++) {
         if (gptpGetCurPtpTime(&ptp_time)) {
             printf("ns ptp_time %" PRIu64 "\n", ptp_time);
         }
@@ -291,7 +292,7 @@ void do_some_tests_gptp_mono()
     uint64_t mono_time = 0;
     printf("do_some_tests_gptp_mono");
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 100000; i++) {
         if (gptpGetCurgPtpMonotonicPair(&ptp_time, &mono_time)) {
             printf("ns ptp_time %" PRIu64 "ns mono_time %" PRIu64 "\n", ptp_time,
                    mono_time);
@@ -339,7 +340,7 @@ void do_some_tests_gptp_boot()
     struct timespec boot;
     printf("do_some_tests_gptp_boot");
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 100000; i++) {
         gptpGetCurPtpTime(&ptp_time);
         clock_gettime(CLOCK_BOOTTIME, &boot);
         boot_time_ns = boot.tv_sec * 1000000000LL + boot.tv_nsec;

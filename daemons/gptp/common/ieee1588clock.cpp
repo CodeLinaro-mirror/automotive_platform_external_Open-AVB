@@ -104,7 +104,7 @@ IEEE1588Clock::IEEE1588Clock
     clock_quality.offsetScaledLogVariance = 0x436A;
     time_source = 160;
     domain_number = 0;
-    rsync_domain_number = 0;
+    rsync_domain_number = 1;
     rsync_rate = RSYNC_RATE_DEFAULT;
     GPTP_LOG_INFO("rsync_domain_number: %d, rsync_rate %f \n", rsync_domain_number, rsync_rate);
     _syntonize = syntonize;
@@ -730,7 +730,7 @@ void IEEE1588Clock::setMasterOffset
         }
 
         if ( !port->adjustClockRate( _ppm ) ) {
-            GPTP_LOG_ERROR( "Failed to adjust clock rate" );
+            GPTP_LOG_ERROR( "Failed to adjust clock rate ppm:%f", _ppm);
         }
     }
 

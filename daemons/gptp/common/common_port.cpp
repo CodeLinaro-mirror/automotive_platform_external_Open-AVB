@@ -798,15 +798,17 @@ bool CommonPort::processEvent( Event e )
                     clock->calcLocalSystemClockRateDifference
                     ( device_time, system_time, q_time, boot_time, &local_q_freq_offset,
                       &local_boot_freq_offset );
-                clock->setMasterOffset
-                ( this, 0, device_time, 1.0,
-                  local_system_offset, system_time,
-                  local_system_freq_offset,
-                  local_q_offset, q_time,
-                  local_q_freq_offset,
-                  local_boot_offset, boot_time,
-                  local_boot_freq_offset, getSyncCount(),
-                  pdelay_count, port_state, asCapable );
+                if (!getRsync()) { //Update only when reverse sync disabled.
+                    clock->setMasterOffset
+                    ( this, 0, device_time, 1.0,
+                      local_system_offset, system_time,
+                      local_system_freq_offset,
+                      local_q_offset, q_time,
+                      local_q_freq_offset,
+                      local_boot_offset, boot_time,
+                      local_boot_freq_offset, getSyncCount(),
+                      pdelay_count, port_state, asCapable );
+                }
             }
             // Call media specific action for completed sync
             syncDone();

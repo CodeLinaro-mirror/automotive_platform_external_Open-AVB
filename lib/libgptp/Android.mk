@@ -19,14 +19,14 @@ ifeq ($(call is-board-platform,msmnile),true)
 ifeq ($(TARGET_BOARD_SUFFIX),_gvmq)
 LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
 
-LOCAL_SHARED_LIBRARIES := libuhab libion
+LOCAL_SHARED_LIBRARIES += libuhab libion
 endif
 endif
 
 ifeq ($(call is-board-platform,msmnile),true)
 ifeq ($(TARGET_BOARD_SUFFIX),_gvm)
 LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
-LOCAL_SHARED_LIBRARIES := libuhab libion
+LOCAL_SHARED_LIBRARIES += libuhab libion
 endif
 endif
 

@@ -65,6 +65,8 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #define QTIMER_RESAMPLING 5
 
 char ptp_dev_index[PTP_CLOCK_DEVICE_LENGTH] = {0};
+char ptp_device[] = PTP_DEVICE;
+
 
 net_result LinuxNetworkInterface::nrecv
 ( LinkLayerAddress *addr, uint8_t *payload, size_t &length )
@@ -237,8 +239,16 @@ LinuxTimestamperGeneric::LinuxTimestamperGeneric()
 
 bool LinuxTimestamperGeneric::Adjust( void *tmx ) const
 {
+    int ptp_fd;
+
     if ( clock_adjtime(_private->clockid, (struct timex*)tmx ) != 0 ) {
-        GPTP_LOG_ERROR("Failed to adjust PTP clock rate");
+        GPTP_LOG_ERROR("Failed to adjust PTP clock rate %d", _private->clockid);
+        ptp_fd = open( ptp_device, O_RDWR );
+
+        if ( ptp_fd != -1 && (_private->clockid = FD_TO_CLOCKID(ptp_fd)) != -1 ) {
+            GPTP_LOG_INFO("open PTP clock device is success");
+        }
+
         return false;
     }
 
@@ -250,7 +260,6 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
 {
     cross_stamp_good = false;
     int phc_index;
-    char ptp_device[] = PTP_DEVICE;
     int count = 0;
 #ifdef PTP_HW_CROSSTSTAMP
     struct ptp_clock_caps ptp_capability;
@@ -275,7 +284,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
         phc_fd = open( ptp_device, O_RDWR );
 
         if ( phc_fd == -1 || (_private->clockid = FD_TO_CLOCKID(phc_fd)) == -1 ) {
-            GPTP_LOG_ERROR("Failed to open PTP clock device");
+            GPTP_LOG_ERROR("Failed to open PTP clock device: %d  count: %d", phc_fd, count);
             usleep(50000);
             count++;
         } else {
@@ -283,7 +292,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
         }
     } while ( ( ( phc_fd == -1 )
                 || ( (_private->clockid = FD_TO_CLOCKID(phc_fd)) == -1 ) )
-              && ( count < 100 ) );
+              && ( count < 1000 ) );
 
 #ifdef PTP_HW_CROSSTSTAMP
 
@@ -416,6 +425,8 @@ bool LinuxTimestamperGeneric::post_init( int ifindex, int sd,
     hwconfig.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
     hwconfig.tx_type = HWTSTAMP_TX_ON;
     err = ioctl( sd, SIOCSHWTSTAMP, &device );
+
+    GPTP_LOG_INFO("post_init:: SIOCSHWTSTAMP ioctl called");
 
     if ( err == -1 ) {
         GPTP_LOG_ERROR
@@ -576,7 +587,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
 #endif
-#ifdef PTP_SW_BOOTTIME
+
     {
         int64_t interval = 0;
         int64_t calculated_boot_time = 0;
@@ -608,7 +619,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 mono_time->seconds_ls, mono_time->nanoseconds,
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
-#endif
+
     return true;
 }
 

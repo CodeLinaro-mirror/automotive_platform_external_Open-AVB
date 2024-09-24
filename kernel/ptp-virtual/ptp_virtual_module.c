@@ -176,7 +176,6 @@ static long ptp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             break;
 
         case SET_PTP_DATA:
-
             if (copy_from_user(ptp_dev->ptp_buff, (void __user *) arg,
                                sizeof(gptpTimeInfo_t))) {
                 dev_err(ptp_dev->dev, "Failed to copy_from_user \r\n");
@@ -193,9 +192,17 @@ ret:
     return ret;
 }
 
+static long ptp_compact_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    return ptp_ioctl(filp,cmd,arg);
+}
+
 static const struct file_operations ptp_fileops = {
     .open = ptp_open,
     .unlocked_ioctl = ptp_ioctl,
+#ifdef CONFIG_COMPAT
+    .compat_ioctl = ptp_compact_ioctl,
+#endif
     .owner = THIS_MODULE,
 };
 
@@ -439,6 +446,9 @@ static int qcom_ptp_rm_cb(struct notifier_block *nb, unsigned long cmd,
             dev_err(ptp_dev->dev, "ptp_hostvm_mem_share failed\n");
             goto ret;
         }
+    } else if (vm_status_payload->vmid == ptp_dev->televm_vmid
+               && cmd == GH_VM_POWEROFF) {
+        ptp_hostvm_unshare_mem(ptp_dev);
     }
 
     return NOTIFY_DONE;

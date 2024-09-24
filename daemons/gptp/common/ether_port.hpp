@@ -165,6 +165,7 @@ protected:
  public:
 	void becomeMaster( bool annc );
 	void becomeSlave( bool restart_syntonization );
+	int8_t getRsync(void);
 	void enableRsync( int8_t RSyncDomain, double RSyncRate );
 	void disableRsync();
 

@@ -21,6 +21,10 @@ LDFLAGS+= -shared -lrt -lpthread
 ifeq ($(AVB_FEATURE_GVM_MODE),1)
 	LDFLAGS+= -luhab
 endif
+ifeq ($(GPTP_VFIO),1)
+	CPPFLAGS += -DGPTP_VFIO
+	LDFLAGS += -lvfioptp
+endif
 
 SOURCES= gptp_helper.cpp
 OBJECTS= gptp_helper.o

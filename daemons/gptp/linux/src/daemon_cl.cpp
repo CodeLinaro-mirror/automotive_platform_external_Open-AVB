@@ -715,11 +715,6 @@ int main(int argc, char **argv)
 
     portInit.phy_delay = &ether_phy_delay;
 
-    if ( !ipc->init( ipc_arg, portInit.reverseSyncEnabled, portInit.reverseSyncDomain, portInit.reverseSyncRate) ) {
-        delete ipc;
-        ipc = NULL;
-    }
-
     if ( ipc_arg != NULL ) {
         delete ipc_arg;
         ipc_arg = NULL;
@@ -850,6 +845,11 @@ int main(int argc, char **argv)
     }
 
     portInit.net_label = ifname;
+
+    if ( !ipc->init( ipc_arg, portInit.reverseSyncEnabled, portInit.reverseSyncDomain, portInit.reverseSyncRate) ) {
+        delete ipc;
+        ipc = NULL;
+    }
 
     if ((strcmp(ifname_eth, "eth0") != 0) && (strcmp(ifname_eth, "eth1") != 0) ) {
         GPTP_LOG_INFO( "Valid Interface name required\n" );
@@ -1042,6 +1042,7 @@ int main(int argc, char **argv)
 
     if (pPort) {
         qgptp_rmgr_deinit();
+        pPort->processEvent(POWERDOWN);
         delete pPort;
         pPort = NULL;
     }
