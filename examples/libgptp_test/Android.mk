@@ -24,6 +24,7 @@ LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
 endif
 endif
 
+LOCAL_CFLAGS += -DANDROID
 LOCAL_SHARED_LIBRARIES += \
      libcutils \
      liblog

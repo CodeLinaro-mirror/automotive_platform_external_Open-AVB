@@ -114,6 +114,7 @@ static struct sockaddr cli_addr;
 static socklen_t cli_len = sizeof(cli_addr);
 static int gptp_client[MAX_CLIENTS_COUNT] = {-1};
 
+
 // gptp logcat support
 extern gptplogcat_t gptplogcat;
 extern gptplogcat_t systemlogcat;
@@ -154,6 +155,7 @@ static inline int64_t pctns(struct ptp_clock_time t)
                 if( ifname != NULL ) delete ifname; ifname = NULL; \
                 if( ipc_arg != NULL ) delete ipc_arg; ipc_arg = NULL; \
                 if( timestamper != NULL ) delete timestamper; timestamper = NULL; \
+                if( pClock != NULL ) delete pClock; pClock = NULL; \
                 if( pGPTPPersist != NULL ) { \
                     pGPTPPersist->closeStorage(); \
                     delete pGPTPPersist; pGPTPPersist = NULL;    \
@@ -510,6 +512,7 @@ int main(int argc, char **argv)
     portInit.lock_factory = NULL;
     portInit.announceReceiptTimeout = 3;
     portInit.syncReceiptTimeout = 3;
+    portInit.syncClocks = 0;
     portInit.syncReceiptThreshold =
         CommonPort::DEFAULT_SYNC_RECEIPT_THRESH;
     portInit.neighborPropDelayThreshold =
@@ -808,7 +811,9 @@ int main(int argc, char **argv)
             portInit.reverseSyncRate = iniParser.getRSyncRate();
             portInit.automotive_profile = iniParser.getAutomotiveProfile();
             portInit.isGM = iniParser.getIsGM();
+            portInit.syncClocks = iniParser.getSyncClocks();
             portInit.asCapable = iniParser.getAsCapable();
+            GPTP_LOG_INFO("syncClocks: %d", portInit.syncClocks);
             GPTP_LOG_INFO("automotive profile %s isGM %s\n",
                           ((portInit.automotive_profile) ? "True" : "False"),
                           ((portInit.isGM) ? "True" : "False"));
@@ -1073,6 +1078,7 @@ int main(int argc, char **argv)
 #endif
     GPTP_LOG_UNREGISTER();
     CLEANUP_RESOURCES();
+
     return 0;
 }
 

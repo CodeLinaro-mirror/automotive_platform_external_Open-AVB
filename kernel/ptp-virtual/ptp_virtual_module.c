@@ -73,8 +73,8 @@ typedef struct __attribute__ ((packed))
 {
     bool status;
     int32_t port_status;
-    int32_t tv_sec;
-    int32_t tv_nsec;
+    uint32_t tv_sec;
+    uint32_t tv_nsec;
 }
 gptpTimeInfo_t;
 
@@ -192,9 +192,17 @@ ret:
     return ret;
 }
 
+static long ptp_compact_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    return ptp_ioctl(filp,cmd,arg);
+}
+
 static const struct file_operations ptp_fileops = {
     .open = ptp_open,
     .unlocked_ioctl = ptp_ioctl,
+#ifdef CONFIG_COMPAT
+    .compat_ioctl = ptp_compact_ioctl,
+#endif
     .owner = THIS_MODULE,
 };
 

@@ -122,6 +122,19 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
                     valOK = false;
                 }
             }
+        } else if ( parseMatch(name, "syncClocks") ) {
+            errno = 0;
+            char *pEnd;
+            uint8_t syncClocks = (uint8_t) strtoul(value, &pEnd, 10);
+
+            if ( *pEnd == '\0' && errno == 0) {
+                if (syncClocks == 1 || syncClocks == 0) {
+                    valOK = true;
+                    parser->_config.syncClocks = syncClocks;
+                } else {
+                    valOK = false;
+                }
+            }
         }
     } else if ( parseMatch(section, "port") ) {
         if ( parseMatch(name, "announceReceiptTimeout") ) {
@@ -151,7 +164,16 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
                 valOK = true;
                 parser->_config.neighborPropDelayThresh = nt;
             }
-        } else if ( parseMatch(name, "syncReceiptThresh") ) {
+        }  else if ( parseMatch(name, "stbMSyncLossThreshold") ) {
+            errno = 0;
+            char *pEnd;
+            int64_t slt = strtoul(value, &pEnd, 10);
+
+            if ( *pEnd == '\0' && errno == 0) {
+                valOK = true;
+                parser->_config.stbMSyncLossThreshold = slt;
+            }
+        }  else if ( parseMatch(name, "syncReceiptThresh") ) {
             errno = 0;
             char *pEnd;
             unsigned int st = strtoul(value, &pEnd, 10);

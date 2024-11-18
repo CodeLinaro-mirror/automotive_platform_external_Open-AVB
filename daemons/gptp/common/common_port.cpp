@@ -59,6 +59,7 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     neighbor_prop_delay_thresh = portInit->neighborPropDelayThreshold;
     announceReceiptTimeout = portInit->announceReceiptTimeout;
     syncReceiptTimeout = portInit->syncReceiptTimeout;
+    syncClocks = portInit->syncClocks;
     net_label = portInit->net_label;
     link_thread = thread_factory->createThread();
     listening_thread = thread_factory->createThread();
@@ -820,7 +821,7 @@ bool CommonPort::processEvent( Event e )
 
         case RSYNC_INTERVAL_TIMEOUT_EXPIRES: {
                 GPTP_LOG_VERBOSE("RSYNC_INTERVAL_TIMEOUT_EXPIRES occured, getSyncInterval = %d, getRSyncRate = %f",
-                              getSyncInterval(), clock->getRSyncRate());
+                                 getSyncInterval(), clock->getRSyncRate());
                 ret = true;
                 ret = _processEvent( e );
                 startSyncIntervalTimer

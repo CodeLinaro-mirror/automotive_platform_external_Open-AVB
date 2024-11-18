@@ -224,9 +224,11 @@ int qgptp_rmgr_init(const char *ifname, CommonPort *port)
 
     if (  qgptp_port->sct_buffer == (sct_gptp_data *) - 1 ) {
         GPTP_LOG_ERROR( "mmap()" );
+        qgptp_port->sct_buffer = NULL;
         goto exit_unlink;
     }
 
+    memset(qgptp_port->sct_buffer, 0x0, SCT_SHM_SIZE);
     /*create mutex attr */
     err = pthread_mutexattr_init(&shared);
 
@@ -254,10 +256,21 @@ int qgptp_rmgr_init(const char *ifname, CommonPort *port)
     return true;
 exit_unlink:
 #ifdef ANDROID
-    close( qgptp_port->sct_shm_fd );
-    unlink( SCT_SHM_NAME );
+
+    if (qgptp_port->sct_shm_fd != -1) {
+        close(qgptp_port->sct_shm_fd);
+        qgptp_port->sct_shm_fd = -1;
+    }
+
+    //unlink( SCT_SHM_NAME );
 #else
-    shm_unlink( SCT_SHM_NAME );
+
+    if (qgptp_port->sct_shm_fd != -1) {
+        close(qgptp_port->sct_shm_fd);
+        qgptp_port->sct_shm_fd = -1;
+    }
+
+    //shm_unlink( SCT_SHM_NAME );
 #endif
 exit_error:
     GPTP_LOG_INFO("qgptp_rmgr_init error exit %s", SCT_SHM_NAME);
@@ -281,12 +294,24 @@ int qgptp_rmgr_deinit()
             memset(&sct_buffer->syncInterval, 0x0, sizeof(syncInterval_t));
         }
 
-        munmap( qgptp_port->sct_buffer, SCT_SHM_SIZE );
+        memset(qgptp_port->sct_buffer, 0x0, SCT_SHM_SIZE);
+        munmap(qgptp_port->sct_buffer, SCT_SHM_SIZE);
 #ifdef ANDROID
-        close(qgptp_port->sct_shm_fd);
-        unlink( SCT_SHM_NAME );
+
+        if (qgptp_port->sct_shm_fd != -1) {
+            close(qgptp_port->sct_shm_fd);
+            qgptp_port->sct_shm_fd = -1;
+        }
+
+        //unlink( SCT_SHM_NAME );
 #else
-        shm_unlink(SCT_SHM_NAME);
+
+        if (qgptp_port->sct_shm_fd != -1) {
+            close(qgptp_port->sct_shm_fd);
+            qgptp_port->sct_shm_fd = -1;
+        }
+
+        //shm_unlink(SCT_SHM_NAME);
 #endif
     }
 

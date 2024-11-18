@@ -814,22 +814,19 @@ bool EtherPort::_processEvent( Event e )
                 }
             }
             break;
+
         case POWERDOWN:
             //to ensure no processing happens for already expired events
             stopPDelay();
             setAsCapable(false);
-
             clock->deleteEventTimerLocked( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
             clock->deleteEventTimerLocked( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
             clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES);
             clock->deleteEventTimerLocked( this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES);
             clock->deleteEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED);
             clock->deleteEventTimerLocked( this, RSYNC_INTERVAL_TIMEOUT_EXPIRES );
-
             stopSyncReceiptTimer();
-
             GPTP_LOG_EXCEPTION("gptp powering down");
-
             ret = true;
             break;
 
@@ -860,6 +857,7 @@ void EtherPort::becomeMaster( bool annc )
     if (sct_buffer) {
         pthread_mutex_lock((pthread_mutex_t *) &sct_buffer->lock);
         sct_buffer->status.gptp_status = GPTP_STATUS_TIMEOUT;
+        sct_buffer->status.d_status = 0xabcdef;
         sct_buffer->status.IsMaster = 1;
         pthread_mutex_unlock((pthread_mutex_t *) &sct_buffer->lock);
     }
@@ -888,6 +886,7 @@ void EtherPort::becomeSlave( bool restart_syntonization )
     if (sct_buffer) {
         pthread_mutex_lock((pthread_mutex_t *) &sct_buffer->lock);
         sct_buffer->status.gptp_status = GPTP_STATUS_TIMEOUT;
+        sct_buffer->status.d_status = 0xabcdef;
         sct_buffer->status.IsMaster = 0;
         pthread_mutex_unlock((pthread_mutex_t *) &sct_buffer->lock);
     }
@@ -1024,6 +1023,7 @@ void EtherPort::startPDelayIntervalTimer
     if (pDelayIntervalTimerLock->trylock() == oslock_fail) {
         return;
     }
+
     clock->deleteEventTimerLocked(this, PDELAY_INTERVAL_TIMEOUT_EXPIRES);
     clock->addEventTimerLocked(this, PDELAY_INTERVAL_TIMEOUT_EXPIRES, waitTime);
     pDelayIntervalTimerLock->unlock();

@@ -41,20 +41,22 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 ******************************************************************************/
 
 #include <ieee1588.hpp>
-
 #include <avbts_clock.hpp>
 #include <avbts_oslock.hpp>
 #include <avbts_ostimerq.hpp>
-
 #include <stdio.h>
-
 #include <string.h>
-
 #include <stdlib.h>
-
 #include <string.h>
-
 #include <math.h>
+#include <unistd.h>
+#include <errno.h>
+
+#ifdef ANDROID
+#include <sys/timex.h>
+#endif
+
+#define TAI_CLOCK 0
 
 std::string ClockIdentity::getIdentityString()
 {
@@ -106,7 +108,8 @@ IEEE1588Clock::IEEE1588Clock
     domain_number = 0;
     rsync_domain_number = 1;
     rsync_rate = RSYNC_RATE_DEFAULT;
-    GPTP_LOG_INFO("rsync_domain_number: %d, rsync_rate %f \n", rsync_domain_number, rsync_rate);
+    GPTP_LOG_INFO("rsync_domain_number: %d, rsync_rate %f \n", rsync_domain_number,
+                  rsync_rate);
     _syntonize = syntonize;
     _new_syntonization_set_point = false;
     _ppm = 0;
@@ -572,6 +575,135 @@ static ValueAverage_int64 local_boot_offset_avg(AVERAGE_WINDOW);
 static ValueAverage_FR local_boot_freq_offset_avg(AVERAGE_WINDOW);
 
 
+int realtime_adjust_offset(long long offset)
+{
+    struct timex tx = {};
+    int ret;
+    memset(&tx, 0, sizeof(tx));
+    tx.modes = ADJ_SETOFFSET | ADJ_NANO;
+    tx.time.tv_sec = offset / 1000000000;
+    tx.time.tv_usec = offset % 1000000000;
+
+    if (offset < 0 && tx.time.tv_usec) {
+        tx.time.tv_sec -= 1;
+        tx.time.tv_usec += 1000000000;
+    }
+
+    ret = clock_adjtime(CLOCK_REALTIME, &tx);
+
+    if (ret < 0) {
+        GPTP_LOG_ERROR("failed to realtime_adjust_offset %s",strerror(errno));
+        return ret;
+    }
+
+    return 0;
+}
+int realtime_adjust_freq(float freq_offset)
+{
+    struct timex tx = {};
+    memset(&tx, 0, sizeof(tx));
+    tx.modes = ADJ_FREQUENCY;
+    tx.freq  = long(freq_offset) << 16;
+    tx.freq += long(fmodf( freq_offset, 1.0 ) * 65536.0);
+
+    if (clock_adjtime(CLOCK_REALTIME, &tx) < 0) {
+        GPTP_LOG_ERROR("failed to realtime_adjust_freq %s",strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+#if TAI_CLOCK
+int tai_adjust(long long offset)
+{
+    struct timex tx;
+    int ret;
+    memset(&tx, 0, sizeof(tx));
+    tx.modes = ADJ_TAI;
+    tx.constant = offset;
+    ret = clock_adjtime(CLOCK_REALTIME, &tx);
+
+    if (ret < 0) {
+        GPTP_LOG_ERROR("failed to adjust TAI offset %s",strerror(errno));
+        return ret;
+    }
+
+    return 0;
+}
+#endif
+
+void synchronize_clocks(CommonPort *port)
+{
+    uint8_t syncClocks = port->getSyncClocks();
+    uint64_t curr_gptp = 0;
+
+    if (syncClocks & 0x1) {
+        uint64_t curr_real = 0;
+        int64_t delta_real = 0;
+        static uint64_t prev_gptp_time = 0;
+        static uint64_t prev_real_time = 0;
+        static float _ppm = 0;
+        struct timespec real;
+        long double phase_error;
+        port->getCurrentPtpTime( &curr_gptp );
+        clock_gettime(CLOCK_REALTIME, &real);
+        curr_real = (real.tv_sec) * 1000000000LL + real.tv_nsec;
+        delta_real = curr_real - curr_gptp;
+        phase_error = (long double) - delta_real;
+
+        if ((fabsl(phase_error) > PHASE_ERROR_THRESHOLD) || prev_gptp_time == 0) {
+            realtime_adjust_offset(phase_error);
+        } else {
+            FrequencyRatio freq_offset = 0;
+            freq_offset = ((FrequencyRatio)(curr_gptp - prev_gptp_time)) /
+                          (curr_real - prev_real_time);
+
+            // Check for jumps in REAL time or gptp time
+            if ((fabs(freq_offset) < MIN_LS_RATIO) || (fabs(freq_offset) > MAX_LS_RATIO)) {
+                GPTP_LOG_WARNING("Real to Gptp clock ratio (%Lf) exceeding threshold %lld %lld",
+                                 freq_offset, (curr_real - prev_real_time), (curr_gptp - prev_gptp_time));
+                freq_offset = 1.0;
+            } else {
+                GPTP_LOG_DEBUG("Real to Gptp clock ratio (%Lf) delta %lld %lld",
+                                 freq_offset, (curr_real - prev_real_time), (curr_gptp - prev_gptp_time));
+            }
+
+            float syncPerSec = (float)(1.0 / pow((float)2, port->getSyncInterval()));
+            _ppm += (float) ((INTEGRAL * syncPerSec * phase_error) + PROPORTIONAL * ((
+                                 freq_offset - 1.0) * 1000000));
+            GPTP_LOG_DEBUG("phase_error = %Lf, ppm = %f", phase_error, _ppm );
+
+            if ( _ppm < LOWER_FREQ_LIMIT ) {
+                _ppm = LOWER_FREQ_LIMIT;
+            }
+
+            if ( _ppm > UPPER_FREQ_LIMIT ) {
+                _ppm = UPPER_FREQ_LIMIT;
+            }
+
+            realtime_adjust_freq(_ppm);
+        }
+
+        prev_gptp_time = curr_gptp;
+        prev_real_time = curr_real;
+        GPTP_LOG_DEBUG("curr_gptp %lld curr_real %lld delta_real %lld",
+                       curr_gptp, curr_real, delta_real);
+#if TAI_CLOCK
+        uint64_t curr_tai = 0;
+        int64_t delta_tai = 0;
+        struct timespec tai;
+        port->getCurrentPtpTime( &curr_gptp );
+        clock_gettime(CLOCK_TAI, &tai);
+        curr_tai = (tai.tv_sec) * 1000000000LL + tai.tv_nsec;
+        delta_tai = curr_gptp - curr_tai;
+        GPTP_LOG_STATUS("curr_gptp %lld curr_tai %lld delta_tai %lld",
+                        curr_gptp, curr_tai, delta_tai);
+#endif
+    }
+}
+
+
 void IEEE1588Clock::setMasterOffset
 ( CommonPort *port, int64_t master_local_offset,
   Timestamp local_time, FrequencyRatio master_local_freq_offset,
@@ -598,7 +730,7 @@ void IEEE1588Clock::setMasterOffset
     if (port->sct_buffer) {
         pthread_mutex_lock((pthread_mutex_t *) &port->sct_buffer->lock);
         port->sct_buffer->syncInterval.sync_interval = port->getSyncInterval();
-        port->sct_buffer->syncInterval.init_sync_interval = port->getInitSyncInterval();
+        port->sct_buffer->syncInterval.pdelay_interval = port->getoperLogPdelayReqInterval();
         pthread_mutex_unlock((pthread_mutex_t *) &port->sct_buffer->lock);
     }
 
@@ -659,14 +791,19 @@ void IEEE1588Clock::setMasterOffset
             local_q_freq_offset_avg.get(), local_boot_freq_offset_avg.get(),
             TIMESTAMP_TO_NS(local_time),
             sync_count, pdelay_count, port_state, asCapable, &rSync);
+
         if (prev_rsync_state != rSync.reverseSyncEnabled) {
             port->setRsync(&rSync);
         }
+
         prev_rsync_state = rSync.reverseSyncEnabled;
+
         if (port->getTestMode()) {
-                GPTP_LOG_STATUS("%s:%d reverseSyncEnabled = %d reverseSyncRate = %lf reverseSyncDomain = %d\n", 
-                    __func__, __LINE__, rSync.reverseSyncEnabled, rSync.reverseSyncRate, rSync.reverseSyncDomain );
+            GPTP_LOG_STATUS("%s:%d reverseSyncEnabled = %d reverseSyncRate = %lf reverseSyncDomain = %d\n",
+                            __func__, __LINE__, rSync.reverseSyncEnabled, rSync.reverseSyncRate,
+                            rSync.reverseSyncDomain );
         }
+
         ipc->update_grandmaster(
             grandmaster_id, domain_number);
         ipc->update_network_interface(
@@ -681,6 +818,7 @@ void IEEE1588Clock::setMasterOffset
     }
 
     if ( master_local_offset == 0 && master_local_freq_offset == 1.0 ) {
+        synchronize_clocks(port);
         return;
     }
 
@@ -699,6 +837,7 @@ void IEEE1588Clock::setMasterOffset
 
             port->adjustClockPhase( -master_local_offset );
             _master_local_freq_offset_init = false;
+            _local_system_freq_offset_init = false;
             restartPDelayAll();
             putTxLockAll();
             master_local_offset = 0;
@@ -742,6 +881,8 @@ void IEEE1588Clock::setMasterOffset
     if (sync_count > 1) {
         initialdrift = true;
     }
+
+    synchronize_clocks(port);
 
     if (initialdrift) {
         if ((master_local_offset > port->getstbMSyncLossThreshold())

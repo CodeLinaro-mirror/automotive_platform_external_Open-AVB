@@ -1119,8 +1119,10 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
 
         if (port->getPortState() == PTP_MASTER) {
             port->sct_buffer->status.IsMaster = 1;
+            port->sct_buffer->status.d_status = 0xabcdef;
         } else if (port->getPortState() ==  PTP_SLAVE) {
             port->sct_buffer->status.IsMaster = 0;
+            port->sct_buffer->status.d_status = 0xabcdef;
         }
 
         port->sct_buffer->status.gmTimeBaseIndicator = tlv.getGmTimeBaseIndicator();

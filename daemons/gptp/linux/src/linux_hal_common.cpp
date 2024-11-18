@@ -99,9 +99,9 @@ uintptr_t ptp_base_addr;
 
 extern char ptp_dev_index[PTP_CLOCK_DEVICE_LENGTH];
 
-static __inline__ uint64_t __attribute__((__unused__)) in64(uintptr_t __addr) 
+static __inline__ uint64_t __attribute__((__unused__)) in64(uintptr_t __addr)
 {
-  return *(volatile uint64_t *)__addr;
+    return *(volatile uint64_t *)__addr;
 }
 
 Timestamp tsToTimestamp(struct timespec *ts)
@@ -1091,12 +1091,27 @@ LinuxThread::~LinuxThread()
 
 LinuxSharedMemoryIPC::~LinuxSharedMemoryIPC()
 {
-    munmap(master_offset_buffer, SHM_SIZE);
+    if (master_offset_buffer != (char*) -1) {
+        memset(master_offset_buffer, 0x0, SHM_SIZE);
+        munmap(master_offset_buffer, SHM_SIZE);
+    }
+
 #ifdef ANDROID
-    close(shm_fd);
-    unlink( SHM_NAME );
+
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+
+    //unlink( SHM_NAME );
 #else
-    shm_unlink(SHM_NAME);
+
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+
+    //shm_unlink(SHM_NAME);
 #endif
 #ifdef LE_SHARED_MEM
 
@@ -1125,15 +1140,13 @@ bool LinuxSharedMemoryIPC::init(
 
     if (barg == NULL) {
         group_name = DEFAULT_GROUPNAME;
-    }
-    else {
+    } else {
         arg = dynamic_cast<LinuxIPCArg*> (barg);
 
         if (arg == NULL) {
             GPTP_LOG_ERROR("Wrong IPC init arg type");
             goto exit_error;
-        }
-        else {
+        } else {
             group_name = arg->group_name;
         }
     }
@@ -1164,13 +1177,12 @@ bool LinuxSharedMemoryIPC::init(
             GPTP_LOG_ERROR("Failed to open gPTP kernel device %d %d", gptp_fd, count);
             usleep(50000);
             count++;
-        }
-        else {
+        } else {
             GPTP_LOG_INFO("opened gptp kernel device: /dev/gptp");
         }
     } while (((gptp_fd == -1)
-        || ((FD_TO_CLOCKID(gptp_fd)) == -1))
-        && (count < 1000));
+              || ((FD_TO_CLOCKID(gptp_fd)) == -1))
+             && (count < 1000));
 
 #endif
     (void)umask(oldumask);
@@ -1185,10 +1197,10 @@ bool LinuxSharedMemoryIPC::init(
     }
 
     master_offset_buffer = (char*)mmap
-    (NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_LOCKED | MAP_SHARED,
-        shm_fd, 0);
+                           (NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_LOCKED | MAP_SHARED,
+                            shm_fd, 0);
 
-    if (master_offset_buffer == (char*)-1) {
+    if (master_offset_buffer == (char*) -1) {
         GPTP_LOG_ERROR("mmap()");
         goto exit_unlink;
     }
@@ -1200,10 +1212,11 @@ bool LinuxSharedMemoryIPC::init(
     prev_qtimer_sync_time = 0;
     prev_qtimer_inc_ratio = 1000000000;
     GPTP_LOG_INFO("LinuxSharedMemoryIPC::init vfio ptp entry.\n");
-
     ret = vfio_ptp_device_init();
+
     if (ret) {
-        GPTP_LOG_INFO("LinuxSharedMemoryIPC:: vfio_ptp_device_init fail, ret %d\n", ret);
+        GPTP_LOG_INFO("LinuxSharedMemoryIPC:: vfio_ptp_device_init fail, ret %d\n",
+                      ret);
         return false;
     }
 
@@ -1218,14 +1231,13 @@ bool LinuxSharedMemoryIPC::init(
     ptimedata->reverseSyncEnabled = reverseSyncEnabled;
     ptimedata->reverseSyncDomain = reverseSyncDomain;
     ptimedata->reverseSyncRate = reverseSyncRate;
-
     /*create mutex attr */
     err = pthread_mutexattr_init(&shared);
 
     if (err != 0) {
         GPTP_LOG_ERROR
         ("mutex attr initialization failed - %s",
-            strerror(errno));
+         strerror(errno));
         goto exit_unlink;
     }
 
@@ -1237,18 +1249,28 @@ bool LinuxSharedMemoryIPC::init(
     if (err != 0) {
         GPTP_LOG_ERROR
         ("sharedmem - Mutex initialization failed - %s",
-            strerror(errno));
+         strerror(errno));
         goto exit_unlink;
     }
 
     return true;
 #ifndef GPTP_VFIO
-    exit_unlink :
+exit_unlink :
 #ifdef ANDROID
-    close(shm_fd);
-    unlink(SHM_NAME);
+
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+
+    //unlink(SHM_NAME);
 #else
-    shm_unlink(SHM_NAME);
+
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+
 #endif
 #ifdef LE_SHARED_MEM
 
@@ -1256,6 +1278,7 @@ bool LinuxSharedMemoryIPC::init(
         close(gptp_fd);
         gptp_fd = -1;
     }
+
 #endif
 exit_error:
     GPTP_LOG_ERROR("LinuxSharedMemoryIPC::init exit_error\n");
@@ -1311,19 +1334,26 @@ bool LinuxSharedMemoryIPC::update(
         rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
         rSync->reverseSyncRate = ptimedata->reverseSyncRate;
         rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;
-
+        ptimedata->d_status = 0xabcdef;
 #ifdef USE_CARVEOUT_GPTP
         /* Read 64 bits tick counter from QTMR0_F0V2_QTMR_V2
          * and write to the end of shared memory
          */
         uint64_t* current_tick = (uint64_t*)(shm_buffer + 0x1000 - sizeof(uint64_t));
-        int64_t* ptp_qtimer_offset = (int64_t*)(shm_buffer + 0x1000 - 2 * sizeof(uint64_t));
-        uint64_t* ptp_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 5 * sizeof(uint64_t));
-        uint64_t* qtimer_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 6 * sizeof(uint64_t));
-        uint64_t* qtimer_inc_ratio = (uint64_t*)(shm_buffer + 0x1000 - 7 * sizeof(uint64_t));
-        uint32_t* a_lock1 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(uint64_t) - sizeof(uint32_t));
-        uint32_t* a_lock2 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(uint64_t) - 2 * sizeof(uint32_t));
-        uint32_t* d_status = (uint32_t*)(shm_buffer + 0x1000 - 10 * sizeof(uint64_t)); //location has to match the ptp-virtual
+        int64_t* ptp_qtimer_offset = (int64_t*)(shm_buffer + 0x1000 - 2 * sizeof(
+                uint64_t));
+        uint64_t* ptp_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 5 * sizeof(
+                uint64_t));
+        uint64_t* qtimer_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 6 * sizeof(
+                                         uint64_t));
+        uint64_t* qtimer_inc_ratio = (uint64_t*)(shm_buffer + 0x1000 - 7 * sizeof(
+                                         uint64_t));
+        uint32_t* a_lock1 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(
+                                            uint64_t) - sizeof(uint32_t));
+        uint32_t* a_lock2 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(
+                                            uint64_t) - 2 * sizeof(uint32_t));
+        uint32_t* d_status = (uint32_t*)(shm_buffer + 0x1000 - 10 * sizeof(
+                                             uint64_t)); //location has to match the ptp-virtual
         uint64_t current_gptp_time = 0;
         uint64_t qtimer_tick = 0;
         uint64_t gptp_time_ns = 0;
@@ -1332,38 +1362,35 @@ bool LinuxSharedMemoryIPC::update(
         a_lock1++;
         //InterruptDisable();
 
-        while (1)
-        {
+        while (1) {
             gptp_time_s_pre = in32(ptp_base_addr + PTP_SEC_OFFSET);
             gptp_time_ns = in32(ptp_base_addr + PTP_NANO_SEC_OFFSET);
             qtimer_tick = in64((uintptr_t)qtimer_base_addr);
             gptp_time_s = in32(ptp_base_addr + PTP_SEC_OFFSET);
-            if (gptp_time_s == gptp_time_s_pre)
-            {
+
+            if (gptp_time_s == gptp_time_s_pre) {
                 break;
             }
         }
 
         //InterruptEnable();
-
-        current_gptp_time = GET_VALUE(gptp_time_ns, MAC_STNSR_TSSS_LPOS, MAC_STNSR_TSSS_HPOS);
+        current_gptp_time = GET_VALUE(gptp_time_ns, MAC_STNSR_TSSS_LPOS,
+                                      MAC_STNSR_TSSS_HPOS);
         current_gptp_time = current_gptp_time + (gptp_time_s * 1000000000ull);
-
         ptimedata->local_time = current_gptp_time;
-
         /*Now Qtimer run with 19.2MHz clock*/
         uint64_t qtimer_ns = qtimer_tick * (1000000000.0 / 19200000.0);
         int64_t local_bypqtimer_offset = (int64_t)(qtimer_ns - ptimedata->local_time);
         *ptp_qtimer_offset = local_bypqtimer_offset;
         *current_tick = qtimer_tick;
-        *d_status = 0xAA; //Just an indication daemon is up
-        if (prev_gptp_sync_time != 0)
-        {
-            *qtimer_inc_ratio = (2 * prev_qtimer_inc_ratio) / 3 + ((ptimedata->local_time - prev_gptp_sync_time) * 1000000000) / ((qtimer_ns - prev_qtimer_sync_time)) / 3;
+        *d_status = 0xabcdef; //Just an indication daemon is up
+
+        if (prev_gptp_sync_time != 0) {
+            *qtimer_inc_ratio = (2 * prev_qtimer_inc_ratio) / 3 + ((
+                                    ptimedata->local_time - prev_gptp_sync_time) * 1000000000) / ((
+                                                qtimer_ns - prev_qtimer_sync_time)) / 3;
             prev_qtimer_inc_ratio = *qtimer_inc_ratio;
-        }
-        else
-        {
+        } else {
             *qtimer_inc_ratio = prev_qtimer_inc_ratio;
         }
 
@@ -1419,23 +1446,27 @@ bool LinuxSharedMemoryIPC::updateSyncStatus(bool is_sync, PortState port_state)
     }
 
 #ifdef LE_SHARED_MEM
-    gptpTimeInfo_t ptp_status;
-    ptp_status.status = is_sync;
-    ptp_status.port_status = port_state;
-    ret = ioctl(gptp_fd, SET_PTP_DATA, &ptp_status);
 
-    if (ret) {
-        GPTP_LOG_ERROR("set PTP status in kernel failed 0x%x (%s)\n", errno,
-                       strerror(errno));
+    if (gptp_fd != -1) {
+        gptpTimeInfo_t ptp_status;
+        ptp_status.status = is_sync;
+        ptp_status.port_status = port_state;
+        ret = ioctl(gptp_fd, SET_PTP_DATA, &ptp_status);
 
-        if (gptp_fd != -1) {
-            close(gptp_fd);
-            gptp_fd = -1;
+        if (ret) {
+            GPTP_LOG_ERROR("set PTP status in kernel failed 0x%x (%s)\n", errno,
+                           strerror(errno));
+
+            if (gptp_fd != -1) {
+                close(gptp_fd);
+                gptp_fd = -1;
+            }
         }
+
+        GPTP_LOG_DEBUG("set PTP status updated in kernel: %d port_status %d\n",
+                       ptp_status.status, ptp_status.port_status);
     }
 
-    GPTP_LOG_DEBUG("set PTP status updated in kernel: %d port_status %d\n",
-                   ptp_status.status, ptp_status.port_status);
 #endif
     return true;
 }
@@ -1566,12 +1597,24 @@ void LinuxSharedMemoryIPC::stop()
 {
     if ( master_offset_buffer != NULL ) {
 #ifndef GPTP_VFIO
+        memset(master_offset_buffer, 0x0, SHM_SIZE);
         munmap( master_offset_buffer, SHM_SIZE );
 #ifdef ANDROID
-        close(shm_fd);
-        unlink( SHM_NAME );
+
+        if (shm_fd != -1) {
+            close(shm_fd);
+            shm_fd = -1;
+        }
+
+        // unlink( SHM_NAME );
 #else
-        shm_unlink(SHM_NAME);
+
+        if (shm_fd != -1) {
+            close(shm_fd);
+            shm_fd = -1;
+        }
+
+        //shm_unlink(SHM_NAME);
 #endif
 #ifdef LE_SHARED_MEM
 
@@ -1582,7 +1625,7 @@ void LinuxSharedMemoryIPC::stop()
 
 #endif
 #else
-    vfio_ptp_device_deinit();
+        vfio_ptp_device_deinit();
 #endif
     }
 }
