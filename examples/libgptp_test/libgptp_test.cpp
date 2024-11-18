@@ -485,7 +485,7 @@ int main(int argc, char *argv[])
 
     if (gptpGetStatusAndCurPtpTime(&ptp_data)) {
         if (ptp_data.status) {
-            printf("gptp status %d port status %d gptp time %" PRIu64 ".%" PRIu64 "\n",
+            printf("gptp status %d port status %d gptp time %u.%u\n",
                    ptp_data.status, ptp_data.port_status, ptp_data.tv_sec, ptp_data.tv_nsec);
         } else {
             printf("gptp status %d port status %d\n", ptp_data.status,

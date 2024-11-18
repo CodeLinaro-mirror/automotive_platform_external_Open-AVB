@@ -82,8 +82,8 @@ typedef struct __attribute__ ((packed))
 {
     bool status;
     int32_t port_status;
-    int32_t tv_sec;
-    int32_t tv_nsec;
+    uint32_t tv_sec;
+    uint32_t tv_nsec;
 }
 gptpTimeInfo_t;
 
@@ -675,7 +675,7 @@ class LinuxIPCArg : public OS_IPC_ARG
 };
 
 #ifdef ANDROID
-#define DEFAULT_GROUPNAME "vehicle_network"     /*!< Default groupname for the shared memory interface*/
+#define DEFAULT_GROUPNAME "vendor_ptp"     /*!< Default groupname for the shared memory interface*/
 #else
 #define DEFAULT_GROUPNAME "vnw"     /*!< Default groupname for the shared memory interface*/
 #endif

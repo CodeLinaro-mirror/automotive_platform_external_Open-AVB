@@ -124,6 +124,8 @@ typedef struct {
     int8_t reverseSyncDomain;
     double reverseSyncRate;
 
+    //daemon status
+    int64_t d_status = {0};
 } gPtpTimeData;
 
 /*

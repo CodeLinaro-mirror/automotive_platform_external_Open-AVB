@@ -412,6 +412,13 @@ static int gptpScaling(gPtpTimeData * td, char *memory_offset_buffer)
     }
 
 #ifndef AVB_FEATURE_GVM_MODE
+    gPtpTimeData * checkstatus = (gPtpTimeData *) (memory_offset_buffer + sizeof(
+                                     pthread_mutex_t));
+
+    if (checkstatus->d_status != 0xabcdef ) {
+        return false;
+    }
+
     pthread_mutex_lock((pthread_mutex_t *) memory_offset_buffer);
     memcpy(td, memory_offset_buffer + sizeof(pthread_mutex_t), sizeof(*td));
     pthread_mutex_unlock((pthread_mutex_t *) memory_offset_buffer);
@@ -773,6 +780,16 @@ static int gptpDaemonClientInit(void)
         GPTP_LOG_INFO("gptpDaemonSrvConnect: success\n");
         bInitialized = true;
     } else {
+        if (pipefd[0] != -1) {
+            close(pipefd[0]);
+            pipefd[0] = -1;
+        }
+
+        if (pipefd[1] != -1) {
+            close(pipefd[1]);
+            pipefd[1] = -1;
+        }
+
         return false;
     }
 
@@ -781,6 +798,15 @@ static int gptpDaemonClientInit(void)
 
     if (ret != 0) {
         GPTP_LOG_ERROR("gptpDaemonClientInit: failed -->%s\n", strerror(errno));
+
+        if (pipefd[0] != -1) {
+            close(pipefd[0]);
+        }
+
+        if (pipefd[1] != -1) {
+            close(pipefd[1]);
+        }
+
         return false;
     }
 
@@ -800,7 +826,11 @@ static void gptpDaemonClientDeInit(void)
     char data = '1';
     int ret = 0;
     bServiceConnect = false;
-    write(pipefd[1], &data, 1);
+
+    if (pipefd[1] != -1) {
+        write(pipefd[1], &data, 1);
+    }
+
     ret = pthread_join(thread_id, NULL);
 
     if (ret != 0) {
@@ -817,10 +847,12 @@ static void gptpDaemonClientDeInit(void)
     // Release the Pipe
     if (pipefd[0] != -1) {
         close(pipefd[0]);
+        pipefd[0] = -1;
     }
 
     if (pipefd[1] != -1) {
         close(pipefd[1]);
+        pipefd[1] = -1;
     }
 
     return;

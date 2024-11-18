@@ -1309,6 +1309,7 @@ bool LinuxSharedMemoryIPC::update(
         rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
         rSync->reverseSyncRate = ptimedata->reverseSyncRate;
         rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;
+        ptimedata->d_status = 0xabcdef;
 #ifdef USE_CARVEOUT_GPTP
         /* Read 64 bits tick counter from QTMR0_F0V2_QTMR_V2
          * and write to the end of shared memory
