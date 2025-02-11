@@ -106,7 +106,7 @@ static __inline__ uint64_t __attribute__((__unused__)) in64(uintptr_t __addr)
 
 Timestamp tsToTimestamp(struct timespec *ts)
 {
-    Timestamp ret;
+    Timestamp ret = {0, 0, 0};
     int seclen = sizeof(ts->tv_sec) - sizeof(ret.seconds_ls);
 
     if (seclen > 0) {
@@ -1091,7 +1091,7 @@ LinuxThread::~LinuxThread()
 
 LinuxSharedMemoryIPC::~LinuxSharedMemoryIPC()
 {
-    if (master_offset_buffer != (char*) -1) {
+    if ((master_offset_buffer != (char*) -1) && (master_offset_buffer != NULL)) {
         memset(master_offset_buffer, 0x0, SHM_SIZE);
         munmap(master_offset_buffer, SHM_SIZE);
     }
@@ -1131,12 +1131,12 @@ bool LinuxSharedMemoryIPC::init(
     double reverseSyncRate)
 {
     pthread_mutexattr_t shared;
-#ifndef GPTP_VFIO
     LinuxIPCArg* arg;
     struct group* grp;
     const char* group_name;
     mode_t oldumask = umask(0);
     int count = 0;
+    int ret = -1;
 
     if (barg == NULL) {
         group_name = DEFAULT_GROUPNAME;
@@ -1206,8 +1206,8 @@ bool LinuxSharedMemoryIPC::init(
     }
 
     memset(master_offset_buffer, 0x0, SHM_SIZE);
-#else
-    int ret = -1;
+
+#ifdef GPTP_VFIO
     prev_gptp_sync_time = 0;
     prev_qtimer_sync_time = 0;
     prev_qtimer_inc_ratio = 1000000000;
@@ -1220,10 +1220,14 @@ bool LinuxSharedMemoryIPC::init(
         return false;
     }
 
-    master_offset_buffer = (char*)vfio_carveout_mem_addr();
+    master_offset_buffer_vfio = (char*)vfio_carveout_mem_addr();
+    if (master_offset_buffer_vfio == (char*) -1){
+        GPTP_LOG_ERROR("mmap()");
+        goto exit_unlink;
+    }
     qtimer_base_addr = (uintptr_t)vfio_qtimer_base_addr();
     ptp_base_addr = (uintptr_t)vfio_ptp_base_addr();
-    memset(master_offset_buffer, 0x0, SHM_SIZE);
+    memset(master_offset_buffer_vfio, 0x0, SHM_SIZE);
 #endif
     /* set reverse sync parameters on sharedmem*/
     gPtpTimeData* ptimedata;
@@ -1252,9 +1256,8 @@ bool LinuxSharedMemoryIPC::init(
          strerror(errno));
         goto exit_unlink;
     }
-
     return true;
-#ifndef GPTP_VFIO
+
 exit_unlink :
 #ifdef ANDROID
 
@@ -1282,14 +1285,126 @@ exit_unlink :
 #endif
 exit_error:
     GPTP_LOG_ERROR("LinuxSharedMemoryIPC::init exit_error\n");
-    return false;
-#else
-exit_unlink:
+#ifdef GPTP_VFIO
     vfio_ptp_device_deinit();
-    GPTP_LOG_ERROR("LinuxSharedMemoryIPC::init vfio ptp exit_error\n");
-    return false;
 #endif
+    return false;
 }
+
+#ifdef GPTP_VFIO
+void LinuxSharedMemoryIPC::vfio_ptp(int64_t ml_phoffset,
+    int64_t ls_phoffset,
+    int64_t lq_phoffset,
+    int64_t lb_phoffset,
+    FrequencyRatio ml_freqoffset,
+    FrequencyRatio ls_freqoffset,
+    FrequencyRatio lq_freqoffset,
+    FrequencyRatio lb_freqoffset,
+    uint64_t local_time,
+    uint32_t sync_count,
+    uint32_t pdelay_count,
+    PortState port_state,
+    bool asCapable,
+    RsyncStatus_t* rSync, uint32_t process_path)
+{
+        int buf_offset = 0;
+        pid_t process_id = getpid();
+        gPtpTimeData* ptimedata;
+        char* shm_buffer_vfio = master_offset_buffer_vfio;
+        if (shm_buffer_vfio != NULL) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t*)shm_buffer_vfio);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata = (gPtpTimeData*)(shm_buffer_vfio + buf_offset);
+        ptimedata->ml_phoffset = ml_phoffset;
+        ptimedata->ls_phoffset = ls_phoffset;
+        ptimedata->lq_phoffset = lq_phoffset;
+        ptimedata->ls_freqoffset = ls_freqoffset;
+        ptimedata->lq_freqoffset = lq_freqoffset;
+        ptimedata->local_time = local_time;
+        ptimedata->sync_count = sync_count;
+        ptimedata->pdelay_count = pdelay_count;
+        ptimedata->asCapable = asCapable;
+        ptimedata->port_state = port_state;
+        ptimedata->process_id = process_id;
+        ptimedata->lb_freqoffset = lb_freqoffset;
+        ptimedata->lb_phoffset = lb_phoffset;
+        ptimedata->d_status = 0xabcdef;
+        rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
+        rSync->reverseSyncRate = ptimedata->reverseSyncRate;
+        rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;
+        if ((ptimedata->port_state == PTP_SLAVE) ||
+                ((ptimedata->port_state == PTP_MASTER) &&
+                 (ptimedata->reverseSyncEnabled == 1) &&
+                 (process_path == PROCESS_MESSAGE_PATH))) {
+            ptimedata->ml_phoffset = ml_phoffset;
+        } else if (ptimedata->reverseSyncEnabled == 0) {
+            ptimedata->ml_phoffset = 0;
+        }
+
+#ifdef USE_CARVEOUT_GPTP
+        /* Read 64 bits tick counter from QTMR0_F0V2_QTMR_V2
+         * and write to the end of shared memory
+         */
+        uint64_t* current_tick = (uint64_t*)(shm_buffer_vfio + 0x1000 - sizeof(uint64_t));
+        int64_t* ptp_qtimer_offset = (int64_t*)(shm_buffer_vfio + 0x1000 - 2 * sizeof(
+                uint64_t));
+        uint64_t* ptp_sync_time = (uint64_t*)(shm_buffer_vfio + 0x1000 - 5 * sizeof(
+                uint64_t));
+        uint64_t* qtimer_sync_time = (uint64_t*)(shm_buffer_vfio + 0x1000 - 6 * sizeof(
+                                         uint64_t));
+        uint64_t* qtimer_inc_ratio = (uint64_t*)(shm_buffer_vfio + 0x1000 - 7 * sizeof(
+                                         uint64_t));
+        uint32_t* a_lock1 = (uint32_t*)(shm_buffer_vfio + 0x1000 - 7 * sizeof(
+                                            uint64_t) - sizeof(uint32_t));
+        uint32_t* a_lock2 = (uint32_t*)(shm_buffer_vfio + 0x1000 - 7 * sizeof(
+                                            uint64_t) - 2 * sizeof(uint32_t));
+        uint32_t* d_status = (uint32_t*)(shm_buffer_vfio + 0x1000 - 10 * sizeof(
+                                             uint64_t)); //location has to match the ptp-virtual
+        uint64_t current_gptp_time = 0;
+        uint64_t qtimer_tick = 0;
+        uint64_t gptp_time_ns = 0;
+        uint64_t gptp_time_s = 0;
+        uint64_t gptp_time_s_pre = 0;
+        a_lock1++;
+        //InterruptDisable();
+        while (1) {
+            gptp_time_s_pre = in32(ptp_base_addr + PTP_SEC_OFFSET);
+            gptp_time_ns = in32(ptp_base_addr + PTP_NANO_SEC_OFFSET);
+            qtimer_tick = in64((uintptr_t)qtimer_base_addr);
+            gptp_time_s = in32(ptp_base_addr + PTP_SEC_OFFSET);
+            if (gptp_time_s == gptp_time_s_pre) {
+                break;
+            }
+        }
+        //InterruptEnable();
+        current_gptp_time = GET_VALUE(gptp_time_ns, MAC_STNSR_TSSS_LPOS,
+                                      MAC_STNSR_TSSS_HPOS);
+        current_gptp_time = current_gptp_time + (gptp_time_s * 1000000000ull);
+        ptimedata->local_time = current_gptp_time;
+        /*Now Qtimer run with 19.2MHz clock*/
+        uint64_t qtimer_ns = qtimer_tick * (1000000000.0 / 19200000.0);
+        int64_t local_bypqtimer_offset = (int64_t)(qtimer_ns - ptimedata->local_time);
+        *ptp_qtimer_offset = local_bypqtimer_offset;
+        *current_tick = qtimer_tick;
+        *d_status = 0xabcdef; //Just an indication daemon is up
+        if (prev_gptp_sync_time != 0) {
+            *qtimer_inc_ratio = (2 * prev_qtimer_inc_ratio) / 3 + ((
+                                    ptimedata->local_time - prev_gptp_sync_time) * 1000000000) / ((
+                                                qtimer_ns - prev_qtimer_sync_time)) / 3;
+            prev_qtimer_inc_ratio = *qtimer_inc_ratio;
+        } else {
+            *qtimer_inc_ratio = prev_qtimer_inc_ratio;
+        }
+        *ptp_sync_time = prev_gptp_sync_time = ptimedata->local_time;
+        *qtimer_sync_time = prev_qtimer_sync_time = qtimer_ns;
+        a_lock2++;
+#endif
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t*)shm_buffer_vfio);
+      }
+}
+#endif
 
 bool LinuxSharedMemoryIPC::update(
     int64_t ml_phoffset,
@@ -1305,7 +1420,7 @@ bool LinuxSharedMemoryIPC::update(
     uint32_t pdelay_count,
     PortState port_state,
     bool asCapable,
-    RsyncStatus_t* rSync)
+    RsyncStatus_t* rSync, uint32_t process_path)
 {
     int buf_offset = 0;
     pid_t process_id = getpid();
@@ -1317,7 +1432,6 @@ bool LinuxSharedMemoryIPC::update(
         pthread_mutex_lock((pthread_mutex_t*)shm_buffer);
         buf_offset += sizeof(pthread_mutex_t);
         ptimedata = (gPtpTimeData*)(shm_buffer + buf_offset);
-        ptimedata->ml_phoffset = ml_phoffset;
         ptimedata->ls_phoffset = ls_phoffset;
         ptimedata->lq_phoffset = lq_phoffset;
         ptimedata->ml_freqoffset = ml_freqoffset;
@@ -1331,75 +1445,39 @@ bool LinuxSharedMemoryIPC::update(
         ptimedata->process_id = process_id;
         ptimedata->lb_freqoffset = lb_freqoffset;
         ptimedata->lb_phoffset = lb_phoffset;
+        ptimedata->d_status = 0xabcdef;
         rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
         rSync->reverseSyncRate = ptimedata->reverseSyncRate;
         rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;
-        ptimedata->d_status = 0xabcdef;
-#ifdef USE_CARVEOUT_GPTP
-        /* Read 64 bits tick counter from QTMR0_F0V2_QTMR_V2
-         * and write to the end of shared memory
-         */
-        uint64_t* current_tick = (uint64_t*)(shm_buffer + 0x1000 - sizeof(uint64_t));
-        int64_t* ptp_qtimer_offset = (int64_t*)(shm_buffer + 0x1000 - 2 * sizeof(
-                uint64_t));
-        uint64_t* ptp_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 5 * sizeof(
-                uint64_t));
-        uint64_t* qtimer_sync_time = (uint64_t*)(shm_buffer + 0x1000 - 6 * sizeof(
-                                         uint64_t));
-        uint64_t* qtimer_inc_ratio = (uint64_t*)(shm_buffer + 0x1000 - 7 * sizeof(
-                                         uint64_t));
-        uint32_t* a_lock1 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(
-                                            uint64_t) - sizeof(uint32_t));
-        uint32_t* a_lock2 = (uint32_t*)(shm_buffer + 0x1000 - 7 * sizeof(
-                                            uint64_t) - 2 * sizeof(uint32_t));
-        uint32_t* d_status = (uint32_t*)(shm_buffer + 0x1000 - 10 * sizeof(
-                                             uint64_t)); //location has to match the ptp-virtual
-        uint64_t current_gptp_time = 0;
-        uint64_t qtimer_tick = 0;
-        uint64_t gptp_time_ns = 0;
-        uint64_t gptp_time_s = 0;
-        uint64_t gptp_time_s_pre = 0;
-        a_lock1++;
-        //InterruptDisable();
 
-        while (1) {
-            gptp_time_s_pre = in32(ptp_base_addr + PTP_SEC_OFFSET);
-            gptp_time_ns = in32(ptp_base_addr + PTP_NANO_SEC_OFFSET);
-            qtimer_tick = in64((uintptr_t)qtimer_base_addr);
-            gptp_time_s = in32(ptp_base_addr + PTP_SEC_OFFSET);
-
-            if (gptp_time_s == gptp_time_s_pre) {
-                break;
-            }
+        if ((ptimedata->port_state == PTP_SLAVE) ||
+                ((ptimedata->port_state == PTP_MASTER) &&
+                 (ptimedata->reverseSyncEnabled == 1) &&
+                 (process_path == PROCESS_MESSAGE_PATH))) {
+            ptimedata->ml_phoffset = ml_phoffset;
+        } else if (ptimedata->reverseSyncEnabled == 0) {
+            ptimedata->ml_phoffset = 0;
         }
-
-        //InterruptEnable();
-        current_gptp_time = GET_VALUE(gptp_time_ns, MAC_STNSR_TSSS_LPOS,
-                                      MAC_STNSR_TSSS_HPOS);
-        current_gptp_time = current_gptp_time + (gptp_time_s * 1000000000ull);
-        ptimedata->local_time = current_gptp_time;
-        /*Now Qtimer run with 19.2MHz clock*/
-        uint64_t qtimer_ns = qtimer_tick * (1000000000.0 / 19200000.0);
-        int64_t local_bypqtimer_offset = (int64_t)(qtimer_ns - ptimedata->local_time);
-        *ptp_qtimer_offset = local_bypqtimer_offset;
-        *current_tick = qtimer_tick;
-        *d_status = 0xabcdef; //Just an indication daemon is up
-
-        if (prev_gptp_sync_time != 0) {
-            *qtimer_inc_ratio = (2 * prev_qtimer_inc_ratio) / 3 + ((
-                                    ptimedata->local_time - prev_gptp_sync_time) * 1000000000) / ((
-                                                qtimer_ns - prev_qtimer_sync_time)) / 3;
-            prev_qtimer_inc_ratio = *qtimer_inc_ratio;
-        } else {
-            *qtimer_inc_ratio = prev_qtimer_inc_ratio;
-        }
-
-        *ptp_sync_time = prev_gptp_sync_time = ptimedata->local_time;
-        *qtimer_sync_time = prev_qtimer_sync_time = qtimer_ns;
-        a_lock2++;
-#endif
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t*)shm_buffer);
+#ifdef GPTP_VFIO
+        vfio_ptp(ml_phoffset,
+        ls_phoffset,
+        lq_phoffset,
+        lb_phoffset,
+        ml_freqoffset,
+        ls_freqoffset,
+        lq_freqoffset,
+        lb_freqoffset,
+        local_time,
+        sync_count,
+        pdelay_count,
+        port_state,
+        asCapable,
+        rSync,
+        process_path);
+
+#endif
     }
 
     return true;
@@ -1421,7 +1499,19 @@ bool LinuxSharedMemoryIPC::updateGmId(ClockIdentity& id, uint16_t portNumber)
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if ( shm_buffer != NULL ) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        id.getIdentityString(ptimedata->gmIdentifier);
+        ptimedata->portNumber = portNumber;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
     return true;
 }
 
@@ -1444,6 +1534,21 @@ bool LinuxSharedMemoryIPC::updateSyncStatus(bool is_sync, PortState port_state)
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if (shm_buffer != NULL) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        ptimedata->sync_status = is_sync;
+        ptimedata->port_state = port_state;
+        memcpy(ptimedata->ptp_dev_index, ptp_dev_index, PTP_CLOCK_DEVICE_LENGTH);
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
+
 
 #ifdef LE_SHARED_MEM
 
@@ -1488,7 +1593,20 @@ bool LinuxSharedMemoryIPC::setProxyMode(int32_t proxy_value)
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
         GPTP_LOG_DEBUG("in_proxy_mode = %" PRIu8 "\n", ptimedata->in_proxy_mode);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if (shm_buffer != NULL) {
+        /* lock */
+        //pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata = (gPtpTimeData*)(shm_buffer + buf_offset);
+        ptimedata->in_proxy_mode = proxy_value;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+        GPTP_LOG_DEBUG("in_proxy_mode = %" PRIu8 "\n", ptimedata->in_proxy_mode);
+    }
+#endif
     return true;
 }
 
@@ -1506,7 +1624,16 @@ bool LinuxSharedMemoryIPC::getSyncStatus(void)
         sync_stat = ptimedata->sync_status;
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if (shm_buffer != NULL) {
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        sync_stat = ptimedata->sync_status;
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
     return sync_stat;
 }
 
@@ -1526,7 +1653,18 @@ bool LinuxSharedMemoryIPC::updateQtimeToMonoOffset(int64_t offset)
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if (shm_buffer != NULL) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        ptimedata->qtime_to_mono_offset = offset;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
     return true;
 }
 
@@ -1549,7 +1687,20 @@ bool LinuxSharedMemoryIPC::update_grandmaster(
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if ( shm_buffer != NULL ) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        memcpy(ptimedata->gptp_grandmaster_id, gptp_grandmaster_id,
+               PTP_CLOCK_IDENTITY_LENGTH);
+        ptimedata->gptp_domain_number = gptp_domain_number;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
     return true;
 }
 
@@ -1589,14 +1740,34 @@ bool LinuxSharedMemoryIPC::update_network_interface(
         /* unlock */
         pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
     }
-
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+    if ( shm_buffer != NULL ) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        memcpy(ptimedata->clock_identity, clock_identity, PTP_CLOCK_IDENTITY_LENGTH);
+        ptimedata->priority1 = priority1;
+        ptimedata->clock_class = clock_class;
+        ptimedata->offset_scaled_log_variance = offset_scaled_log_variance;
+        ptimedata->clock_accuracy = clock_accuracy;
+        ptimedata->priority2 = priority2;
+        ptimedata->domain_number = domain_number;
+        ptimedata->log_sync_interval = log_sync_interval;
+        ptimedata->log_announce_interval = log_announce_interval;
+        ptimedata->log_pdelay_interval = log_pdelay_interval;
+        ptimedata->port_number   = port_number;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+#endif
     return true;
 }
 
 void LinuxSharedMemoryIPC::stop()
 {
     if ( master_offset_buffer != NULL ) {
-#ifndef GPTP_VFIO
         memset(master_offset_buffer, 0x0, SHM_SIZE);
         munmap( master_offset_buffer, SHM_SIZE );
 #ifdef ANDROID
@@ -1624,7 +1795,7 @@ void LinuxSharedMemoryIPC::stop()
         }
 
 #endif
-#else
+#ifdef GPTP_VFIO
         vfio_ptp_device_deinit();
 #endif
     }

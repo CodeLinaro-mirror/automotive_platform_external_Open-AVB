@@ -76,6 +76,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <poll.h>
 #include <pthread.h>
 
+#ifdef ANDROID
+#include <cutils/sockets.h>
+#endif
+
 #include "qgptp_rmgr.h"
 
 #ifdef SYSTEMD_WATCHDOG
@@ -328,6 +332,7 @@ static void gptpDaemonServDeInit(void)
     int ret = 0;
     unlink(ADDRESS);
     close(sock);
+    sock = 0;
     ret = pthread_detach(thread_id);
 
     if (ret != 0) {
@@ -342,29 +347,40 @@ static void gptpDaemonServInit(void)
     socklen_t len = 0;
     int ret = 0;
     umask(S_IRGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH);
-    /* Create gptp daemon socket */
-    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+#ifdef ANDROID
+    sock = android_get_control_socket("gptp_socket");
 
-    if (sock == -1) {
+    if (sock < 0) {
         GPTP_LOG_ERROR("Socket creation failed : %s\n", strerror(errno));
-        exit(1);
     }
 
-    GPTP_LOG_INFO("Socket creation successful\n");
-    fcntl(sock, F_SETFL, (fcntl (sock, F_GETFL, 0) | O_NONBLOCK));
-    memset(&sock_addr_un, 0, sizeof(sockaddr_un));
-    sock_addr_un.sun_family = AF_UNIX;
-    snprintf(sock_addr_un.sun_path, (sizeof(sock_addr_un.sun_path) - 1), ADDRESS);
-    len = sizeof(sock_addr_un);
-    unlink(ADDRESS);
+#endif
 
-    if ((bind(sock, (struct sockaddr*) &sock_addr_un, len)) == -1) {
-        GPTP_LOG_ERROR("bind() failed : %s\n", strerror(errno));
-        close(sock);
-        exit(1);
+    if (sock <= 0) {
+        /* Create gptp daemon socket */
+        sock = socket(AF_UNIX, SOCK_STREAM, 0);
+
+        if (sock == -1) {
+            GPTP_LOG_ERROR("Socket creation failed : %s\n", strerror(errno));
+            exit(1);
+        }
+
+        GPTP_LOG_INFO("Socket creation successful\n");
+        fcntl(sock, F_SETFL, (fcntl (sock, F_GETFL, 0) | O_NONBLOCK));
+        memset(&sock_addr_un, 0, sizeof(sockaddr_un));
+        sock_addr_un.sun_family = AF_UNIX;
+        snprintf(sock_addr_un.sun_path, (sizeof(sock_addr_un.sun_path) - 1), ADDRESS);
+        len = sizeof(sock_addr_un);
+        unlink(ADDRESS);
+
+        if ((bind(sock, (struct sockaddr*) &sock_addr_un, len)) == -1) {
+            GPTP_LOG_ERROR("bind() failed : %s\n", strerror(errno));
+            close(sock);
+            exit(1);
+        }
+
+        GPTP_LOG_INFO("Socket bind successful\n");
     }
-
-    GPTP_LOG_INFO("Socket bind successful\n");
 
     if ((listen (sock, MAX_CLIENTS_COUNT)) == -1) {
         GPTP_LOG_ERROR("listen() failed : %s", strerror(errno));
@@ -520,6 +536,8 @@ int main(int argc, char **argv)
     portInit.stbMSyncLossThreshold =
         CommonPort::STBM_SYNCLOSS_THRESH;
     portInit._peer_rate_offset = 1.0;
+    portInit.sct_buffer = NULL;
+    portInit.sct_shm_fd = -1;
     LinuxNetworkInterfaceFactory *default_factory =
         new LinuxNetworkInterfaceFactory;
     OSNetworkInterfaceFactory::registerFactory
@@ -703,7 +721,7 @@ int main(int argc, char **argv)
         PLAT_strlcpy(ifname_eth, argv[1], IFNAME_SIZE);
         ifname = new InterfaceName( argv[1], strlen(argv[1]) );
     } else if (!use_config_file) {
-        printf( "Interface name required/ ini file is required\n" );
+        GPTP_LOG_ERROR( "Interface name required/ ini file is required\n" );
         print_usage( argv[0] );
         CLEANUP_RESOURCES();
         return -1;
@@ -762,7 +780,10 @@ int main(int argc, char **argv)
         GptpIniParser iniParser(config_file_path);
 
         if (iniParser.parserError() < 0) {
-            GPTP_LOG_ERROR("Cant parse ini file. Aborting file reading.");
+            GPTP_LOG_ERROR("Can't parse ini file. Aborting file reading..\nExiting gptp daemon.");
+            GPTP_LOG_UNREGISTER();
+            CLEANUP_RESOURCES();
+            return -1;
         } else {
             GPTP_LOG_INFO("priority1 = %d", iniParser.getPriority1());
             GPTP_LOG_INFO("announceReceiptTimeout: %d",
@@ -851,10 +872,17 @@ int main(int argc, char **argv)
 
     portInit.net_label = ifname;
 
-    if ( !ipc->init( ipc_arg, portInit.reverseSyncEnabled, portInit.reverseSyncDomain, portInit.reverseSyncRate) ) {
+    if ( !ipc->init( ipc_arg, portInit.reverseSyncEnabled,
+                     portInit.reverseSyncDomain, portInit.reverseSyncRate) ) {
         delete ipc;
         ipc = NULL;
+        GPTP_LOG_ERROR( "ipc init failed\n" );
+        GPTP_LOG_UNREGISTER();
+        CLEANUP_RESOURCES();
+        return -1;
     }
+
+    qgptp_rmgr_init(&portInit.sct_shm_fd, &portInit.sct_buffer);
 
     if ((strcmp(ifname_eth, "eth0") != 0) && (strcmp(ifname_eth, "eth1") != 0) ) {
         GPTP_LOG_INFO( "Valid Interface name required\n" );
@@ -1078,7 +1106,6 @@ int main(int argc, char **argv)
 #endif
     GPTP_LOG_UNREGISTER();
     CLEANUP_RESOURCES();
-
     return 0;
 }
 

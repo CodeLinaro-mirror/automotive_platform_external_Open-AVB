@@ -689,6 +689,9 @@ class LinuxSharedMemoryIPC: public OS_IPC
         int shm_fd;
         int gptp_fd;
         char *master_offset_buffer;
+#ifdef GPTP_VFIO
+        char *master_offset_buffer_vfio;
+#endif
         int err;
     public:
         /**
@@ -699,6 +702,9 @@ class LinuxSharedMemoryIPC: public OS_IPC
             shm_fd = 0;
             err = 0;
             master_offset_buffer = NULL;
+#ifdef GPTP_VFIO
+            master_offset_buffer_vfio = NULL;
+#endif
         };
         /**
          * @brief Destroys and unlinks shared memory
@@ -744,7 +750,8 @@ class LinuxSharedMemoryIPC: public OS_IPC
             uint32_t pdelay_count,
             PortState port_state,
             bool asCapable,
-            RsyncStatus_t *rSync );
+            RsyncStatus_t *rSync,
+            uint32_t process_path);
 
         /**
          * @brief Updates grandmaster IPC values
@@ -810,6 +817,32 @@ class LinuxSharedMemoryIPC: public OS_IPC
         * @brief Updates Qtimer to monotonic time offset
         * @return TRUE
         */
+#ifdef GPTP_VFIO
+        virtual void vfio_ptp(
+        int64_t ml_phoffset,
+        int64_t ls_phoffset,
+        int64_t lq_phoffset,
+        int64_t lb_phoffset,
+        FrequencyRatio ml_freqoffset,
+        FrequencyRatio ls_freqoffset,
+        FrequencyRatio lq_freqoffset,
+        FrequencyRatio lb_freqoffset,
+        uint64_t local_time,
+        uint32_t sync_count,
+        uint32_t pdelay_count,
+        PortState port_state,
+        bool asCapable,
+        RsyncStatus_t* rSync,
+        uint32_t process_path);
+#endif
+        /**
+         * @brief Updates grandmaster IPC values for GVM
+         *
+         * @param gptp_grandmaster_id Current grandmaster id (all 0's if no grandmaster selected)
+         * @param gptp_domain_number gPTP domain number
+         *
+         * @return void
+         */
 
         virtual bool updateQtimeToMonoOffset(int64_t offset);
 

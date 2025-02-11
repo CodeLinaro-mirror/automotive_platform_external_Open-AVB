@@ -592,7 +592,7 @@ int realtime_adjust_offset(long long offset)
     ret = clock_adjtime(CLOCK_REALTIME, &tx);
 
     if (ret < 0) {
-        GPTP_LOG_ERROR("failed to realtime_adjust_offset %s",strerror(errno));
+        GPTP_LOG_ERROR("failed to realtime_adjust_offset %s", strerror(errno));
         return ret;
     }
 
@@ -607,7 +607,7 @@ int realtime_adjust_freq(float freq_offset)
     tx.freq += long(fmodf( freq_offset, 1.0 ) * 65536.0);
 
     if (clock_adjtime(CLOCK_REALTIME, &tx) < 0) {
-        GPTP_LOG_ERROR("failed to realtime_adjust_freq %s",strerror(errno));
+        GPTP_LOG_ERROR("failed to realtime_adjust_freq %s", strerror(errno));
         return -1;
     }
 
@@ -625,7 +625,7 @@ int tai_adjust(long long offset)
     ret = clock_adjtime(CLOCK_REALTIME, &tx);
 
     if (ret < 0) {
-        GPTP_LOG_ERROR("failed to adjust TAI offset %s",strerror(errno));
+        GPTP_LOG_ERROR("failed to adjust TAI offset %s", strerror(errno));
         return ret;
     }
 
@@ -637,6 +637,7 @@ void synchronize_clocks(CommonPort *port)
 {
     uint8_t syncClocks = port->getSyncClocks();
     uint64_t curr_gptp = 0;
+    static int ppm_miss_count = 0;
 
     if (syncClocks & 0x1) {
         uint64_t curr_real = 0;
@@ -652,7 +653,8 @@ void synchronize_clocks(CommonPort *port)
         delta_real = curr_real - curr_gptp;
         phase_error = (long double) - delta_real;
 
-        if ((fabsl(phase_error) > PHASE_ERROR_THRESHOLD) || prev_gptp_time == 0) {
+        if ((fabsl(phase_error) > PHASE_ERROR_THRESHOLD) || prev_gptp_time == 0
+                || ppm_miss_count > 10) {
             realtime_adjust_offset(phase_error);
         } else {
             FrequencyRatio freq_offset = 0;
@@ -666,7 +668,7 @@ void synchronize_clocks(CommonPort *port)
                 freq_offset = 1.0;
             } else {
                 GPTP_LOG_DEBUG("Real to Gptp clock ratio (%Lf) delta %lld %lld",
-                                 freq_offset, (curr_real - prev_real_time), (curr_gptp - prev_gptp_time));
+                               freq_offset, (curr_real - prev_real_time), (curr_gptp - prev_gptp_time));
             }
 
             float syncPerSec = (float)(1.0 / pow((float)2, port->getSyncInterval()));
@@ -676,10 +678,12 @@ void synchronize_clocks(CommonPort *port)
 
             if ( _ppm < LOWER_FREQ_LIMIT ) {
                 _ppm = LOWER_FREQ_LIMIT;
-            }
-
-            if ( _ppm > UPPER_FREQ_LIMIT ) {
+                ppm_miss_count++;
+            } else if ( _ppm > UPPER_FREQ_LIMIT ) {
                 _ppm = UPPER_FREQ_LIMIT;
+                ppm_miss_count++;
+            } else {
+                ppm_miss_count = 0;
             }
 
             realtime_adjust_freq(_ppm);
@@ -713,7 +717,8 @@ void IEEE1588Clock::setMasterOffset
   FrequencyRatio local_q_freq_offset,
   int64_t local_boot_offset, Timestamp boot_time,
   FrequencyRatio local_boot_freq_offset, unsigned sync_count,
-  unsigned pdelay_count, PortState port_state, bool asCapable )
+  unsigned pdelay_count, PortState port_state, bool asCapable,
+  uint32_t process_path )
 {
     uint64_t curr_gptp = 0;
     _master_local_freq_offset = master_local_freq_offset;
@@ -730,7 +735,8 @@ void IEEE1588Clock::setMasterOffset
     if (port->sct_buffer) {
         pthread_mutex_lock((pthread_mutex_t *) &port->sct_buffer->lock);
         port->sct_buffer->syncInterval.sync_interval = port->getSyncInterval();
-        port->sct_buffer->syncInterval.pdelay_interval = port->getoperLogPdelayReqInterval();
+        port->sct_buffer->syncInterval.pdelay_interval =
+            port->getoperLogPdelayReqInterval();
         pthread_mutex_unlock((pthread_mutex_t *) &port->sct_buffer->lock);
     }
 
@@ -790,7 +796,7 @@ void IEEE1588Clock::setMasterOffset
             master_local_freq_offset, local_system_freq_offset_avg.get(),
             local_q_freq_offset_avg.get(), local_boot_freq_offset_avg.get(),
             TIMESTAMP_TO_NS(local_time),
-            sync_count, pdelay_count, port_state, asCapable, &rSync);
+            sync_count, pdelay_count, port_state, asCapable, &rSync, process_path);
 
         if (prev_rsync_state != rSync.reverseSyncEnabled) {
             port->setRsync(&rSync);

@@ -103,7 +103,7 @@ class OS_IPC
             uint32_t pdelay_count,
             PortState port_state,
             bool asCapable,
-            RsyncStatus_t *rSync ) = 0;
+            RsyncStatus_t *rSync, uint32_t process_path ) = 0;
 
         /**
          * @brief  Updates grandmaster IPC values

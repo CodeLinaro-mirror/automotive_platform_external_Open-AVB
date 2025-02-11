@@ -169,66 +169,54 @@ static float get_ppm(char *ifname)
 }
 
 
-int qgptp_rmgr_init(const char *ifname, CommonPort *port)
+
+int qgptp_rmgr_init(int* sct_shm_fd, sct_gptp_data **sct_buffer)
 {
-    int ret;
     int err;
-
-    if (!port) {
-        GPTP_LOG_ERROR("qgptp_rmgr_init Failed as port is null\n");
-        return -1;
-    }
-
     struct group *grp;
-
     const char *group_name;
-
     pthread_mutexattr_t shared;
-
     mode_t oldumask = umask(0);
-
     group_name = DEFAULT_GROUPNAME;
-
     grp = getgrnam( group_name );
 
     if ( grp == NULL ) {
         GPTP_LOG_INFO( "Group %s not found, will try root (0) instead", group_name );
     }
 
-    qgptp_port = port;
 #ifdef ANDROID
-    qgptp_port->sct_shm_fd = open( SCT_SHM_NAME, O_RDWR | O_CREAT, 0666 );
+    *sct_shm_fd = open( SCT_SHM_NAME, O_RDWR | O_CREAT, 0666 );
 #else
-    qgptp_port->sct_shm_fd = shm_open( SCT_SHM_NAME, O_RDWR | O_CREAT, 0660 );
+    *sct_shm_fd = shm_open( SCT_SHM_NAME, O_RDWR | O_CREAT, 0660 );
 #endif
 
-    if ( qgptp_port->sct_shm_fd == -1 ) {
+    if ( *sct_shm_fd == -1 ) {
         GPTP_LOG_ERROR( "shm_open(): %s", strerror(errno) );
-        goto exit_error;
+        goto exit_unlink;
     }
 
     (void) umask(oldumask);
 
-    if (fchown(qgptp_port->sct_shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
+    if (fchown(*sct_shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
         GPTP_LOG_ERROR("shm_open(): Failed to set ownership");
     }
 
-    if ( ftruncate( qgptp_port->sct_shm_fd, SCT_SHM_SIZE ) == -1 ) {
+    if ( ftruncate( *sct_shm_fd, SCT_SHM_SIZE ) == -1 ) {
         GPTP_LOG_ERROR( "ftruncate()" );
         goto exit_unlink;
     }
 
-    qgptp_port->sct_buffer = (sct_gptp_data *) mmap
-                             ( NULL, SCT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_LOCKED | MAP_SHARED,
-                               qgptp_port->sct_shm_fd, 0 );
+    *sct_buffer = (sct_gptp_data *) mmap
+                  ( NULL, SCT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_LOCKED | MAP_SHARED,
+                    *sct_shm_fd, 0 );
 
-    if (  qgptp_port->sct_buffer == (sct_gptp_data *) - 1 ) {
+    if (  *sct_buffer == (sct_gptp_data *) - 1 ) {
         GPTP_LOG_ERROR( "mmap()" );
-        qgptp_port->sct_buffer = NULL;
+        *sct_buffer = NULL;
         goto exit_unlink;
     }
 
-    memset(qgptp_port->sct_buffer, 0x0, SCT_SHM_SIZE);
+    memset(*sct_buffer, 0x0, SCT_SHM_SIZE);
     /*create mutex attr */
     err = pthread_mutexattr_init(&shared);
 
@@ -242,7 +230,7 @@ int qgptp_rmgr_init(const char *ifname, CommonPort *port)
     pthread_mutexattr_setpshared(&shared, 1);
     pthread_mutexattr_setprotocol(&shared, PTHREAD_PRIO_INHERIT);
     /*create a mutex */
-    err = pthread_mutex_init((pthread_mutex_t *)  &qgptp_port->sct_buffer->lock,
+    err = pthread_mutex_init((pthread_mutex_t *)  & (*sct_buffer)->lock,
                              &shared);
 
     if (err != 0) {
@@ -252,29 +240,44 @@ int qgptp_rmgr_init(const char *ifname, CommonPort *port)
         goto exit_unlink;
     }
 
-    GPTP_LOG_INFO("qgptp_rmgr_init success %s", SCT_SHM_NAME);
-    return true;
+    return 0;
 exit_unlink:
 #ifdef ANDROID
 
-    if (qgptp_port->sct_shm_fd != -1) {
-        close(qgptp_port->sct_shm_fd);
-        qgptp_port->sct_shm_fd = -1;
+    if (*sct_shm_fd != -1) {
+        close(*sct_shm_fd);
+        *sct_shm_fd = -1;
     }
 
     //unlink( SCT_SHM_NAME );
 #else
 
-    if (qgptp_port->sct_shm_fd != -1) {
-        close(qgptp_port->sct_shm_fd);
-        qgptp_port->sct_shm_fd = -1;
+    if (*sct_shm_fd != -1) {
+        close(*sct_shm_fd);
+        *sct_shm_fd = -1;
     }
 
-    //shm_unlink( SCT_SHM_NAME );
 #endif
-exit_error:
     GPTP_LOG_INFO("qgptp_rmgr_init error exit %s", SCT_SHM_NAME);
-    return false;
+    return -1;
+}
+
+int qgptp_rmgr_setport(CommonPort *port)
+{
+    if (!port) {
+        GPTP_LOG_ERROR("qgptp_rmgr_init Failed as port is null\n");
+        return -1;
+    }
+
+    qgptp_port = port;
+
+    if (!qgptp_port->sct_buffer) {
+        GPTP_LOG_ERROR("qgptp_rmgr_init Failed as qgptp_port->sct_buffer is null\n");
+        return -1;
+    }
+
+    GPTP_LOG_INFO("qgptp_rgptp_setport success");
+    return 0;
 }
 
 int qgptp_rmgr_deinit()
@@ -296,6 +299,7 @@ int qgptp_rmgr_deinit()
 
         memset(qgptp_port->sct_buffer, 0x0, SCT_SHM_SIZE);
         munmap(qgptp_port->sct_buffer, SCT_SHM_SIZE);
+        qgptp_port->sct_buffer = NULL;
 #ifdef ANDROID
 
         if (qgptp_port->sct_shm_fd != -1) {
