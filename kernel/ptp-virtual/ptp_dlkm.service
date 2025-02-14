@@ -11,7 +11,7 @@ DefaultDependencies=no
 Restart=on-failure
 RemainAfterExit=yes
 ExecStart=/bin/sh -c '/sbin/insmod /lib/modules/$(uname -r)/extra/ptp.ko'
-ExecStop=/bin/sh -c '/sbin/rmmod ptp'
+ExecStop=/bin/sh -c '/sbin/rmmod ptp_dlkm'
 
 [Install]
 WantedBy=sockets.target

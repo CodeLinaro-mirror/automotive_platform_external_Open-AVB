@@ -8,7 +8,7 @@ LOCAL_CFLAGS += -DPTP_SW_QTIMER=1 -DSYSTEMD
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/common \
                     $(LOCAL_PATH)/linux/src
 
-LOCAL_SHARED_LIBRARIES += liblog libutils
+LOCAL_SHARED_LIBRARIES += liblog libutils libcutils
 
 LOCAL_SRC_FILES := linux/src/daemon_cl.cpp \
                    common/ptp_message.cpp \
@@ -29,6 +29,10 @@ LOCAL_SRC_FILES := linux/src/daemon_cl.cpp \
 
 LOCAL_MODULE := qgptp
 
+ifeq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
+LOCAL_INIT_RC := gptp_daemon.rc
+endif
+
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin
 
 include $(BUILD_EXECUTABLE)
@@ -36,6 +40,6 @@ include $(BUILD_EXECUTABLE)
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := DATA
 LOCAL_MODULE := gptp_cfg.ini
-LOCAL_SRC_FILES := $(LOCAL_MODULE)
+LOCAL_SRC_FILES := gptp_cfg_au.ini
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/etc
 include $(BUILD_PREBUILT)

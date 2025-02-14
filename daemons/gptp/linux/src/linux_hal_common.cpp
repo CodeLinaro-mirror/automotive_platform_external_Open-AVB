@@ -1091,7 +1091,7 @@ LinuxThread::~LinuxThread()
 
 LinuxSharedMemoryIPC::~LinuxSharedMemoryIPC()
 {
-    if (master_offset_buffer != (char*) -1) {
+    if ((master_offset_buffer != (char*) -1) && (master_offset_buffer != NULL)) {
         memset(master_offset_buffer, 0x0, SHM_SIZE);
         munmap(master_offset_buffer, SHM_SIZE);
     }

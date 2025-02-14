@@ -271,7 +271,7 @@ static void gptpClkDeInit(int gptp_phc_fd)
     gPtpClockid = -1;
 }
 
-
+#ifndef AVB_FEATURE_GVM_MODE
 static bool gptpSCTMemInit()
 {
     if (gPtpSCTShmFd  == -1) {
@@ -350,7 +350,7 @@ static void gptpSCTMemDeinit()
         gPtpSCTShmFd = -1;
     }
 }
-
+#endif
 
 /* gptp core function to deinit gptp scaling */
 static void gptpMemDeinit(int gptp_shm_fd, char *gptp_mmap)
@@ -366,7 +366,9 @@ static void gptpMemDeinit(int gptp_shm_fd, char *gptp_mmap)
     }
 
     GPTP_LOG_INFO("gptpMemDeinit %s\n", SHM_NAME);
+#ifndef AVB_FEATURE_GVM_MODE
     gptpSCTMemDeinit();
+#endif
 }
 
 
@@ -430,10 +432,12 @@ static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
         return false;
     }
 
+#ifndef AVB_FEATURE_GVM_MODE
     if (!gptpSCTMemInit()) {
         gptpMemDeinit(*gptp_shm_fd, *gptp_mmap);
         return false;
     }
+#endif
 
     return true;
 }
@@ -776,7 +780,9 @@ static void *gptpDaemonSrvConnect(void *arg)
                 } else if (FD_ISSET(sock, &readfds)) {
                     ret = read(sock, buf, BUF_SIZE);
 
-                    if (ret == 0) {
+                    if (ret <= 0) {
+                        GPTP_LOG_INFO("Server closed the connection: ret: %d error:%s \n", ret,
+                                      strerror(errno));
                         close(sock);
                         sock = -1;
                     }
@@ -823,6 +829,7 @@ static int gptpDaemonClientInit(void)
     if (gptpTimeInit()) {
         GPTP_LOG_INFO("gptpDaemonSrvConnect: success\n");
         bInitialized = true;
+        bServiceConnect = true;
     } else {
         if (pipefd[0] != -1) {
             close(pipefd[0]);
@@ -1437,6 +1444,19 @@ bool gptpGetCurPtpTime_s(uint64_t *gptp_time_cur, bool* inSync)
         return false;
     }
 
+    if (!gptpScaling(&gPtpTD, gPtpMmap)) {
+        return false;
+    }
+
+    if (gPtpTD.d_status != DAEMON_STATUS_UP) {
+        GPTP_LOG_WARNING("Daemon not up!!");
+        return false;
+    }
+
+    if (inSync) {
+        *inSync = gPtpTD.sync_status;
+    }
+
     if (clock_gettime(gPtpClockid, &ts)) {
         GPTP_LOG_ERROR("clock_gettime failed");
         return false;
@@ -1514,7 +1534,7 @@ bool gptpGetPDelayMeasurementData(pDelayMeasurementData_t *delayData)
            sizeof(pDelayMeasurementData_t));
     pthread_mutex_unlock((pthread_mutex_t *) &data->lock);
     ret = true;
-    GPTP_LOG_INFO("libgptp library: resp_clockIdentity " CLK_STR "",
+    GPTP_LOG_DEBUG("libgptp library: resp_clockIdentity " CLK_STR "",
                   CLK_TO_STR(delayData->resp_clockIdentity));
 #ifdef LIBGPTP_DEBUG
     GPTP_LOG_INFO("qgptp PDelay Measurement Data: request_origin_timestamp %"PRIu64" request_receipt_timestamp %"PRIu64"\
