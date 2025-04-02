@@ -71,6 +71,9 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #include <ptptypes.hpp>
 
+/*gptp sync parameter on shared memory */
+#define DEAMON_UP 0xabcdef
+
 /**
  * @brief Provides a data structure for gPTP time
  */

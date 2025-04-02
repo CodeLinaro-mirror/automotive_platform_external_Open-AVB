@@ -42,7 +42,8 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
-extern int qgptp_rmgr_init(const char *name, CommonPort *port);
+extern int qgptp_rmgr_init(int* sct_shm_fd, sct_gptp_data **sct_buffer);
+extern int qgptp_rmgr_setport(CommonPort *port);
 extern int qgptp_rmgr_deinit();
 extern uint64_t qgptp_readtime(char *ifname);
 extern uintptr_t get_emac_base_addr(char *ifname);

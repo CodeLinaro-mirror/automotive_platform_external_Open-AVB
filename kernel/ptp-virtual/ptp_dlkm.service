@@ -4,12 +4,14 @@
 [Unit]
 Description= Load ptp dlkm service
 AssertPathExists=/lib/modules/
+Conflicts=shutdown.target
+DefaultDependencies=no
 
 [Service]
 Restart=on-failure
 RemainAfterExit=yes
 ExecStart=/bin/sh -c '/sbin/insmod /lib/modules/$(uname -r)/extra/ptp.ko'
-ExecStop=/bin/sh -c '/sbin/rmmod ptp'
+ExecStop=/bin/sh -c '/sbin/rmmod ptp_dlkm'
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sockets.target

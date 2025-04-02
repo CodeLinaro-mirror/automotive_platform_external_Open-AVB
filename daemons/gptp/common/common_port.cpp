@@ -59,6 +59,7 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     neighbor_prop_delay_thresh = portInit->neighborPropDelayThreshold;
     announceReceiptTimeout = portInit->announceReceiptTimeout;
     syncReceiptTimeout = portInit->syncReceiptTimeout;
+    syncClocks = portInit->syncClocks;
     net_label = portInit->net_label;
     link_thread = thread_factory->createThread();
     listening_thread = thread_factory->createThread();
@@ -78,11 +79,11 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     operLogPdelayReqInterval = &(portInit->operLogPdelayReqInterval);
     log_mean_announce_interval = 0;
     pdelay_count = 0;
-    sct_shm_fd = -1;
-    sct_buffer = NULL;
+    sct_shm_fd = portInit->sct_shm_fd;
+    sct_buffer = portInit->sct_buffer;
     asCapable = false;
     link_speed = INVALID_LINKSPEED;
-    qgptp_rmgr_init(portInit->ifname, this);
+    qgptp_rmgr_setport(this);
     memset(&counters, 0x0, sizeof(counters));
     memset(&syncInfo, 0x0, sizeof(syncMesaurementData_t));
     memset(&pdelayInfo, 0x0, sizeof(pDelayMeasurementData_t));
@@ -798,17 +799,15 @@ bool CommonPort::processEvent( Event e )
                     clock->calcLocalSystemClockRateDifference
                     ( device_time, system_time, q_time, boot_time, &local_q_freq_offset,
                       &local_boot_freq_offset );
-                if (!getRsync()) { //Update only when reverse sync disabled.
-                    clock->setMasterOffset
-                    ( this, 0, device_time, 1.0,
-                      local_system_offset, system_time,
-                      local_system_freq_offset,
-                      local_q_offset, q_time,
-                      local_q_freq_offset,
-                      local_boot_offset, boot_time,
-                      local_boot_freq_offset, getSyncCount(),
-                      pdelay_count, port_state, asCapable );
-                }
+                clock->setMasterOffset
+                ( this, 0, device_time, 1.0,
+                  local_system_offset, system_time,
+                  local_system_freq_offset,
+                  local_q_offset, q_time,
+                  local_q_freq_offset,
+                  local_boot_offset, boot_time,
+                  local_boot_freq_offset, getSyncCount(),
+                  pdelay_count, port_state, asCapable, SYNC_INTERVAL_TIMEOUT_PATH );
             }
             // Call media specific action for completed sync
             syncDone();
@@ -820,7 +819,7 @@ bool CommonPort::processEvent( Event e )
 
         case RSYNC_INTERVAL_TIMEOUT_EXPIRES: {
                 GPTP_LOG_VERBOSE("RSYNC_INTERVAL_TIMEOUT_EXPIRES occured, getSyncInterval = %d, getRSyncRate = %f",
-                              getSyncInterval(), clock->getRSyncRate());
+                                 getSyncInterval(), clock->getRSyncRate());
                 ret = true;
                 ret = _processEvent( e );
                 startSyncIntervalTimer

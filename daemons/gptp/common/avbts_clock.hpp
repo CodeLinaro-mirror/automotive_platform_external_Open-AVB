@@ -652,7 +652,8 @@ class IEEE1588Clock
           FrequencyRatio local_q_freq_offset,
           int64_t local_boot_offset, Timestamp boot_time,
           FrequencyRatio local_boot_freq_offset, unsigned sync_count,
-          unsigned pdelay_count, PortState port_state, bool asCapable );
+          unsigned pdelay_count, PortState port_state, bool asCapable,
+          uint32_t process_path );
 
         /**
          * @brief  Get the IEEE1588Clock identity value

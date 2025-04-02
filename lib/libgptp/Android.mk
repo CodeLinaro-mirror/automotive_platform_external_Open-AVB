@@ -30,6 +30,13 @@ LOCAL_SHARED_LIBRARIES += libuhab libion
 endif
 endif
 
+ifeq ($(TARGET_BOARD_SUFFIX),_gvm)
+ifneq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
+LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
+LOCAL_SHARED_LIBRARIES += libuhab libion
+endif
+endif
+
 LOCAL_CFLAGS += -DANDROID -DSYSTEMD
 
 LOCAL_CLANG := true

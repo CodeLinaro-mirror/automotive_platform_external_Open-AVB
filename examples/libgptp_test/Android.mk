@@ -24,6 +24,13 @@ LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
 endif
 endif
 
+LOCAL_CFLAGS += -DANDROID
+ifeq ($(TARGET_BOARD_SUFFIX),_gvm)
+ifneq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
+LOCAL_CFLAGS += -DAVB_FEATURE_GVM_MODE=1
+endif
+endif
+
 LOCAL_SHARED_LIBRARIES += \
      libcutils \
      liblog

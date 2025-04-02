@@ -59,6 +59,15 @@ extern uint64_t get_ntn_time(char *ifname);
 class IEEE1588Clock;
 
 /**
+ * @brief To know which process path this update function is called to modify offset
+ */
+typedef enum {
+    SYNC_INTERVAL_TIMEOUT_PATH = 0,
+    PROCESS_MESSAGE_PATH
+} ProcessPath_t;
+
+
+/**
  * @brief PortIdentity interface
  * Defined at IEEE 802.1AS Clause 8.5.2
  */
@@ -254,97 +263,6 @@ typedef struct {
     bool driftCountValid;
 } PortAutoTimeSyncDiagData_t;
 
-/**
- * @brief Structure for initializing the port class
- */
-typedef struct {
-    /* clock IEEE1588Clock instance */
-    IEEE1588Clock * clock;
-
-    /* index Interface index */
-    uint16_t index;
-
-    /* timestamper Hardware timestamper instance */
-    CommonTimestamper * timestamper;
-
-    /* net_label Network label */
-    InterfaceLabel *net_label;
-
-    /* automotive_profile set the AVnu automotive profile */
-    bool automotive_profile;
-
-    /* Set to true if the port is the grandmaster. Used for fixed GM in
-     * the the AVnu automotive profile */
-    bool isGM;
-
-    /* Set to true if the port is the grandmaster. Used for fixed GM in
-     * the the AVnu automotive profile */
-    bool testMode;
-
-    /* Set to true if the port's network interface is up. Used to filter
-     * false LINKUP/LINKDOWN events */
-    bool linkUp;
-    /*Set to true if the port  AsCapable is true*/
-    bool asCapable;
-
-    /* interfacename */
-    char ifname[IFNAME_SIZE];
-    /* gPTP 10.2.4.4 */
-    int8_t initialLogSyncInterval;
-
-    /* gPTP 11.5.2.2 */
-    int8_t initialLogPdelayReqInterval;
-
-    /* CDS 6.2.1.5 */
-    int8_t operLogPdelayReqInterval;
-
-    /* CDS 6.2.1.6 */
-    int8_t operLogSyncInterval;
-
-    /*802.1AS Recovered Clock Quality Testing*/
-    int8_t reverseSyncEnabled;
-
-    int8_t reverseSyncDomain;
-
-    double reverseSyncRate;
-
-    /* CDS 6.2.2.3 */
-    FrequencyRatio _peer_rate_offset;
-
-    uint8_t syncReceiptTimeout;
-
-    uint8_t announceReceiptTimeout;
-
-    bool isSigNoSend;
-
-    /* condition_factory OSConditionFactory instance */
-    OSConditionFactory * condition_factory;
-
-    /* thread_factory OSThreadFactory instance */
-    OSThreadFactory * thread_factory;
-
-    /* timer_factory OSTimerFactory instance */
-    OSTimerFactory * timer_factory;
-
-    /* lock_factory OSLockFactory instance */
-    OSLockFactory * lock_factory;
-
-    /* phy delay */
-    phy_delay_map_t const *phy_delay;
-
-    /* sync receipt threshold */
-    unsigned int syncReceiptThreshold;
-
-    /* neighbor delay threshold */
-    int64_t neighborPropDelayThreshold;
-
-    /* StbMSyncLossThreshold */
-    int64_t stbMSyncLossThreshold;
-
-    /* rgptp periodic sync time in ms */
-    unsigned int rgptpSyncTime;
-} PortInit_t;
-
 
 /**
  * @brief Structure for Port Counters
@@ -426,11 +344,12 @@ typedef struct {
     bool IsMaster;
     int64_t offset;
     uint16_t gmTimeBaseIndicator;
+    uint32_t d_status;
 } gptpStatsType_t;
 
 typedef struct {
     int8_t sync_interval;
-    int8_t init_sync_interval;
+    int8_t pdelay_interval;
 } syncInterval_t;
 
 typedef struct {
@@ -441,12 +360,115 @@ typedef struct {
     syncInterval_t syncInterval;
 } sct_gptp_data;
 
-typedef struct
-{
+typedef struct {
     int8_t reverseSyncEnabled = 0;
     int8_t reverseSyncDomain = 0;
     double reverseSyncRate = 0;
-}RsyncStatus_t;
+} RsyncStatus_t;
+
+/**
+ * @brief Structure for initializing the port class
+ */
+typedef struct {
+    /* clock IEEE1588Clock instance */
+    IEEE1588Clock * clock;
+
+    /* index Interface index */
+    uint16_t index;
+
+    /* timestamper Hardware timestamper instance */
+    CommonTimestamper * timestamper;
+
+    /* net_label Network label */
+    InterfaceLabel *net_label;
+
+    /* automotive_profile set the AVnu automotive profile */
+    bool automotive_profile;
+
+    /* Set to true if the port is the grandmaster. Used for fixed GM in
+     * the the AVnu automotive profile */
+    bool isGM;
+
+    /* Set to true if the port is the grandmaster. Used for fixed GM in
+     * the the AVnu automotive profile */
+    bool testMode;
+
+    /* Set to true if the port's network interface is up. Used to filter
+     * false LINKUP/LINKDOWN events */
+    bool linkUp;
+    /*Set to true if the port  AsCapable is true*/
+    bool asCapable;
+
+    /* interfacename */
+    char ifname[IFNAME_SIZE];
+    /* gPTP 10.2.4.4 */
+    int8_t initialLogSyncInterval;
+
+    /* gPTP 11.5.2.2 */
+    int8_t initialLogPdelayReqInterval;
+
+    /* CDS 6.2.1.5 */
+    int8_t operLogPdelayReqInterval;
+
+    /* CDS 6.2.1.6 */
+    int8_t operLogSyncInterval;
+
+    /*802.1AS Recovered Clock Quality Testing*/
+    int8_t reverseSyncEnabled;
+
+    int8_t reverseSyncDomain;
+
+    double reverseSyncRate;
+
+    /* CDS 6.2.2.3 */
+    FrequencyRatio _peer_rate_offset;
+
+    uint8_t syncReceiptTimeout;
+
+    uint8_t announceReceiptTimeout;
+
+    uint8_t syncClocks;
+
+    bool isSigNoSend;
+
+    /* condition_factory OSConditionFactory instance */
+    OSConditionFactory * condition_factory;
+
+    /* thread_factory OSThreadFactory instance */
+    OSThreadFactory * thread_factory;
+
+    /* timer_factory OSTimerFactory instance */
+    OSTimerFactory * timer_factory;
+
+    /* lock_factory OSLockFactory instance */
+    OSLockFactory * lock_factory;
+
+    /* phy delay */
+    phy_delay_map_t const *phy_delay;
+
+    /* sync receipt threshold */
+    unsigned int syncReceiptThreshold;
+
+    /* neighbor delay threshold */
+    int64_t neighborPropDelayThreshold;
+
+    /* StbMSyncLossThreshold */
+    int64_t stbMSyncLossThreshold;
+
+    /* rgptp periodic sync time in ms */
+    unsigned int rgptpSyncTime;
+
+    /* safe car shared memory fd */
+    int sct_shm_fd;
+
+    /* safe car shared memory */
+    sct_gptp_data *sct_buffer;
+
+    /* To wait for gptp sync to complete */
+    bool wait_for_sync;
+} PortInit_t;
+
+
 
 /**
  * @brief Port functionality common to all network media
@@ -481,7 +503,7 @@ class CommonPort
         int8_t initialLogSyncInterval;
         uint8_t announceReceiptTimeout;
         uint8_t syncReceiptTimeout;
-
+        uint8_t syncClocks;
         /* CDS 6.2.1.5 */
         int8_t *operLogPdelayReqInterval;
 
@@ -1498,11 +1520,11 @@ class CommonPort
         */
         virtual int8_t getRsync(void) = 0;
 
-         /**
-         * @brief  enable reverse sync.
-         * @param  void
-         * @return void
-         */
+        /**
+        * @brief  enable reverse sync.
+        * @param  void
+        * @return void
+        */
         virtual void enableRsync( int8_t RSyncDomain, double RSyncRate ) = 0;
 
         /**
@@ -1512,11 +1534,11 @@ class CommonPort
          */
         virtual void disableRsync() = 0;
 
-       /**
-        * @brief  set reverse sync parameter.
-        * @param  RsyncStatus_t reverse sync structure
-        * @return TRUE if success. FALSE otherwise
-        */
+        /**
+         * @brief  set reverse sync parameter.
+         * @param  RsyncStatus_t reverse sync structure
+         * @return TRUE if success. FALSE otherwise
+         */
         bool setRsync(RsyncStatus_t *Rsync);
 
         /**
@@ -1547,6 +1569,18 @@ class CommonPort
         {
             return sync_count;
         }
+
+        /**
+         * @brief  Gets which clocks has to be synced with ptp.
+         * 0 is no clock
+         * 1 is CLOCK_REALTIME
+         * @return syncClocks
+         */
+        unsigned getSyncClocks()
+        {
+            return syncClocks;
+        }
+
 
         /**
          * @brief  Sets current pdelay count value.

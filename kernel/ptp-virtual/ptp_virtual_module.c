@@ -192,9 +192,10 @@ ret:
     return ret;
 }
 
-static long ptp_compact_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long ptp_compact_ioctl(struct file *filp, unsigned int cmd,
+                              unsigned long arg)
 {
-    return ptp_ioctl(filp,cmd,arg);
+    return ptp_ioctl(filp, cmd, arg);
 }
 
 static const struct file_operations ptp_fileops = {
@@ -692,7 +693,6 @@ drv_err:
 
 static int ptp_virtual_remove(struct platform_device *pdev)
 {
-    int ret = 0;
     struct ptp_device *ptp_dev = NULL;
 
     if (!pdev) {
@@ -706,16 +706,22 @@ static int ptp_virtual_remove(struct platform_device *pdev)
     }
 
     if (ptp_dev->vm_variant == HOSTVM) {
-        ptp_hostvm_unshare_mem(ptp_dev);
         ptp_dma_mem_free(ptp_dev);
     }
 
+#ifdef CONFIG_GUNYAH
+
+    if (ptp_dev->vm_variant == HOSTVM) {
+        gh_unregister_vm_notifier(&ptp_dev->rm_nb);
+    }
+
+#endif /* CONFIG_GUNYAH */
     device_destroy(ptp_dev->ptp_class, ptp_dev->ptp_cdev_devid);
     class_destroy(ptp_dev->ptp_class);
     cdev_del(&ptp_dev->ptp_cdev);
     unregister_chrdev_region(ptp_dev->ptp_cdev_devid, 1);
     dev_info(ptp_dev->dev, "Exit: %s\n", __func__);
-    return ret;
+    return 0;
 }
 
 static struct of_device_id ptp_virtual_match[] = {

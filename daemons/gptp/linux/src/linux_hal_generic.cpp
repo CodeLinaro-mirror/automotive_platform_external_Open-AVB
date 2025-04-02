@@ -425,7 +425,6 @@ bool LinuxTimestamperGeneric::post_init( int ifindex, int sd,
     hwconfig.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
     hwconfig.tx_type = HWTSTAMP_TX_ON;
     err = ioctl( sd, SIOCSHWTSTAMP, &device );
-
     GPTP_LOG_INFO("post_init:: SIOCSHWTSTAMP ioctl called");
 
     if ( err == -1 ) {
@@ -478,7 +477,7 @@ static inline int64_t pctns(struct ptp_clock_time t)
 
 static inline Timestamp pctTimestamp( struct ptp_clock_time *t )
 {
-    Timestamp result;
+    Timestamp result = {0, 0, 0};
     result.seconds_ls = t->sec & 0xFFFFFFFF;
     result.seconds_ms = t->sec >> sizeof(result.seconds_ls) * 8;
     result.nanoseconds = t->nsec;
@@ -587,7 +586,6 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
 #endif
-
     {
         int64_t interval = 0;
         int64_t calculated_boot_time = 0;
@@ -619,7 +617,6 @@ bool LinuxTimestamperGeneric::HWTimestamper_gettime
                 mono_time->seconds_ls, mono_time->nanoseconds,
                 device_time->seconds_ls, device_time->nanoseconds);*/
     }
-
     return true;
 }
 

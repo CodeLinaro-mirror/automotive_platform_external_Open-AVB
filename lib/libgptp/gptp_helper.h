@@ -123,19 +123,19 @@ typedef struct {
     bool IsMaster;
     int64_t offset;
     uint16_t gmTimeBaseIndicator;
+    uint32_t d_status;
 } gptpStatsType_t;
 
 typedef struct {
     int8_t sync_interval;
-    int8_t init_sync_interval;
+    int8_t pdelay_interval;
 } syncInterval_t;
 
-typedef struct
-{
+typedef struct {
     int8_t reverseSyncEnabled = 0;
     int8_t reverseSyncDomain = 0;
     double reverseSyncRate = 0;
-}RsyncStatus_t;
+} RsyncStatus_t;
 
 struct gptp_update {
     uint64_t curr_gptp_time;
@@ -148,32 +148,61 @@ typedef struct __attribute__ ((packed))
     int32_t port_status;
     uint32_t tv_sec;
     uint32_t tv_nsec;
-} gptpTimeInfo_t;
+}
+gptpTimeInfo_t;
 
 /* Get PTP time in nanoseconds for system time in nanoseconds */
 bool gptpGetPtpTimefromSystime(uint64_t *gptp_time_ns, uint64_t time_sys_ns);
+bool gptpGetPtpTimefromSystime_s(uint64_t *gptp_time_ns, uint64_t time_sys_ns,
+                                 bool* inSync);
 
 /* Get PTP time in nanoseconds for system time in nanoseconds */
-bool gptpGetTime(uint64_t *gptp_time_ns, uint64_t time_sys_ns);
+bool gptpGetTime(uint64_t *gptp_time_ns,
+                 uint64_t time_sys_ns); //just an alias for backward compatibility
 
 /* Get PTP time in nanoseconds for Qtimer time in nanoseconds */
 bool gptpGetPtpTimeFromQTimeNs(uint64_t *gptp_time_ns, uint64_t time_qtimer_ns);
+bool gptpGetPtpTimeFromQTimeNs_s(uint64_t *gptp_time_ns,
+                                 uint64_t time_qtimer_ns, bool* inSync);
+
 
 /* Get PTP time in nanoseconds for Qtimer time in ticks */
 bool gptpGetPtpTimeFromQTimeTickCount(uint64_t *gptp_time_ns,
                                       uint64_t qtime_ticks);
+bool gptpGetPtpTimeFromQTimeTickCount_s(uint64_t *gptp_time_ns,
+                                        uint64_t qtime_ticks, bool* inSync);
+
 
 /* Get PTP time in nanoseconds for Monotonic in nanoseconds */
 bool gptpGetPtpTimeFromMonoTime(uint64_t *gptp_time_ns, uint64_t time_mono_ns);
+bool gptpGetPtpTimeFromMonoTime_s(uint64_t *gptp_time_ns, uint64_t time_mono_ns,
+                                  bool* inSync);
 
-bool gptpGetPtpTimeFromBootTime(uint64_t *gptp_time_bt, uint64_t time_boot_ns);
-bool gptpGetBootTimeFromPtpTime(uint64_t *boot_time_ns, uint64_t ptp_time_ns);
-/* Get current PTP time in nanoseconds */
-bool gptpGetCurPtpTime(uint64_t *gptp_time_ns);
 
 /* Get current PTP time and monolithic time in nanoseconds */
 bool gptpGetCurgPtpMonotonicPair(uint64_t *gptp_time_cur,
                                  uint64_t *mono_time_cur);
+bool gptpGetCurgPtpMonotonicPair_s(uint64_t *gptp_time_cur,
+                                   uint64_t *mono_time_cur, bool* inSync);
+
+
+/* Get PTP time in nanoseconds from Boot time */
+bool gptpGetPtpTimeFromBootTime(uint64_t *gptp_time_bt, uint64_t time_boot_ns);
+bool gptpGetPtpTimeFromBootTime_s(uint64_t *gptp_time_bt, uint64_t time_boot_ns,
+                                  bool* inSync);
+
+
+/* Get Boot time in nanoseconds from PTP time */
+bool gptpGetBootTimeFromPtpTime(uint64_t *boot_time_ns, uint64_t ptp_time_ns);
+bool gptpGetBootTimeFromPtpTime_s(uint64_t *boot_time_ns, uint64_t ptp_time_ns,
+                                  bool* inSync);
+
+
+
+/* Get current PTP time in nanoseconds */
+bool gptpGetCurPtpTime(uint64_t *gptp_time_ns);
+bool gptpGetCurPtpTime_s(uint64_t *gptp_time_ns, bool* inSync);
+
 
 
 /* Get gptp port state */

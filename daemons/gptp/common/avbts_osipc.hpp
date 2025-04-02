@@ -72,7 +72,8 @@ class OS_IPC
         virtual bool init( OS_IPC_ARG *arg = NULL,
                             int8_t reverseSyncEnabled = 0,
                             int8_t reverseSyncDomain = 1,
-                            double reverseSyncRate = RSYNC_RATE_DEFAULT) = 0;
+                            double reverseSyncRate = RSYNC_RATE_DEFAULT,
+                            bool waitForSync = 0 ) = 0;
 
         /**
          * @brief  Updates IPC values
@@ -103,7 +104,7 @@ class OS_IPC
             uint32_t pdelay_count,
             PortState port_state,
             bool asCapable,
-            RsyncStatus_t *rSync ) = 0;
+            RsyncStatus_t *rSync, uint32_t process_path ) = 0;
 
         /**
          * @brief  Updates grandmaster IPC values

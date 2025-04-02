@@ -78,6 +78,7 @@ class GptpIniParser
             uint8_t priority2;
             uint8_t clockClass;
             uint8_t debugLog = 0;
+            uint8_t syncClocks = 0;
 
             /*port data set*/
             unsigned int announceReceiptTimeout;
@@ -99,6 +100,7 @@ class GptpIniParser
             bool asCapable;
             bool isGm;
             bool bypassIfWait = false;
+            bool waitForSync = false;
             PortState port_state;
 
             /*ethernet adapter data set*/
@@ -145,6 +147,18 @@ class GptpIniParser
         {
             return _config.debugLog;
         }
+
+        /**
+         * @brief  Reads syncClocks config value
+         * @param  void
+         * @return syncClocks
+         */
+
+        uint8_t getSyncClocks(void)
+        {
+            return _config.syncClocks;
+        }
+
 
         /**
          * @brief  Reads clockClass config value
@@ -278,6 +292,11 @@ class GptpIniParser
         bool getIsIfCheckBypass()
         {
             return _config.bypassIfWait;
+        }
+
+        bool getwaitForSync()
+        {
+            return _config.waitForSync;
         }
 
         std::string getIfaceName()
