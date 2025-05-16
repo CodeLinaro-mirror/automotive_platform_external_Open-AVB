@@ -349,6 +349,10 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
         } else if ( parseMatch(name, "intf") ) {
             valOK = true;
             parser->_config.ifname = value;
+        } else if ( parseMatch(name, "wait_for_sync") ) {
+            bool waitForSync = parseMatch( value, "1");
+            valOK = true;
+            parser->_config.waitForSync = waitForSync;
         }
     }
 

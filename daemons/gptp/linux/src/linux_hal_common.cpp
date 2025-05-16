@@ -1128,7 +1128,8 @@ bool LinuxSharedMemoryIPC::init(
     OS_IPC_ARG* barg,
     int8_t reverseSyncEnabled,
     int8_t reverseSyncDomain,
-    double reverseSyncRate)
+    double reverseSyncRate,
+    bool waitForSync )
 {
     pthread_mutexattr_t shared;
     LinuxIPCArg* arg;
@@ -1235,6 +1236,11 @@ bool LinuxSharedMemoryIPC::init(
     ptimedata->reverseSyncEnabled = reverseSyncEnabled;
     ptimedata->reverseSyncDomain = reverseSyncDomain;
     ptimedata->reverseSyncRate = reverseSyncRate;
+    if (waitForSync == 0) {
+        ptimedata->d_status = DEAMON_UP;
+        GPTP_LOG_ERROR("(%s:%d) waitforsync = %d", __func__, __LINE__, waitForSync);
+    }
+
     /*create mutex attr */
     err = pthread_mutexattr_init(&shared);
 
@@ -1329,7 +1335,7 @@ void LinuxSharedMemoryIPC::vfio_ptp(int64_t ml_phoffset,
         ptimedata->process_id = process_id;
         ptimedata->lb_freqoffset = lb_freqoffset;
         ptimedata->lb_phoffset = lb_phoffset;
-        ptimedata->d_status = 0xabcdef;
+        ptimedata->d_status = DEAMON_UP;
         rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
         rSync->reverseSyncRate = ptimedata->reverseSyncRate;
         rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;
@@ -1387,7 +1393,7 @@ void LinuxSharedMemoryIPC::vfio_ptp(int64_t ml_phoffset,
         int64_t local_bypqtimer_offset = (int64_t)(qtimer_ns - ptimedata->local_time);
         *ptp_qtimer_offset = local_bypqtimer_offset;
         *current_tick = qtimer_tick;
-        *d_status = 0xabcdef; //Just an indication daemon is up
+        *d_status = DEAMON_UP; //Just an indication daemon is up
         if (prev_gptp_sync_time != 0) {
             *qtimer_inc_ratio = (2 * prev_qtimer_inc_ratio) / 3 + ((
                                     ptimedata->local_time - prev_gptp_sync_time) * 1000000000) / ((
@@ -1445,7 +1451,7 @@ bool LinuxSharedMemoryIPC::update(
         ptimedata->process_id = process_id;
         ptimedata->lb_freqoffset = lb_freqoffset;
         ptimedata->lb_phoffset = lb_phoffset;
-        ptimedata->d_status = 0xabcdef;
+        ptimedata->d_status = DEAMON_UP;
         rSync->reverseSyncDomain = ptimedata->reverseSyncDomain;
         rSync->reverseSyncRate = ptimedata->reverseSyncRate;
         rSync->reverseSyncEnabled = ptimedata->reverseSyncEnabled;

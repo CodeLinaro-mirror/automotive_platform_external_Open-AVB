@@ -903,7 +903,7 @@ int main(int argc, char **argv)
                 perror("sigtimedwait()");
                 GPTP_LOG_UNREGISTER();
                 CLEANUP_RESOURCES();
-                return -1;
+                return 0;
             }
 
             GPTP_LOG_DEBUG( "waitForInterface %d \n", sig);

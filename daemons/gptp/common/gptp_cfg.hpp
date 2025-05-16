@@ -100,6 +100,7 @@ class GptpIniParser
             bool asCapable;
             bool isGm;
             bool bypassIfWait = false;
+            bool waitForSync = false;
             PortState port_state;
 
             /*ethernet adapter data set*/
@@ -291,6 +292,11 @@ class GptpIniParser
         bool getIsIfCheckBypass()
         {
             return _config.bypassIfWait;
+        }
+
+        bool getwaitForSync()
+        {
+            return _config.waitForSync;
         }
 
         std::string getIfaceName()

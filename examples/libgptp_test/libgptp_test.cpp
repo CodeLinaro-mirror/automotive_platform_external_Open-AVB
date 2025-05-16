@@ -403,7 +403,7 @@ void get_gptp_time()
     }
 
     curr_gptp_time = (ts.tv_sec) * 1000000000LL + ts.tv_nsec;
-    GPTP_LOG_INFO("current gptp time = %ld\n", curr_gptp_time);
+    GPTP_LOG_INFO("current gptp time = %" PRIu64 "\n", curr_gptp_time);
     close(gptp_phc_fd);
 #endif
     return;
@@ -549,6 +549,15 @@ static void do_some_tests_rgptp_u(int time_us)
 }
 #endif
 
+void signal_handler(int signum) {
+    printf("Received signal %d\n", signum);
+    gptpRegisterCallback(NULL);
+    if (!gptpDeinit()) {
+        GPTP_LOG_ERROR("GPTP deinit failed\n");
+    }
+    exit(0);
+}
+
 int main(int argc, char *argv[])
 {
     uint64_t test_vec_time;
@@ -558,6 +567,9 @@ int main(int argc, char *argv[])
     int retry = 0;
     RsyncStatus_t Rsync;
     gptp_scaling_available = gptpInit();
+
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
     if (gptp_scaling_available) {
         GPTP_LOG_INFO("Gptp Init Success\n");
@@ -579,6 +591,7 @@ int main(int argc, char *argv[])
     }
 
 #ifndef LE_GVM
+#ifndef AVB_FEATURE_GVM_MODE
     test_vec_time = systemTime(CLOCK_REALTIME);
 
     if (gptpGetPtpTimefromSystime(&test_gptp_time, test_vec_time)) {
@@ -622,6 +635,7 @@ int main(int argc, char *argv[])
         GPTP_LOG_ERROR("Monotonic time test failed\n");
     }
 
+#endif // END AVB_FEATURE_GVM_MODE
 #endif // END LE_GVM
 #ifndef LE_GVM
 
