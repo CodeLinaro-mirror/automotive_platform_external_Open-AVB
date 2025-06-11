@@ -40,6 +40,10 @@ include $(BUILD_EXECUTABLE)
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := DATA
 LOCAL_MODULE := gptp_cfg.ini
+ifeq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
 LOCAL_SRC_FILES := gptp_cfg_au.ini
+else
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
+endif
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/etc
 include $(BUILD_PREBUILT)

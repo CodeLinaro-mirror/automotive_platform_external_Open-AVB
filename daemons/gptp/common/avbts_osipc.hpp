@@ -72,7 +72,8 @@ class OS_IPC
         virtual bool init( OS_IPC_ARG *arg = NULL,
                             int8_t reverseSyncEnabled = 0,
                             int8_t reverseSyncDomain = 1,
-                            double reverseSyncRate = RSYNC_RATE_DEFAULT) = 0;
+                            double reverseSyncRate = RSYNC_RATE_DEFAULT,
+                            bool waitForSync = 0 ) = 0;
 
         /**
          * @brief  Updates IPC values

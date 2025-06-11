@@ -115,6 +115,7 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
     reverseSyncEnabled = portInit->reverseSyncEnabled;
     reverseSyncDomain = portInit->reverseSyncDomain;
     reverseSyncRate = portInit->reverseSyncRate;
+    reset_log_limit(RESET_ALL_LOG);
 
     if (automotive_profile) {
         setAsCapable( true );
@@ -351,7 +352,7 @@ void EtherPort::sendEventPort
                      ( etherType, buf, size, mcast_type, destIdentity, true );
 
     if ( rtx != net_succeed ) {
-        GPTP_LOG_ERROR("sendEventPort(): failure");
+        GPTP_LOG_LIMIT_ERROR(SEND_PORT_LOG, "sendEventPort(): failure");
         return;
     }
 
@@ -560,7 +561,9 @@ bool EtherPort::_processEvent( Event e )
 
             // Automotive Profile specific action
             if (e == SYNC_RECEIPT_TIMEOUT_EXPIRES) {
-                GPTP_LOG_EXCEPTION("SYNC receipt timeout");
+
+                GPTP_LOG_LIMIT_EXCEPTION(SYNC_LOG, "SYNC receipt timeout");
+
                 startSyncReceiptTimer((unsigned long long)
                                       (getsyncReceiptTimeoutMultiplier()*
                                        ((double) pow((double)2, getSyncInterval()) *
@@ -754,7 +757,7 @@ bool EtherPort::_processEvent( Event e )
 
         case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
             if (!automotive_profile) {
-                GPTP_LOG_EXCEPTION("PDelay Response Receipt Timeout");
+                GPTP_LOG_LIMIT_EXCEPTION(PDELAY_LOG, "PDelay Response Receipt Timeout");
                 setAsCapable(false);
             }
 
@@ -1034,6 +1037,10 @@ void EtherPort::syncDone()
     GPTP_LOG_VERBOSE("Sync complete");
 
     if (automotive_profile && getPortState() == PTP_SLAVE) {
+#ifdef LOG_LIMIT
+        reset_log_limit(RESET_ALL_LOG);
+#endif
+
         if (avbSyncState > 0) {
             avbSyncState--;
 

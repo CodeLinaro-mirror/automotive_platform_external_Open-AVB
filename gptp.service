@@ -37,6 +37,7 @@ After=systemd-udevd.service
 [Service]
 Restart=on-failure
 ExecStart=/usr/bin/qgptp ini -F /etc/gptp_cfg.ini
+ExecStop=/usr/bin/killall -s TERM qgptp
 
 [Install]
 WantedBy=multi-user.target

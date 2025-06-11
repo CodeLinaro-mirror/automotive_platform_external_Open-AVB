@@ -717,9 +717,10 @@ class LinuxSharedMemoryIPC: public OS_IPC
          * @return TRUE if no error, FALSE otherwise
          */
         virtual bool init( OS_IPC_ARG *barg = NULL,
-                            int8_t reverseSyncEnabled = 0,
-                            int8_t reverseSyncDomain = 1,
-                            double reverseSyncRate = RSYNC_RATE_DEFAULT);
+                           int8_t reverseSyncEnabled = 0,
+                           int8_t reverseSyncDomain = 1,
+                           double reverseSyncRate = RSYNC_RATE_DEFAULT,
+                           bool waitForSync = 0 );
 
         /**
          * @brief Updates IPC values
@@ -819,21 +820,20 @@ class LinuxSharedMemoryIPC: public OS_IPC
         */
 #ifdef GPTP_VFIO
         virtual void vfio_ptp(
-        int64_t ml_phoffset,
-        int64_t ls_phoffset,
-        int64_t lq_phoffset,
-        int64_t lb_phoffset,
-        FrequencyRatio ml_freqoffset,
-        FrequencyRatio ls_freqoffset,
-        FrequencyRatio lq_freqoffset,
-        FrequencyRatio lb_freqoffset,
-        uint64_t local_time,
-        uint32_t sync_count,
-        uint32_t pdelay_count,
-        PortState port_state,
-        bool asCapable,
-        RsyncStatus_t* rSync,
-        uint32_t process_path);
+            int64_t ml_phoffset,
+            int64_t ls_phoffset,
+            int64_t lq_phoffset,
+            int64_t lb_phoffset,
+            FrequencyRatio ml_freqoffset,
+            FrequencyRatio ls_freqoffset,
+            FrequencyRatio lq_freqoffset,
+            FrequencyRatio lb_freqoffset,
+            uint64_t local_time,
+            uint32_t sync_count,
+            uint32_t pdelay_count,
+            PortState port_state,
+            bool asCapable,
+            uint32_t process_path);
 #endif
         /**
          * @brief Updates grandmaster IPC values for GVM

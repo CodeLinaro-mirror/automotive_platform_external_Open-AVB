@@ -39,6 +39,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <stdarg.h>
 #include <time.h>
 #include <syslog.h>
+#include <stdint.h>
 
 #ifdef GENIVI_DLT
 #include "dlt.h"
@@ -93,10 +94,45 @@ typedef enum {
     GPTP_LOG_ON
 } gptplogcat_t;
 
+/**
+ * Log based on ptp message
+ */
+typedef enum {
+    SYNC_LOG,
+    PDELAY_LOG,
+    FOLLOW_UP_LOG,
+    TX_TIMESTAMP_LOG,
+    RX_TIMESTAMP_LOG,
+    SEND_PORT_LOG,
+    RESET_ALL_LOG,
+} gptp_log_type_t;
+
+/**
+ * Counters to Limit the logs
+ */
+typedef struct {
+    uint32_t sync;
+    uint32_t pDelay;
+    uint32_t followup;
+    uint32_t tx_timestamp;
+    uint32_t rx_timestamp;
+    uint32_t send_port;
+} LogLimit_t;
+
+#define GPTP_MAX_SYNC_LOG               (3)
+#define GPTP_MAX_PDELAY_LOG             (3)
+#define GPTP_MAX_FOLLOWUP_LOG           (3)
+#define GPTP_MAX_TX_TIMESTAMP_LOG       (3)
+#define GPTP_MAX_RX_TIMESTAMP_LOG       (3)
+#define GPTP_MAX_SEND_PORT_LOG          (3)
+
 void gptplogRegister(void);
 void gptplogUnregister(void);
 void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line,
              const char *fmt, ...);
+
+void reset_log_limit(gptp_log_type_t type);
+bool is_in_log_limit(gptp_log_type_t type);
 
 
 #define GPTP_LOG_REGISTER() gptplogRegister()
@@ -149,6 +185,26 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line,
 #define GPTP_LOG_VERBOSE(fmt,...) gptpLog(GPTP_LOG_LVL_VERBOSE, "VERBOSE  ", __FILE__, __LINE__, fmt, ## __VA_ARGS__)
 #else
 #define GPTP_LOG_VERBOSE(fmt,...)
+#endif
+
+#ifdef LOG_LIMIT
+#define GPTP_LOG_LIMIT_EXCEPTION(log_type, fmt,...) \
+        if (is_in_log_limit(log_type)) { \
+            GPTP_LOG_EXCEPTION(fmt,## __VA_ARGS__);  \
+        } \
+
+#else
+#define GPTP_LOG_LIMIT_EXCEPTION(log_type, fmt,...) GPTP_LOG_EXCEPTION(fmt,## __VA_ARGS__)
+#endif
+
+#ifdef LOG_LIMIT
+#define GPTP_LOG_LIMIT_ERROR(log_type, fmt,...) \
+    if (is_in_log_limit(log_type)) { \
+        GPTP_LOG_ERROR(fmt,## __VA_ARGS__);  \
+    } \
+
+#else
+#define GPTP_LOG_LIMIT_ERROR(log_type, fmt,...) GPTP_LOG_ERROR(fmt,## __VA_ARGS__)
 #endif
 
 #endif

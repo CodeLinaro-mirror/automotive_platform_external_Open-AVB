@@ -463,6 +463,9 @@ typedef struct {
 
     /* safe car shared memory */
     sct_gptp_data *sct_buffer;
+
+    /* To wait for gptp sync to complete */
+    bool wait_for_sync;
 } PortInit_t;
 
 

@@ -1,7 +1,7 @@
-/*
-Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+/* ============================================================================
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
+============================================================================ */
 
 /*******************************************
 *
@@ -18,6 +18,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <fenv.h>
 #include <math.h>
 #include <stdbool.h>
+#include <utc_ipc.hpp>
+#include <sys/stat.h>
+#include <grp.h>
+#include <sys/mman.h>
 
 
 
@@ -29,10 +33,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef ANDROID
 
-#define LOGE(fmt, ...) __android_log_print (ANDROID_LOG_ERROR,"libgptp", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGW(fmt, ...) __android_log_print (ANDROID_LOG_WARN,"libgptp", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGI(fmt, ...) __android_log_print (ANDROID_LOG_INFO,"libgptp", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGD(fmt, ...) __android_log_print (ANDROID_LOG_DEBUG,"libgptp", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define LOGE(fmt, ...) __android_log_print (ANDROID_LOG_ERROR,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define LOGW(fmt, ...) __android_log_print (ANDROID_LOG_WARN,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define LOGI(fmt, ...) __android_log_print (ANDROID_LOG_INFO,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define LOGD(fmt, ...) __android_log_print (ANDROID_LOG_DEBUG,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
 
 enum _LOGGER_SEVERITY {
     QCLOG_ERROR         = ANDROID_LOG_ERROR,
@@ -80,6 +84,8 @@ uint64_t prev_utc_time = 0;
 
 uint64_t prev_utc_ref = 0;
 uint64_t prev_expected_utc_ref = 0;
+static int shm_fd = 0;
+char *master_offset_buffer;
 
 
 #define HAB_MMID_CREATE(major, minor) ((major&0xFFFF) | ((minor&0xFF)<<16))
@@ -87,6 +93,11 @@ uint64_t prev_expected_utc_ref = 0;
 #define HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE 0x00000002
 #define HABMM_VNW_1 1401
 #define HAB_UTC_SUB_ID 1
+#ifdef ANDROID
+#define DEFAULT_GROUPNAME "vendor_ptp"     /*!< Default groupname for the shared memory interface*/
+#else
+#define DEFAULT_GROUPNAME "vnw"     /*!< Default groupname for the shared memory interface*/
+#endif
 
 
 extern "C" int32_t habmm_socket_open(int32_t *handle, uint32_t mm_ip_id,
@@ -155,6 +166,32 @@ int realtime_adjust_freq(float freq_offset)
 }
 
 
+unsigned char calculateChecksum(const char *str, size_t length) {
+    unsigned char checksum = 0;
+    for (size_t i = 0; i < length; i++) {
+        checksum += str[i];
+    }
+    return checksum;
+}
+
+
+void updateShm(gUtcTimeData *pdata)
+{
+    gUtcTimeData* ptimedata;
+    UtcShm* pUtcShm;
+
+    if (master_offset_buffer != NULL) {
+        pUtcShm = (UtcShm*)master_offset_buffer;
+        /* lock */
+        pthread_mutex_lock(&pUtcShm->pMutex);
+        ptimedata = (gUtcTimeData*)(&pUtcShm->gData);
+        ptimedata->sync_status = pdata->sync_status;
+        ptimedata->utc_time = pdata->utc_time;
+        ptimedata->gptp_time = pdata->gptp_time;
+        pUtcShm->checksum = calculateChecksum((const char *)ptimedata, sizeof(gUtcTimeData));
+        pthread_mutex_unlock(&pUtcShm->pMutex);
+    }
+}
 
 
 void updateTime(utc_timeinfo_t* update)
@@ -181,12 +218,14 @@ void updateTime(utc_timeinfo_t* update)
     clock_gettime(CLOCK_REALTIME, &real);
 
     if (!sync_status) {
-        UTC_LOG_ERROR("Ignoring the UTC sync as gptp is not in sync");
-        return;
+        UTC_LOG_INFO("directly use someip utc as gptp is not in sync");
+        curr_expected_utc = update->curUtcTimeNanoSec;
+    }
+    else {
+        curr_expected_utc = update->curUtcTimeNanoSec + (curr_gptp -
+                            update->curPtpTimeNanoSec) * time_ratio;
     }
 
-    curr_expected_utc = update->curUtcTimeNanoSec + (curr_gptp -
-                        update->curPtpTimeNanoSec) * time_ratio;
     curr_utc = (real.tv_sec) * 1000000000LL + real.tv_nsec;
     delta_utc = curr_utc - curr_expected_utc;
     phase_error = (long double) - delta_utc;
@@ -197,7 +236,7 @@ void updateTime(utc_timeinfo_t* update)
     } else {
         FrequencyRatio freq_offset = 0;
         freq_offset = ((FrequencyRatio)(curr_expected_utc - prev_utc_ref)) /
-                      (curr_utc - prev_utc_ref);
+                    (curr_utc - prev_utc_ref);
 
         // Check for jumps in REAL time or gptp time
         if ((fabs(freq_offset) < MIN_LS_RATIO) || (fabs(freq_offset) > MAX_LS_RATIO)) {
@@ -207,14 +246,14 @@ void updateTime(utc_timeinfo_t* update)
             freq_offset = 1.0;
         } else {
             UTC_LOG_DEBUG("Real to UTC clock ratio (%Lf) delta %lld %lld",
-                          freq_offset, (curr_utc - prev_utc_ref),
-                          (curr_expected_utc - prev_utc_ref));
+                        freq_offset, (curr_utc - prev_utc_ref),
+                        (curr_expected_utc - prev_utc_ref));
         }
 
         float syncPerSec = (float)(1.0 / pow((float)2,
-                                             (update->curUtcTimeNanoSec - prev_utc_time)));
+                                            (update->curUtcTimeNanoSec - prev_utc_time)));
         _ppm += (float) ((INTEGRAL * syncPerSec * phase_error) + PROPORTIONAL * ((
-                             freq_offset - 1.0) * 1000000));
+                            freq_offset - 1.0) * 1000000));
         UTC_LOG_DEBUG("phase_error = %Lf, ppm = %f", phase_error, _ppm );
 
         if ( _ppm < LOWER_FREQ_LIMIT ) {
@@ -230,11 +269,18 @@ void updateTime(utc_timeinfo_t* update)
         realtime_adjust_freq(_ppm);
     }
 
+
+    gUtcTimeData utcData = {0};
+    utcData.sync_status = update->state;
+    utcData.utc_time = curr_expected_utc;
+    utcData.gptp_time = curr_gptp;
+    updateShm(&utcData);
+
     prev_utc_time = update->curUtcTimeNanoSec;
     prev_gptp_time = update->curPtpTimeNanoSec;
     prev_utc_ref = curr_utc;
     prev_expected_utc_ref = curr_expected_utc;
-    UTC_LOG_INFO("[%lu]curr_utc %lld curr_expected_utc %lld delta_utc %lld state %d",
+    UTC_LOG_DEBUG("[%lu]curr_utc %lld curr_expected_utc %lld delta_utc %lld state %d",
                   cnt, curr_utc, curr_expected_utc, delta_utc, update->state);
     cnt++;
 }
@@ -270,6 +316,81 @@ void* habLoop(void* param)
     return NULL;
 }
 
+int utc_shm_init(void) 
+{
+    pthread_mutexattr_t shared;
+    const char* group_name;
+    struct group* grp;
+    mode_t oldumask = umask(0);
+    int err;
+
+    group_name = DEFAULT_GROUPNAME;
+    grp = getgrnam(group_name);
+
+    if (grp == NULL) {
+        UTC_LOG_INFO("Group %s not found, will try root (0) instead", group_name);
+    }
+
+#ifdef ANDROID
+    shm_fd = open(UTC_SHM_NAME, O_RDWR | O_CREAT, 0666);
+#else
+    shm_fd = shm_open(UTC_SHM_NAME, O_RDWR | O_CREAT, 0660);
+#endif
+
+    if (shm_fd == -1) {
+        UTC_LOG_ERROR("shm_open(): %s", strerror(errno));
+        return -1;
+    }
+
+    (void)umask(oldumask);
+
+    if (fchown(shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
+        UTC_LOG_ERROR("shm_open(): Failed to set ownership");
+    }
+
+    if (ftruncate(shm_fd, UTC_SHM_SIZE) == -1) {
+        UTC_LOG_ERROR("ftruncate()");
+        goto exit;
+    }
+
+    master_offset_buffer = (char*)mmap
+                           (NULL, UTC_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_LOCKED | MAP_SHARED,
+                            shm_fd, 0);
+
+    if (master_offset_buffer == (char*) -1) {
+        UTC_LOG_ERROR("mmap()");
+        goto exit;
+    }
+
+    memset(master_offset_buffer, 0x0, UTC_SHM_SIZE);
+
+    /*create mutex attr */
+    err = pthread_mutexattr_init(&shared);
+
+    if (err != 0) {
+        UTC_LOG_ERROR("mutex attr initialization failed - %s", strerror(errno));
+        goto exit;
+    }
+
+    pthread_mutexattr_setpshared(&shared, 1);
+    pthread_mutexattr_setprotocol(&shared, PTHREAD_PRIO_INHERIT);
+    /*create a mutex */
+    err = pthread_mutex_init((pthread_mutex_t*)master_offset_buffer, &shared);
+
+    if (err != 0) {
+        UTC_LOG_ERROR("sharedmem - Mutex initialization failed - %s", strerror(errno));
+        goto exit;
+    }
+    return 0;
+
+exit:
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+    return -1;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -298,11 +419,18 @@ int main(int argc, char **argv)
 
     hab_thread_running = true;
 
+    ret = utc_shm_init();
+
+    if (ret < 0) {
+        UTC_LOG_ERROR("utc shared memory init failed");
+        goto exit;
+    }
+
     if ((err = pthread_create(&hab_Thread, NULL, habLoop, (void *) NULL))
             < 0) {
         hab_thread_running = false;
         UTC_LOG_ERROR("Error during creation of the thread %d\n", err);
-        return 0;
+        goto exit;
     } else {
         hab_thread_running = true;
     }
@@ -316,6 +444,7 @@ int main(int argc, char **argv)
         }
     } while (sig == SIGHUP || sig == SIGUSR2);
 
+exit:
     hab_thread_running = false;
     habmm_socket_close(hab_hdl);
     gptpDeinit();
