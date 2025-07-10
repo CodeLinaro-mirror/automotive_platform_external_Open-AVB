@@ -1735,6 +1735,11 @@ bool gptpDeinit(void)
     gptpDaemonClientDeInit();
     bInitialized = false;
 #endif
+
+#ifdef AVB_FEATURE_GVM_MODE
+    habmm_socket_close(hab_hdl);
+#endif
+
     return true;
 }
 
