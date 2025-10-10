@@ -26,6 +26,8 @@ ifeq ($(GPTP_VFIO),1)
 	LDFLAGS += -lvfioptp
 endif
 
+CPPFLAGS += -DLOG_LIMIT
+
 SOURCES= gptp_helper.cpp
 OBJECTS= gptp_helper.o
 TARGET= libgptp.so 

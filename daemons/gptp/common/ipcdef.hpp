@@ -129,6 +129,7 @@ typedef struct {
 
     //daemon status
     int64_t d_status = {0};
+    EtherPortLinkState_t etherPortLinkState;    //!< EtherPort Link state. It can assume values defined at ::EtherPortLinkState_t
 } gPtpTimeData;
 
 /*

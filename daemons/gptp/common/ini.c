@@ -24,8 +24,12 @@ http://code.google.com/p/inih/
 static char* rstrip(char* s)
 {
     char* p = s + strlen(s);
-    while (p > s && isspace(*--p))
+    while (p > s) {
+        p--;
+        if (!isspace(*p))
+            break;
         *p = '\0';
+    }
     return s;
 }
 

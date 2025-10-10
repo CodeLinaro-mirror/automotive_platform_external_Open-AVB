@@ -54,6 +54,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <unistd.h>
 #include <gptp_helper.h>
 #include <stdarg.h>
+#include <dirent.h>
 
 #ifdef ANDROID
 #include <log/log.h>
@@ -64,6 +65,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #define CLOCKFD 3
 #define FD_TO_CLOCKID(fd)   ((~(clockid_t) (fd) << 3) | CLOCKFD)
 #define MAX_RETRY 10000
+#define LOOP_CNT 1
 
 #ifndef LOG_ERROR
 #define LOG_ERROR    1
@@ -100,6 +102,7 @@ enum _LOGGER_SEVERITY {
 #define GPTP_LOG_INFO(fmt, ...) system_log(LOG_INFO, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
 #define GPTP_LOG_DEBUG(fmt, ...) system_log(LOG_DEBUG, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
 
+
 void system_log(int loglevel, const char *s, ...)
 {
     va_list arg = {};
@@ -121,6 +124,7 @@ void system_log(int loglevel, const char *s, ...)
 
 #endif
 
+static bool gptp_scaling_available = false;
 
 uint64_t systemTime(int clock)
 {
@@ -164,7 +168,7 @@ uint64_t getQtimerTicks()
     return (qTimerCount) ;
 }
 
-void do_some_tests_qtimer()
+void do_some_tests_qtimer(int p_loop_cnt)
 {
     int i = 0;
     struct timespec ts = { 0, 1000000 };
@@ -178,7 +182,7 @@ void do_some_tests_qtimer()
     prev_vec_time = test_vec_time = getQtimerTime();
     gptpGetPtpTimeFromQTimeNs(&prev_gptp_time, prev_vec_time);
 
-    for (i = 0; i < 100000; i++)
+    for (i = 0; i < p_loop_cnt; i++)
         if (gptpGetPtpTimeFromQTimeNs_s(&test_gptp_time, test_vec_time, &isSync)) {
             delta_vec_time = test_vec_time;
             delta_vec_time -= prev_vec_time;
@@ -195,7 +199,7 @@ void do_some_tests_qtimer()
         }
 }
 
-void do_some_tests_sys()
+void do_some_tests_sys(int p_loop_cnt)
 {
     int i = 0;
     struct timespec ts = { 0, 1000000 };
@@ -209,7 +213,7 @@ void do_some_tests_sys()
     prev_vec_time = test_vec_time = systemTime(CLOCK_REALTIME);
     gptpGetPtpTimefromSystime(&prev_gptp_time, prev_vec_time);
 
-    for (i = 0; i < 100000; i++) {
+    for (i = 0; i < p_loop_cnt; i++) {
         if (gptpGetPtpTimefromSystime_s(&test_gptp_time, test_vec_time, &isSync)) {
             delta_vec_time = test_vec_time;
             delta_vec_time -= prev_vec_time;
@@ -341,13 +345,13 @@ void loop_test(int time_us)
 }
 
 
-void do_some_tests_ptp()
+void do_some_tests_ptp(int p_loop_cnt)
 {
     int i = 0;
     uint64_t ptp_time = 0;
     bool isSync = false;
 
-    for (i = 0; i < 100000; i++) {
+    for (i = 0; i < p_loop_cnt; i++) {
         if (gptpGetCurPtpTime_s(&ptp_time, &isSync)) {
             GPTP_LOG_INFO("ns ptp_time %" PRIu64 " isSync %d\n", ptp_time, isSync);
         }
@@ -360,15 +364,15 @@ void callback_handler(struct gptp_update update)
                   update.curr_gptp_time, update.clock_adjust);
 }
 
-void do_some_tests_gptp_mono()
+void do_some_tests_gptp_mono(int p_loop_cnt)
 {
     int i = 0;
     uint64_t ptp_time = 0;
     uint64_t mono_time = 0;
     bool isSync = false;
-    GPTP_LOG_INFO("do_some_tests_gptp_mono");
+    GPTP_LOG_INFO("do_some_tests_gptp_mono:\n");
 
-    for (i = 0; i < 100000; i++) {
+    for (i = 0; i < p_loop_cnt; i++) {
         if (gptpGetCurgPtpMonotonicPair_s(&ptp_time, &mono_time, &isSync)) {
             GPTP_LOG_INFO("ns ptp_time %" PRIu64 "ns mono_time %" PRIu64 " isSync %d\n",
                           ptp_time,
@@ -376,13 +380,50 @@ void do_some_tests_gptp_mono()
         }
     }
 }
+
+#ifdef AVB_FEATURE_GVM_MODE
+#define PTP_DEVICE_PATH_LEN 256
+#define PTP_DEFAULT_DEVICE "/dev/ptp0"
+static void getVirtDevice(char* device_path)
+{
+    const char *path = "/sys/devices/virtual/ptp/";
+    struct dirent *entry;
+
+    if (device_path == NULL) {
+        GPTP_LOG_ERROR("device path is NULL\n");
+        return;
+    }
+    DIR *dp = opendir(path);
+    if (dp == NULL) {
+        GPTP_LOG_ERROR("Failed to open /sys/devices/virtual/ptp/ so use default device\n");
+        snprintf(device_path, PTP_DEVICE_PATH_LEN, "%s", PTP_DEFAULT_DEVICE);
+        return;
+    }
+
+    while ((entry = readdir(dp))) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            snprintf(device_path, PTP_DEVICE_PATH_LEN, "%s%s", "/dev/", entry->d_name);
+            GPTP_LOG_INFO("opening clock device: %s", device_path);
+            closedir(dp);
+            return;
+        }
+    }
+
+    GPTP_LOG_ERROR("No device found in %s, using default device\n", path);
+    snprintf(device_path, PTP_DEVICE_PATH_LEN, "%s", PTP_DEFAULT_DEVICE);
+    closedir(dp);
+}
+#endif
+
 void get_gptp_time()
 {
     struct timespec ts;
     static clockid_t gPtpClockid = -1;
     uint64_t curr_gptp_time;
 #ifdef AVB_FEATURE_GVM_MODE
-    int gptp_phc_fd = open("/dev/ptp0", O_RDWR );
+    char ptp_device[PTP_DEVICE_PATH_LEN] = {0};
+    getVirtDevice(ptp_device);
+    int gptp_phc_fd = open(ptp_device, O_RDWR );
 
     if ( gptp_phc_fd == -1 ||
             (gPtpClockid = FD_TO_CLOCKID(gptp_phc_fd)) == -1 ) {
@@ -409,16 +450,16 @@ void get_gptp_time()
 #endif
     return;
 }
-void do_some_tests_gptp_boot()
+void do_some_tests_gptp_boot(int p_loop_cnt)
 {
     int i = 0;
     uint64_t ptp_time = 0;
     uint64_t boot_time_ns = 0;
     bool isSync = false;
     struct timespec boot;
-    GPTP_LOG_INFO("do_some_tests_gptp_boot");
+    GPTP_LOG_INFO("do_some_tests_gptp_boot:\n");
 
-    for (i = 0; i < 100000; i++) {
+    for (i = 0; i < p_loop_cnt; i++) {
         gptpGetCurPtpTime_s(&ptp_time, &isSync);
         clock_gettime(CLOCK_BOOTTIME, &boot);
         boot_time_ns = boot.tv_sec * 1000000000LL + boot.tv_nsec;
@@ -553,7 +594,7 @@ static void do_some_tests_rgptp_u(int time_us)
 void signal_handler(int signum) {
     printf("Received signal %d\n", signum);
     gptpRegisterCallback(NULL);
-    if (!gptpDeinit()) {
+    if (gptp_scaling_available && !gptpDeinit()) {
         GPTP_LOG_ERROR("GPTP deinit failed\n");
     }
     exit(0);
@@ -563,7 +604,6 @@ int main(int argc, char *argv[])
 {
     uint64_t test_vec_time;
     uint64_t test_gptp_time;
-    bool gptp_scaling_available = false;
     gptpTimeInfo_t ptp_data;
     int retry = 0;
     RsyncStatus_t Rsync;
@@ -647,20 +687,25 @@ int main(int argc, char *argv[])
 #endif // END AVB_FEATURE_GVM_MODE
 #endif // END LE_GVM
 #ifndef LE_GVM
+    int l_cnt = LOOP_CNT;
+    if (argc == 3)
+    {
+        l_cnt = atoi(argv[2]);
+    }
 
-    if (argc == 2) {
+    if (argc == 2 || argc == 3 || argc == 5) {
         if (argv[1][0] == 'q') {
             GPTP_LOG_INFO("\n\n\n====================QTIMER based test=====================\n\n\n");
-            do_some_tests_qtimer();
+            do_some_tests_qtimer(l_cnt);
         } else if (argv[1][0] == 's') {
             GPTP_LOG_INFO("\n\n\n====================SYSTEM based test=====================\n\n\n");
-            do_some_tests_sys();
+            do_some_tests_sys(l_cnt);
         } else if (argv[1][0] == 'p') {
             GPTP_LOG_INFO("\n\n\n====================PTP based test=====================\n\n\n");
-            do_some_tests_ptp();
+            do_some_tests_ptp(l_cnt);
         } else if (argv[1][0] == 'm') {
             GPTP_LOG_INFO("\n\n\n====================gPTP Monotonic pair based test=====================\n\n\n");
-            do_some_tests_gptp_mono();
+            do_some_tests_gptp_mono(l_cnt);
         } else if (argv[1][0] == 'l') {
             GPTP_LOG_INFO("\n\n\n====================gPTP loop test=====================\n\n\n");
             loop_test(1000000);
@@ -669,32 +714,10 @@ int main(int argc, char *argv[])
             get_gptp_time();
         } else if (argv[1][0] == 'b') {
             GPTP_LOG_INFO("\n\n\n====================gPTP time boot time test=====================\n\n\n");
-            do_some_tests_gptp_boot();
-        }
-
-#ifdef RGPTP_CLNT_ENABLED
-        else if (argv[1][0] == 'r') {
-            rgptp_test();
-        }
-
-#endif
-    } else if (argc == 3 || argc == 5) {
-        if (argv[1][0] == 'm') {
-            GPTP_LOG_INFO("\n\n\n====================gPTP Monotonic pair based test=====================\n\n\n");
-            int sleepduration = atoi(argv[2]);
-            gptpRegisterCallback(&callback_handler);
-            do_some_tests_gptp_mono();
-            sleep(sleepduration);
-            do_some_tests_gptp_mono();
-            gptpRegisterCallback(NULL);
-        } else if (argv[1][0] == 'l') {
-            GPTP_LOG_INFO("\n\n\n====================gPTP loop test=====================\n\n\n");
-            int sleepduration = atoi(argv[2]);
-            loop_test(sleepduration);
-        } else if (argv[1][0] == 'R') {
+            do_some_tests_gptp_boot(l_cnt);
+        } else if ((argc >= 3) && (argv[1][0] == 'R')) {
             GPTP_LOG_INFO("\n\n\n====================gPTP Reverse sync test=====================\n\n\n");
             Rsync.reverseSyncEnabled = atoi(argv[2]);
-
             if (Rsync.reverseSyncEnabled && argc == 5) {
                 Rsync.reverseSyncDomain = atoi(argv[3]);
                 Rsync.reverseSyncRate = atof(argv[4]);
@@ -707,6 +730,27 @@ int main(int argc, char *argv[])
                 GPTP_LOG_ERROR("Error while setting reverse sync status");
                 return 0;
             }
+        }
+
+#ifdef RGPTP_CLNT_ENABLED
+        else if (argv[1][0] == 'r') {
+            rgptp_test();
+        }
+
+#endif
+    } else if (argc == 4 || argc == 6) {
+        if (argv[1][0] == 'm') {
+            GPTP_LOG_INFO("\n\n\n====================gPTP Monotonic pair based test=====================\n\n\n");
+            int sleepduration = atoi(argv[3]);
+            gptpRegisterCallback(&callback_handler);
+            do_some_tests_gptp_mono(l_cnt);
+            sleep(sleepduration);
+            do_some_tests_gptp_mono(l_cnt);
+            gptpRegisterCallback(NULL);
+        } else if (argv[1][0] == 'l') {
+            GPTP_LOG_INFO("\n\n\n====================gPTP loop test=====================\n\n\n");
+            int sleepduration = atoi(argv[3]);
+            loop_test(sleepduration);
         }
     }
 

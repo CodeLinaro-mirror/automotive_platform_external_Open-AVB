@@ -298,6 +298,14 @@ void IEEE1588Clock::setProxyMode(int32_t proxy_value)
     }
 }
 
+void IEEE1588Clock::updateEtherLinkState(EtherPortLinkState_t LinkState)
+{
+    if (ipc != NULL)
+    {
+        ipc->updateEtherLinkState(LinkState);
+    }
+}
+
 bool IEEE1588Clock::getSyncStatus(void)
 {
     if (ipc != NULL) {

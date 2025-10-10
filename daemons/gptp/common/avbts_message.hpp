@@ -1245,6 +1245,16 @@ public:
 	static const int8_t sigMsgInterval_NoChange =  -128;
 
 	/**
+	 * @brief Sets the signalling Message Type
+	 * @param  type Message type
+	 * @return void
+	 */
+	void setMessageType(MessageType type)
+	{
+		messageType = type;
+	}
+
+	/**
 	 * @brief Builds the PTPMessageSignalling object
 	 */
 	PTPMessageSignalling( EtherPort *port );

@@ -47,6 +47,7 @@ extern int qgptp_rmgr_setport(CommonPort *port);
 extern int qgptp_rmgr_deinit();
 extern uint64_t qgptp_readtime(char *ifname);
 extern uintptr_t get_emac_base_addr(char *ifname);
+extern int get_gptp_stats(char *reply_msg, uint64_t  replytime);
 
 #ifdef __cplusplus
 }

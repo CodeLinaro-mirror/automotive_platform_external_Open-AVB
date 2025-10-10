@@ -373,6 +373,13 @@ class IEEE1588Clock
         void setProxyMode(int32_t proxy_value);
 
         /**
+         * @brief Updates Ether Port Link State
+         * @param LinkState Link State
+         * @return void
+         */
+        void updateEtherLinkState(EtherPortLinkState_t LinkState);
+
+        /**
          * @brief  Get sync status
          * @return true or false
          */

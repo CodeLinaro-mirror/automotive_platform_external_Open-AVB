@@ -32,7 +32,10 @@
 [Unit]
 Description=gptp daemon Service
 SourcePath=/usr/bin/qgptp
-After=systemd-udevd.service
+After=systemd-udevd.service systemd-modules-load.service sys-kernel-debug.mount vfio-device-probe.service var-gptp_cfg.ini.service etc-gptp_cfg.ini.mount
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
 
 [Service]
 Restart=on-failure

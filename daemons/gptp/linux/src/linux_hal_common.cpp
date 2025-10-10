@@ -33,9 +33,8 @@
 
 /******************************************************************************
 
-Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
-
-Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
 
 ******************************************************************************/
@@ -126,6 +125,8 @@ LinuxNetworkInterface::~LinuxNetworkInterface()
 {
     close( sd_event );
     close( sd_general );
+    sd_event = -1;
+    sd_general = -1;
 }
 
 net_result LinuxNetworkInterface::send
@@ -216,7 +217,6 @@ void LinuxNetworkInterface::clear_reenable_rx_queue()
         GPTP_LOG_ERROR
         ( "Unable to add PTP multicast addresses to port id: %u",
           ifindex );
-        return;
     }
 
     if ( !net_lock.unlock() ) {
@@ -395,6 +395,11 @@ void LinuxNetworkInterface::watchNetLink( CommonPort *iPort )
         return;
     }
 
+    int ret = pthread_setname_np(pthread_self(), "watchNetLink");
+    if (ret != 0) {
+        GPTP_LOG_ERROR("pthread_setname_np failed");
+    }
+
     netLinkSocket = socket (AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 
     if (netLinkSocket < 0) {
@@ -510,6 +515,11 @@ void *LinuxTimerQueueHandler( void *arg )
     timeout.tv_sec = 0;
     timeout.tv_nsec = 100000000; /* 100 ms */
     sigemptyset( &waitfor );
+
+    int ret = pthread_setname_np(pthread_self(), "LinuxTimer");
+    if (ret != 0) {
+        GPTP_LOG_ERROR("pthread_setname_np failed");
+    }
 
     while ( !timerq->stop ) {
         siginfo_t info;
@@ -875,6 +885,7 @@ TicketingLock::~TicketingLock()
 {
     if ( _private != NULL ) {
         delete _private;
+        _private = NULL;
     }
 }
 
@@ -1065,8 +1076,15 @@ bool LinuxThread::start(OSThreadFunction function, void *arg)
 
 bool LinuxThread::join(OSThreadExitCode & exit_code)
 {
-    int err;
-    err = pthread_join(_private->thread_id, NULL);
+    int err = 0;
+
+    if (_private && _private->thread_id != 0) {
+        err = pthread_join(_private->thread_id, NULL);
+        if (err != 0) {
+            GPTP_LOG_ERROR("pthread_join failed: %d (%s)", err, strerror(err));
+            return false;
+        }
+    }
 
     if (err != 0) {
         return false;
@@ -1086,6 +1104,7 @@ LinuxThread::~LinuxThread()
 {
     if ( _private != NULL ) {
         delete _private;
+        _private = NULL;
     }
 }
 
@@ -1369,23 +1388,8 @@ void LinuxSharedMemoryIPC::vfio_ptp(int64_t ml_phoffset,
         uint64_t gptp_time_s_pre = 0;
         a_lock1++;
 
-        //InterruptDisable();
-        while (1) {
-            gptp_time_s_pre = in32(ptp_base_addr + PTP_SEC_OFFSET);
-            gptp_time_ns = in32(ptp_base_addr + PTP_NANO_SEC_OFFSET);
-            qtimer_tick = in64((uintptr_t)qtimer_base_addr);
-            gptp_time_s = in32(ptp_base_addr + PTP_SEC_OFFSET);
-
-            if (gptp_time_s == gptp_time_s_pre) {
-                break;
-            }
-        }
-
-        //InterruptEnable();
-        current_gptp_time = GET_VALUE(gptp_time_ns, MAC_STNSR_TSSS_LPOS,
-                                      MAC_STNSR_TSSS_HPOS);
-        current_gptp_time = current_gptp_time + (gptp_time_s * 1000000000ull);
-        ptimedata->local_time = current_gptp_time;
+        qtimer_tick = in64((uintptr_t)qtimer_base_addr);
+        ptimedata->local_time = local_time;
         /*Now Qtimer run with 19.2MHz clock*/
         uint64_t qtimer_ns = qtimer_tick * (1000000000.0 / 19200000.0);
         int64_t local_bypqtimer_offset = (int64_t)(qtimer_ns - ptimedata->local_time);
@@ -1622,6 +1626,39 @@ bool LinuxSharedMemoryIPC::setProxyMode(int32_t proxy_value)
     return true;
 }
 
+bool LinuxSharedMemoryIPC::updateEtherLinkState(EtherPortLinkState_t LinkState)
+{
+    int buf_offset = 0;
+    char *shm_buffer = master_offset_buffer;
+    gPtpTimeData *ptimedata;
+
+    if (shm_buffer != NULL) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        ptimedata->etherPortLinkState = LinkState;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+
+#ifdef GPTP_VFIO
+    shm_buffer = master_offset_buffer_vfio;
+
+    if (shm_buffer != NULL) {
+        /* lock */
+        pthread_mutex_lock((pthread_mutex_t *) shm_buffer);
+        buf_offset += sizeof(pthread_mutex_t);
+        ptimedata   = (gPtpTimeData *) (shm_buffer + buf_offset);
+        ptimedata->etherPortLinkState = LinkState;
+        /* unlock */
+        pthread_mutex_unlock((pthread_mutex_t *) shm_buffer);
+    }
+
+#endif
+    return true;
+}
+
 bool LinuxSharedMemoryIPC::getSyncStatus(void)
 {
     bool sync_stat = 0;
@@ -1789,6 +1826,12 @@ bool LinuxSharedMemoryIPC::update_network_interface(
     return true;
 }
 
+void LinuxSharedMemoryIPC::ipc_down() {
+    if ( master_offset_buffer != NULL ) {
+        memset(master_offset_buffer, 0x0, SHM_SIZE);
+    }
+}
+
 void LinuxSharedMemoryIPC::stop()
 {
     if ( master_offset_buffer != NULL ) {
@@ -1835,8 +1878,13 @@ bool LinuxNetworkInterfaceFactory::createInterface
     struct packet_mreq mr_8021as;
     LinkLayerAddress addr;
     int ifindex;
-    LinuxNetworkInterface *net_iface_l = new LinuxNetworkInterface();
+    LinuxNetworkInterface *net_iface_l;
+    if (*net_iface != NULL) {
+        net_iface_l = dynamic_cast<LinuxNetworkInterface *>(*net_iface);
+        delete net_iface_l;
+    }
 
+    net_iface_l = new LinuxNetworkInterface();
     if ( !net_iface_l->net_lock.init()) {
         GPTP_LOG_ERROR( "Failed to initialize network lock");
         delete net_iface_l;

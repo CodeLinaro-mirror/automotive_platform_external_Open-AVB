@@ -74,7 +74,7 @@ static void get_timesync_diagstats (char *ifname,
 }
 
 
-static int get_gptp_stats(char *reply_msg, uint64_t  replytime)
+int get_gptp_stats(char *reply_msg, uint64_t  replytime)
 {
     static PortCounters_t Old_PortCounters = {};
     static uint64_t last_abstime = 0;
@@ -136,7 +136,7 @@ static int get_gptp_stats(char *reply_msg, uint64_t  replytime)
                            Old_PortCounters.ieee8021AsPortStatTxAnnounce,
                            mine.toString().c_str());
         nBytes += snprintf(reply_msg + nBytes, MAX_STR_LEN - nBytes,
-                           "AVB_SYNC_TEST: Sequence_id %d (%d)- linkup_count %d (%d) - linkdown %d (%d) - test station state: %d (%d)\n",
+                           "AVB_SYNC_TEST: Sequence_id %d (%d)- linkup_count %d (%d) - linkdown %d (%d) - test station state: %d (%d) - ether port link state: %d(%d)\n",
                            PortCounters.avb_sync_test_sequenceId,
                            Old_PortCounters.avb_sync_test_sequenceId,
                            PortCounters.avb_sync_test_linkup_count,
@@ -144,7 +144,9 @@ static int get_gptp_stats(char *reply_msg, uint64_t  replytime)
                            PortCounters.avb_sync_test_linkdown_count,
                            Old_PortCounters.avb_sync_test_linkdown_count,
                            PortCounters.avb_sync_test_station_state,
-                           Old_PortCounters.avb_sync_test_station_state);
+                           Old_PortCounters.avb_sync_test_station_state,
+                           PortCounters.ethPortLinkState,
+                           Old_PortCounters.ethPortLinkState);
         memcpy(&Old_PortCounters, &PortCounters, sizeof(PortCounters_t));
         last_abstime = replytime;
     }

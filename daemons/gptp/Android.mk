@@ -33,6 +33,14 @@ ifeq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
 LOCAL_INIT_RC := gptp_daemon.rc
 endif
 
+ifeq (gen5_gvm_gy, $(TARGET_BOARD_PLATFORM)$(TARGET_BOARD_SUFFIX))
+LOCAL_INIT_RC := gptp_daemon.rc
+endif
+
+ifeq (gen5_gvm, $(TARGET_BOARD_PLATFORM)$(TARGET_BOARD_SUFFIX))
+LOCAL_INIT_RC := gptp_daemon.rc
+endif
+
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin
 
 include $(BUILD_EXECUTABLE)
@@ -42,6 +50,10 @@ LOCAL_MODULE_CLASS := DATA
 LOCAL_MODULE := gptp_cfg.ini
 ifeq ($(TARGET_BOARD_DERIVATIVE_SUFFIX),_cdccomm)
 LOCAL_SRC_FILES := gptp_cfg_au.ini
+else ifeq (gen5_gvm_gy, $(TARGET_BOARD_PLATFORM)$(TARGET_BOARD_SUFFIX))
+LOCAL_SRC_FILES := gptp_cfg_au_nord.ini
+else ifeq (gen5_gvm, $(TARGET_BOARD_PLATFORM)$(TARGET_BOARD_SUFFIX))
+LOCAL_SRC_FILES := gptp_cfg_au_nord.ini
 else
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
 endif

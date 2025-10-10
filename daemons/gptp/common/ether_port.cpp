@@ -32,9 +32,8 @@
 ******************************************************************************/
 /******************************************************************************
 
-Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
-
-Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
 
 ******************************************************************************/
@@ -58,8 +57,11 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <math.h>
 
 #include <stdlib.h>
+#include <unistd.h>
 
+extern bool waitForInterface();
 extern LinuxSharedMemoryIPC *ipc;
+int port_pipe_fds[2];
 LinkLayerAddress EtherPort::other_multicast(OTHER_MULTICAST);
 LinkLayerAddress EtherPort::pdelay_multicast(PDELAY_MULTICAST);
 LinkLayerAddress EtherPort::test_status_multicast
@@ -112,16 +114,25 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
     operLogPdelayReqInterval = portInit->operLogPdelayReqInterval;
     operLogSyncInterval = portInit->operLogSyncInterval;
     isGM = portInit->isGM;
+    disableSigMsg = portInit->disableSigMsg;
+    lostResponses = 0;
+    allowedLostResponses = portInit->allowedLostResponses;
     reverseSyncEnabled = portInit->reverseSyncEnabled;
     reverseSyncDomain = portInit->reverseSyncDomain;
     reverseSyncRate = portInit->reverseSyncRate;
+    // Initialize to ZERO (0) last GM time base indicator on bootup.
+    setLastGmTimeBaseIndicator(0);
     reset_log_limit(RESET_ALL_LOG);
+
+    // Consider port is up even in bypass_if_wait is set
+    setEtherLinkState(ETHER_PORT_STATE_LINK_UP);
+    clock->updateEtherLinkState(ETHER_PORT_STATE_LINK_UP);
 
     if (automotive_profile) {
         setAsCapable( true );
 
         if (getInitSyncInterval() == LOG2_INTERVAL_INVALID) {
-            setInitSyncInterval( -5 );    // 31.25 ms
+            setInitSyncInterval( -3 );    // 125 ms
         }
 
         if (initialLogPdelayReqInterval == LOG2_INTERVAL_INVALID) {
@@ -207,7 +218,7 @@ EtherPort::EtherPort( PortInit_t *portInit ) :
     } else {
         avbSyncState = 0;   /* Invalid value for avbSyncState */
     }
-
+    increment_LinkupCount();
     setStationState(STATION_STATE_RESERVED);
 }
 
@@ -254,11 +265,8 @@ void EtherPort::startSyncRateIntervalTimer()
         sync_rate_interval_timer_started = true;
 
         if (isGM) {
-            // GM will wait up to 8  seconds for signaling rate
-            // TODO: This isn't according to spec but set because it is believed that some slave devices aren't signalling
-            //  to reduce the rate
-            clock->addEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED,
-                                        8000000000 );
+            //nothing to do, will keep same rate until signaling message arrives to reduce sync rate
+            //clock->addEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED, 8000000000 );
         } else {
             // Slave will time out after 4 seconds
             clock->addEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED,
@@ -301,8 +309,12 @@ void EtherPort::processMessage
 void *EtherPort::openPort( EtherPort *port )
 {
     port_ready_condition->signal();
+    int ret = pthread_setname_np(pthread_self(), "openPort");
+    if (ret != 0) {
+        GPTP_LOG_ERROR("pthread_setname_np failed");
+    }
 
-    while (1) {
+    while (linkstatus) {
         uint8_t buf[128];
         LinkLayerAddress remote;
         net_result rrecv;
@@ -377,10 +389,13 @@ void EtherPort::sendGeneralPort
 bool EtherPort::_processEvent( Event e )
 {
     bool ret = false;
+    OSThreadExitCode exit_code = osthread_ok;
 
     switch (e) {
         case POWERUP:
         case INITIALIZE:
+            setEtherLinkState(ETHER_PORT_STATE_LINK_UP);
+            clock->updateEtherLinkState(ETHER_PORT_STATE_LINK_UP);
             if (!automotive_profile) {
                 //if ( getPortState() != PTP_SLAVE &&
                 //  getPortState() != PTP_MASTER )
@@ -391,7 +406,13 @@ bool EtherPort::_processEvent( Event e )
             } else {
                 startPDelay();
             }
-
+            port_pipe_fds[0] = -1;
+            port_pipe_fds[1] = -1;
+            if (pipe(port_pipe_fds) == -1) {
+                GPTP_LOG_ERROR("pipe create error\n");
+                ret = false;
+                break;
+            }
             port_ready_condition->wait_prelock();
 
             if ( !linkWatch(watchNetLinkWrapper, (void *)this) ) {
@@ -421,16 +442,6 @@ bool EtherPort::_processEvent( Event e )
                 }
 
                 if (!isGM) {
-                    // Send an initial signalling message
-                    PTPMessageSignalling *sigMsg = new PTPMessageSignalling(this);
-
-                    if (sigMsg) {
-                        sigMsg->setintervals(log_min_mean_pdelay_req_interval, getSyncInterval(),
-                                             PTPMessageSignalling::sigMsgInterval_NoSend);
-                        sigMsg->sendPort(this, NULL);
-                        delete sigMsg;
-                    }
-
                     startSyncReceiptTimer((unsigned long long)
                                           (getsyncReceiptTimeoutMultiplier()*
                                            ((double) pow((double)2, getSyncInterval()) *
@@ -455,6 +466,31 @@ bool EtherPort::_processEvent( Event e )
             break;
 
         case LINKUP:
+            if (!OSNetworkInterfaceFactory::buildInterface
+                ( &net_iface, factory_name_t("default"), net_label,
+                 _hw_timestamper)) {
+                return false;
+            }
+            timestamper_init();
+            _init_port();
+            linkstatus = true;
+            port_pipe_fds[0] = -1;
+            port_pipe_fds[1] = -1;
+            if (pipe(port_pipe_fds) == -1) {
+                GPTP_LOG_ERROR("pipe create error\n");
+                ret = false;
+                break;
+            }
+            port_ready_condition->wait_prelock();
+
+            if ( !linkOpen(openPortWrapper, (void *)this) ) {
+                GPTP_LOG_ERROR("Error creating port thread");
+                ret = false;
+                break;
+            }
+
+            port_ready_condition->wait();
+
             haltPdelay(false);
             startPDelay();
 
@@ -492,16 +528,6 @@ bool EtherPort::_processEvent( Event e )
                 log_min_mean_pdelay_req_interval = initialLogPdelayReqInterval;
 
                 if (!isGM) {
-                    // Send an initial signaling message
-                    PTPMessageSignalling *sigMsg = new PTPMessageSignalling(this);
-
-                    if (sigMsg) {
-                        sigMsg->setintervals(PTPMessageSignalling::sigMsgInterval_NoSend,
-                                             getSyncInterval(), PTPMessageSignalling::sigMsgInterval_NoSend);
-                        sigMsg->sendPort(this, NULL);
-                        delete sigMsg;
-                    }
-
                     startSyncReceiptTimer((unsigned long long)
                                           (getsyncReceiptTimeoutMultiplier()*
                                            ((double) pow((double)2, getSyncInterval()) *
@@ -523,21 +549,66 @@ bool EtherPort::_processEvent( Event e )
                 if (getTestMode()) {
                     linkUpCount++;
                 }
+                increment_LinkupCount();
             }
 
             this->timestamper_reset();
+            setEtherLinkState(ETHER_PORT_STATE_LINK_UP);
+            clock->updateEtherLinkState(ETHER_PORT_STATE_LINK_UP);
             ret = true;
             break;
 
         case LINKDOWN:
+            linkstatus = false;
+            //delete all timers as in powerdown
+            stopPDelay();
+            clock->deleteEventTimerLocked( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
+            clock->deleteEventTimerLocked( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
+            clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+            clock->deleteEventTimerLocked( this, DEFERRED_SYNC_INTERVAL_RATE_CHANGE);
+            clock->deleteEventTimerLocked( this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES);
+            clock->deleteEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED);
+            clock->deleteEventTimerLocked( this, RSYNC_INTERVAL_TIMEOUT_EXPIRES );
+            stopSyncReceiptTimer();
+            setEtherLinkState(ETHER_PORT_STATE_LINK_DOWN);
+            clock->updateEtherLinkState(ETHER_PORT_STATE_LINK_DOWN);
+
+            if (port_pipe_fds[1] != -1) {
+                char data = '1';
+                ssize_t bytes_written = write(port_pipe_fds[1], &data, 1);
+                if (bytes_written != 1) {
+                    GPTP_LOG_ERROR("Failed to write to pipe: %s", strerror(errno));
+                } else {
+                    GPTP_LOG_INFO("Successfully wrote to pipe to interrupt select()");
+                }
+            }
+
+            if (!linkjoin(exit_code)) {
+                GPTP_LOG_ERROR("Failed to openport thread to join %d", exit_code);
+                ret = false;
+                break;
+            }
+            GPTP_LOG_INFO("openport thread to join %d", exit_code);
+            // Release the Pipe
+            if (port_pipe_fds[0] != -1) {
+                close(port_pipe_fds[0]);
+                port_pipe_fds[0] = -1;
+            }
+            if (port_pipe_fds[1] != -1) {
+                close(port_pipe_fds[1]);
+                port_pipe_fds[1] = -1;
+            }
+            setStationState(STATION_STATE_RESERVED);
+            if ( ipc ) {
+                ipc->ipc_down();
+                GPTP_LOG_ERROR("ipc DOWN");
+            }
 #ifdef LE_SHARED_MEM
             if ( ipc ) {
                 ipc->updateSyncStatus(false, PTP_DISABLED);
             }
 
 #endif
-            stopPDelay();
-
             if (automotive_profile) {
                 GPTP_LOG_EXCEPTION("LINK DOWN");
             } else {
@@ -548,7 +619,8 @@ bool EtherPort::_processEvent( Event e )
             if (getTestMode()) {
                 linkDownCount++;
             }
-
+            increment_LinkdownCount();
+            timestamper_deinit();
             ret = true;
             break;
 
@@ -562,7 +634,7 @@ bool EtherPort::_processEvent( Event e )
             // Automotive Profile specific action
             if (e == SYNC_RECEIPT_TIMEOUT_EXPIRES) {
 
-                GPTP_LOG_LIMIT_EXCEPTION(SYNC_LOG, "SYNC receipt timeout");
+            GPTP_LOG_LIMIT_EXCEPTION(SYNC_LOG, "SYNC receipt timeout");
 
                 startSyncReceiptTimer((unsigned long long)
                                       (getsyncReceiptTimeoutMultiplier()*
@@ -572,7 +644,15 @@ bool EtherPort::_processEvent( Event e )
 
             ret = true;
             break;
-
+        case DEFERRED_SYNC_INTERVAL_RATE_CHANGE:
+            GPTP_LOG_DEBUG("DEFERRED_SYNC_INTERVAL_RATE_CHANGE occurred");
+            if (e == DEFERRED_SYNC_INTERVAL_RATE_CHANGE) {
+                //Set deferred sync interval rate as current sync interval rate
+                setSyncInterval(getDeferredSyncInterval());
+                GPTP_LOG_INFO("Log mean sync interval changed to %d", getSyncInterval());
+            }
+            ret = true;
+            break;
         case PDELAY_INTERVAL_TIMEOUT_EXPIRES:
             GPTP_LOG_DEBUG("PDELAY_INTERVAL_TIMEOUT_EXPIRES occured");
             {
@@ -591,11 +671,15 @@ bool EtherPort::_processEvent( Event e )
                     pdelay_req->setTimestamp(pending);
                 }
 
+                getPDelayRxLock();
                 if (last_pdelay_req != NULL) {
                     delete last_pdelay_req;
+                    last_pdelay_req = NULL;
                 }
 
                 setLastPDelayReq(pdelay_req);
+                putPDelayRxLock();
+
                 getTxLock();
                 pdelay_req->sendPort(this, NULL);
                 GPTP_LOG_DEBUG("*** Sent PDelay Request message");
@@ -675,6 +759,7 @@ bool EtherPort::_processEvent( Event e )
                     follow_up->setPreciseOriginTimestamp
                     (sync_timestamp);
                     follow_up->sendPort(this, NULL);
+                    GPTP_LOG_DEBUG("Sent SYNC follow_up message");
                     delete follow_up;
                 } else {
                     GPTP_LOG_ERROR
@@ -756,12 +841,23 @@ bool EtherPort::_processEvent( Event e )
             break;
 
         case PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES:
-            if (!automotive_profile) {
-                GPTP_LOG_LIMIT_EXCEPTION(PDELAY_LOG, "PDelay Response Receipt Timeout");
-                setAsCapable(false);
+            GPTP_LOG_LIMIT_EXCEPTION(PDELAY_LOG, "PDelay Response Receipt Timeout");
+            static bool counter_updated = false;
+            timelog_avnu_pdelay_resp_timeout();
+            GPTP_LOG_DEBUG("lostResponses: %d getAllowedLostResponses: %d", lostResponses, getAllowedLostResponses());
+            if (lostResponses < getAllowedLostResponses()) {
+                lostResponses++;
+                counter_updated = false;
+            } else {
+                if (!counter_updated) {
+                    incCounter_ieee8021AsPortStatPdelayAllowedLostResponsesExceeded();
+                    if (!automotive_profile) {
+                        setAsCapable(false); // set as As incapable only in non-automotive profile.
+                    }
+                    counter_updated = true;
+                }
             }
-
-            setPdelayCount( 0 );
+            setPdelayCount(0);
             break;
 
         case PDELAY_RESP_PEER_MISBEHAVING_TIMEOUT_EXPIRES:
@@ -776,13 +872,15 @@ bool EtherPort::_processEvent( Event e )
 
             break;
 
-        case SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED: {
-                GPTP_LOG_INFO("SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED occured");
-                sync_rate_interval_timer_started = false;
+        case SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED:
+        {
+            GPTP_LOG_INFO("SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED occured");
+            sync_rate_interval_timer_started = false;
+            if (!disableSigMsg) {
                 bool sendSignalMessage = false;
 
-                if ( getSyncInterval() != operLogSyncInterval ) {
-                    setSyncInterval( operLogSyncInterval );
+                if (getSyncInterval() != operLogSyncInterval) {
+                    setSyncInterval(operLogSyncInterval);
                     sendSignalMessage = true;
                 }
 
@@ -791,7 +889,7 @@ bool EtherPort::_processEvent( Event e )
                     sendSignalMessage = true;
                 }
 
-                if (sendSignalMessage) {
+                if (sendSignalMessage && (getStationState() >= STATION_STATE_AVB_SYNC)) {
                     if (!isGM) {
                         // Send operational signalling message
                         PTPMessageSignalling *sigMsg = new PTPMessageSignalling(this);
@@ -808,15 +906,14 @@ bool EtherPort::_processEvent( Event e )
                             sigMsg->sendPort(this, NULL);
                             delete sigMsg;
                         }
-
-                        startSyncReceiptTimer((unsigned long long)
-                                              (getsyncReceiptTimeoutMultiplier()*
-                                               ((double) pow((double)2, getSyncInterval()) *
-                                                1000000000.0)));
                     }
                 }
             }
-            break;
+            startSyncReceiptTimer((unsigned long long)(getsyncReceiptTimeoutMultiplier() *
+                                                       ((double)pow((double)2, getSyncInterval()) *
+                                                        1000000000.0)));
+        }
+        break;
 
         case POWERDOWN:
             //to ensure no processing happens for already expired events
@@ -825,6 +922,7 @@ bool EtherPort::_processEvent( Event e )
             clock->deleteEventTimerLocked( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
             clock->deleteEventTimerLocked( this, ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES );
             clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+            clock->deleteEventTimerLocked( this, DEFERRED_SYNC_INTERVAL_RATE_CHANGE);
             clock->deleteEventTimerLocked( this, PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES);
             clock->deleteEventTimerLocked( this, SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED);
             clock->deleteEventTimerLocked( this, RSYNC_INTERVAL_TIMEOUT_EXPIRES );
@@ -883,6 +981,7 @@ void EtherPort::becomeSlave( bool restart_syntonization )
 {
     clock->deleteEventTimerLocked( this, ANNOUNCE_INTERVAL_TIMEOUT_EXPIRES );
     clock->deleteEventTimerLocked( this, SYNC_INTERVAL_TIMEOUT_EXPIRES );
+    clock->deleteEventTimerLocked( this, DEFERRED_SYNC_INTERVAL_RATE_CHANGE ); //Delete as this is used only in GM mode
     setPortState( PTP_SLAVE );
     clock->setSyncStatus(false, PTP_SLAVE);
 

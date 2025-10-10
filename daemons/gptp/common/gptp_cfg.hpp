@@ -99,6 +99,7 @@ class GptpIniParser
             bool automotive_profile;
             bool asCapable;
             bool isGm;
+            bool disableSigMsg;
             bool bypassIfWait = false;
             bool waitForSync = false;
             PortState port_state;
@@ -279,7 +280,10 @@ class GptpIniParser
         {
             return _config.isGm;
         }
-
+        bool getIsSigMsgDisabled(void)
+        {
+            return _config.disableSigMsg;
+        }
         bool getAsCapable(void)
         {
             return _config.asCapable;

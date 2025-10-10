@@ -51,8 +51,13 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <inttypes.h>
 
-#define PROXY_MODE_SYNC_INTERVAL    5
+#define PROXY_MODE_SYNC_INTERVAL    (5)
+#define MAX_THRESHOLD_MULTIPLIER    (1.05)
+#define MIN_THRESHOLD_MULTIPLIER    (0.95)
+#define FIVE_MSEC_IN_NSEC           (5000000)
+#define FIFTY_MSEC_IN_NSEC          (50000000)
 
 extern char ifname_eth[IFNAME_SIZE];
 int32_t g_proxy_mode = 0;
@@ -268,6 +273,7 @@ PTPMessageCommon *buildPTPMessage
                         g_proxy_mode_set = 1;
                         gm_sync_count = 1;
                         port->getClock()->setProxyMode(g_proxy_mode);
+                        port->timelog_avnu_sync_discontinutity();
                     }
                 } else {
                     preciseOriginTimestamp_prev.seconds_ms =
@@ -399,6 +405,7 @@ PTPMessageCommon *buildPTPMessage
                     &port->pdelayInfo.request_receipt_timestamp); //t2
                 timestamp.get64(&port->pdelayInfo.response_receipt_timestamp); //t4
                 msg = pdelay_resp_msg;
+                port->resetLostResponses();
             }
 
             break;
@@ -564,6 +571,13 @@ PTPMessageCommon *buildPTPMessage
     memcpy(&(msg->domainNumber),
            buf + PTP_COMMON_HDR_DOMAIN_NUMBER(PTP_COMMON_HDR_OFFSET),
            sizeof(msg->domainNumber));
+    if ((msg->domainNumber == 1) && (port->getPortState() == PTP_SLAVE)) {
+        GPTP_LOG_LIMIT_ERROR(RX_TIMESTAMP_LOG,
+                "*** Received an reverse sync packet from slave to slave, discarding. domainNumber = %d port start = %d\n",
+                msg->domainNumber, port->getPortState());
+        goto abort;
+    }
+
     memcpy(&(msg->flags), buf + PTP_COMMON_HDR_FLAGS(PTP_COMMON_HDR_OFFSET),
            PTP_FLAGS_LENGTH);
     memcpy(&(msg->correctionField),
@@ -920,6 +934,18 @@ bail:
 
 void PTPMessageSync::processMessage( EtherPort *port )
 {
+    uint16_t currentSequenceId = 0;
+    Timestamp currentTimeStamp(0, 0, 0);
+    bool messageIntervalMismatch = false;
+    long long unsigned int min_threshold = 0;
+    long long unsigned int max_threshold = 0;
+    long long signed int successiveSyncArrivalDifference = 0;
+    static int first_packet = 1; // Flag to indicate if the first packet has been processed
+    static uint8_t sendSigMsgCounter = 1;
+    static uint16_t previousSequenceId = 0;
+    static Timestamp previousTimeStamp(0, 0, 0);
+    static long long unsigned int operSyncIntervalNS = 0;
+
     if (port->getPortState() == PTP_DISABLED ) {
         // Do nothing Sync messages should be ignored when in this state
         return;
@@ -931,6 +957,7 @@ void PTPMessageSync::processMessage( EtherPort *port )
         return;
     }
 
+    // Increment the sync message receive counter
     port->incCounter_ieee8021AsPortStatRxSyncCount();
 #if CHECK_ASSIST_BIT
 
@@ -941,8 +968,87 @@ void PTPMessageSync::processMessage( EtherPort *port )
         if (old_sync != NULL) {
             delete old_sync;
         }
-
+        // Set the last sync message
         port->setLastSync(this);
+
+        // Check if signaling messages are enabled and the port is in the correct state
+        if ((!port->isSigMsgDisabled()) && (port->getPortState() == PTP_SLAVE) && (port->getStationState() >= STATION_STATE_AVB_SYNC))
+        {
+            // Read sync interval here
+            operSyncIntervalNS = ((long long)(pow((double)2, port->getSyncInterval()) * 1000000000.0));
+
+            if (operSyncIntervalNS < FIVE_MSEC_IN_NSEC) {
+                // If the sync interval is less than 5 milliseconds, set min_threshold to 0 to avoid underflow
+                min_threshold = 0;
+                max_threshold = operSyncIntervalNS + FIVE_MSEC_IN_NSEC;
+            } else if (operSyncIntervalNS < FIFTY_MSEC_IN_NSEC) {
+                // The fixed buffer of �5 milliseconds for short intervals ensures that minor variations are tolerated
+                min_threshold = operSyncIntervalNS - FIVE_MSEC_IN_NSEC;
+                max_threshold = operSyncIntervalNS + FIVE_MSEC_IN_NSEC;
+            } else {
+                min_threshold = (operSyncIntervalNS * MIN_THRESHOLD_MULTIPLIER); //(for a 5% increase)
+                max_threshold = (operSyncIntervalNS * MAX_THRESHOLD_MULTIPLIER); //(for a 5% decrease)
+            }
+
+            // Get the current timestamp and sequence ID
+            currentTimeStamp = this->getTimestamp();
+            currentSequenceId = this->getSequenceId();
+
+            // Calculate the difference between successive sync arrivals
+            successiveSyncArrivalDifference = (TIMESTAMP_TO_NS(currentTimeStamp) - TIMESTAMP_TO_NS(previousTimeStamp));
+
+            // 1. Check if incoming ptp packets logMeanMessageInterval is matching the current sync interval of the slave port
+            if (((signed char)this->logMeanMessageInterval) != port->getSyncInterval()) {
+                GPTP_LOG_WARNING("Incoming logMeanMessageInterval: %d Current SyncInterval %d", (signed char)this->logMeanMessageInterval, port->getSyncInterval());
+                messageIntervalMismatch = true;
+            }
+
+            // 2. Check for sequence ID mismatch in case GM lost and came back
+            // Tolerate the first seq id mismatch
+            if (first_packet) {
+                previousSequenceId = currentSequenceId; // Initialize seq_mismatch with the first packet's sequence number
+            } else if (previousSequenceId + 1 != currentSequenceId) {
+                // Log a warning if there is a sequence ID jump
+                GPTP_LOG_WARNING("Sequence Id jump detected previousSequenceId %d currentSequenceId %d", ++previousSequenceId, currentSequenceId);
+                // Reset the counter to restart the counting
+                sendSigMsgCounter = 1;
+            }
+
+            // 3. Check if the sync arrival difference is within the acceptable range.
+            // 0.95 and 1.05 are used to allow a 5% deviation above and below the expected sync interval.
+            // This range is chosen to account for network jitter and variable delays while still detecting significant discrepancies.
+            // Can this be given as gptp parameter to have control?
+            if (((successiveSyncArrivalDifference > max_threshold)
+                || (successiveSyncArrivalDifference < min_threshold)
+                || messageIntervalMismatch) && !first_packet)
+            {
+                // Check station state and send an initial signalling message only if sync has already happened
+                GPTP_LOG_WARNING("Station state: %d, sendSigMsgCounter: %d, currentSequenceId:%d, previousSequenceId:%d", port->getStationState(), sendSigMsgCounter, currentSequenceId, previousSequenceId);
+                // send signaling messages periodically, but with a reasonable interval between them.
+                // A common practice is to wait for a few sync intervals (e.g., 5-10 intervals) before sending another signaling message.
+                // Avoid changing to a slower rate until after three Sync messages. We kept 10 in this case
+                if (sendSigMsgCounter % 5 == 0) {
+                    // Trigger the signaling message since incoming PTP packets are not in interval of SLAVE operSyncInterval
+                    GPTP_LOG_INFO("currentTimeStamp: %" PRIu64 " previousTimeStamp: %" PRIu64 " Difference: %" PRId64 " operSyncIntervalNS: %" PRIu64 " min_threshold %" PRIu64 " min_threshold %" PRIu64 " ", TIMESTAMP_TO_NS(currentTimeStamp), TIMESTAMP_TO_NS(previousTimeStamp), successiveSyncArrivalDifference, operSyncIntervalNS, min_threshold, max_threshold);
+
+                    PTPMessageSignalling *sigMsg = new PTPMessageSignalling(port);
+                    sigMsg->setMessageType(SIGNALLING_MESSAGE);
+                    if (sigMsg) {
+                        sigMsg->setintervals(PTPMessageSignalling::sigMsgInterval_NoChange, port->getSyncInterval(), PTPMessageSignalling::sigMsgInterval_NoChange);
+                        sigMsg->sendPort(port, NULL);
+                    }
+                    sendSigMsgCounter = 1;
+                }
+                sendSigMsgCounter++;
+            }
+            // Update the previous timestamp and sequence ID
+            previousTimeStamp = currentTimeStamp;
+            previousSequenceId = currentSequenceId;
+
+            if (first_packet) {
+                first_packet = 0; // Mark that the first packet has been processed
+            }
+        }
         _gc = false;
         goto done;
 #if CHECK_ASSIST_BIT
@@ -1108,13 +1214,14 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
     }
 
     //stats
-    port->syncInfo.correction_field = correctionField;
     port->syncInfo.pDelay = delay;
     master_local_freq_offset  =  tlv.getRateOffset();
     master_local_freq_offset /= 1ULL << 41;
     master_local_freq_offset += 1.0;
     master_local_freq_offset /= port->getPeerRateOffset();
     correctionField /= 1 << 16;
+    //Assign updated correction field value to sync info
+    port->syncInfo.correction_field = correctionField;
     correction = (int64_t)((delay * master_local_freq_offset) + correctionField );
 
     if ( correction > 0 ) {
@@ -1475,6 +1582,7 @@ void PTPMessagePathDelayResp::processMessage( EtherPort *port )
         goto bypass_verify_duplicate;
     }
 
+    port->resetLostResponses();
     old_pdelay_resp->getPortIdentity(&oldresp_id);
     oldresp_id.getPortNumber(&oldresp_port_number);
     getPortIdentity(&resp_id);
@@ -1608,7 +1716,7 @@ void PTPMessagePathDelayRespFollowUp::processMessage
     Timestamp remote_req_rx_timestamp(0, 0, 0);
     Timestamp response_rx_timestamp(0, 0, 0);
 
-    if (port->getPortState() == PTP_DISABLED) {
+    if ((port == NULL) || (port->getPortState() == PTP_DISABLED)) {
         // Do nothing all messages should be ignored when in this state
         return;
     }
@@ -1986,49 +2094,75 @@ void PTPMessageSignalling::processMessage( EtherPort *port )
         return;
     }
 
-    if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_Initial) {
-        port->setInitPDelayInterval();
-        waitTime = ((long long) (pow((double)2,
-                                     port->getPDelayInterval()) *  1000000000.0));
-        waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
-                   EVENT_TIMER_GRANULARITY;
-        port->startPDelayIntervalTimer(waitTime);
-    } else if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_NoSend) {
-        // TODO: No send functionality needs to be implemented.
-        GPTP_LOG_WARNING("Signal received to stop sending pDelay messages: Not implemented");
-    } else if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_NoChange) {
-        // Nothing to do
-    } else {
-        port->setPDelayInterval(linkDelayInterval);
-        waitTime = ((long long) (pow((double)2,
-                                     port->getPDelayInterval()) *  1000000000.0));
-        waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
-                   EVENT_TIMER_GRANULARITY;
-        port->startPDelayIntervalTimer(waitTime);
-    }
-
     if (timeSyncInterval == PTPMessageSignalling::sigMsgInterval_Initial) {
-        port->resetInitSyncInterval();
-        waitTime = ((long long) (pow((double)2,
-                                     port->getSyncInterval()) *  1000000000.0));
-        waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
-                   EVENT_TIMER_GRANULARITY;
-        port->startSyncIntervalTimer(waitTime, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+        int8_t initLogSyncInterval = port->getInitSyncInterval();
+        // If timeSyncInterval(Ex:0) < getSyncInterval(Ex: -3) i.e., if requested sync rate
+        // is lesser than current Implemented one, do not to change to timeSyncInterval until
+        // atleast three sync messages are sent after receiving the signaling message.
+        // Ref : 6.2.4 gPTP Signaling Message, Auto-Ethernet-AVB-Func-Interop-Spec_v1.6
+        if (initLogSyncInterval < timeSyncInterval) {
+            port->stopDeferredSyncIntervalTimer(DEFERRED_SYNC_INTERVAL_RATE_CHANGE); // Stop previous ones, if any
+            port->setDeferredSyncInterval(timeSyncInterval);
+            // Get current sync interval and multiply by 3
+            waitTime = 3 * ((long long)(pow((double)2, port->getSyncInterval()) * 1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime : EVENT_TIMER_GRANULARITY;
+            GPTP_LOG_INFO("Started deferred sync interval timer with waitTime: %" PRIu64 " ", waitTime);
+            port->startDeferredSyncIntervalTimer(waitTime, DEFERRED_SYNC_INTERVAL_RATE_CHANGE);
+        } else {
+            port->resetInitSyncInterval();
+            waitTime = ((long long)(pow((double)2, port->getSyncInterval()) * 1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime : EVENT_TIMER_GRANULARITY;
+            port->startSyncIntervalTimer(waitTime, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+        }
     } else if (timeSyncInterval == PTPMessageSignalling::sigMsgInterval_NoSend) {
         // TODO: No send functionality needs to be implemented.
         GPTP_LOG_WARNING("Signal received to stop sending Sync messages: Not implemented");
     } else if (timeSyncInterval == PTPMessageSignalling::sigMsgInterval_NoChange) {
         // Nothing to do
     } else {
-        port->setSyncInterval(timeSyncInterval);
-        waitTime = ((long long) (pow((double)2,
-                                     port->getSyncInterval()) *  1000000000.0));
-        waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
-                   EVENT_TIMER_GRANULARITY;
-        port->startSyncIntervalTimer(waitTime, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+        int8_t currentSyncInterval = port->getSyncInterval();
+        // If timeSyncInterval(Ex:0) < getSyncInterval(Ex: -3) i.e., if requested sync rate
+        // is lesser than current Implemented one, do not to change to timeSyncInterval until
+        // atleast three sync messages are sent after receiving the signaling message.
+        // Ref : 6.2.4 gPTP Signaling Message, Auto-Ethernet-AVB-Func-Interop-Spec_v1.6
+        if (currentSyncInterval < timeSyncInterval) {
+            port->stopDeferredSyncIntervalTimer(DEFERRED_SYNC_INTERVAL_RATE_CHANGE); // Stop previous ones if any
+            port->setDeferredSyncInterval(timeSyncInterval);
+            // Get current sync interval and multiply by 3
+            waitTime = 3 * ((long long)(pow((double)2, port->getSyncInterval()) * 1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime : EVENT_TIMER_GRANULARITY;
+            GPTP_LOG_INFO("Started deferred sync interval timer with waitTime: %" PRIu64 " ", waitTime);
+            port->startDeferredSyncIntervalTimer(waitTime, DEFERRED_SYNC_INTERVAL_RATE_CHANGE);
+        } else {
+            port->setSyncInterval(timeSyncInterval);
+            waitTime = ((long long)(pow((double)2, port->getSyncInterval()) * 1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime : EVENT_TIMER_GRANULARITY;
+            port->startSyncIntervalTimer(waitTime, SYNC_INTERVAL_TIMEOUT_EXPIRES);
+        }
     }
 
     if (!port->getAutomotiveProfile()) {
+        if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_Initial) {
+            port->setInitPDelayInterval();
+            waitTime = ((long long) (pow((double)2,
+                                         port->getPDelayInterval()) *  1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
+                       EVENT_TIMER_GRANULARITY;
+            port->startPDelayIntervalTimer(waitTime);
+        } else if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_NoSend) {
+            // TODO: No send functionality needs to be implemented.
+            GPTP_LOG_WARNING("Signal received to stop sending pDelay messages: Not implemented");
+        } else if (linkDelayInterval == PTPMessageSignalling::sigMsgInterval_NoChange) {
+            // Nothing to do
+        } else {
+            port->setPDelayInterval(linkDelayInterval);
+            waitTime = ((long long) (pow((double)2,
+                                         port->getPDelayInterval()) *  1000000000.0));
+            waitTime = waitTime > EVENT_TIMER_GRANULARITY ? waitTime :
+                       EVENT_TIMER_GRANULARITY;
+            port->startPDelayIntervalTimer(waitTime);
+        }
+
         if (announceInterval == PTPMessageSignalling::sigMsgInterval_Initial) {
             // TODO: Needs implementation
             GPTP_LOG_WARNING("Signal received to set Announce message to initial interval: Not implemented");

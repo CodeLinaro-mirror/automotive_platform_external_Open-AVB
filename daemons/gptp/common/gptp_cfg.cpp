@@ -283,6 +283,11 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
             bool isGM = parseMatch( value, "1");
             valOK = true;
             parser->_config.isGm = isGM;
+        } else if (parseMatch(name, "disableSignalingMessage"))
+        {
+            bool disableSigMsg = parseMatch(value, "1");
+            valOK = true;
+            parser->_config.disableSigMsg = disableSigMsg;
         }
     } else if ( parseMatch(section, "eth") ) {
         if ( parseMatch(name, "phy_delay_gb_tx") ) {

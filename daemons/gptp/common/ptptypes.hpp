@@ -72,4 +72,17 @@ typedef enum {
     PTP_LISTENING       //!< Port is in a PTP listening state. Currently not in use.
 } PortState;
 
-#endif/*PTP_TYPES_HPP*/
+/**
+ * @brief Ether port Link state enumeration
+ */
+typedef enum {
+   ETHER_PORT_STATE_RESERVED,
+   ETHER_PORT_STATE_LINK_DOWN,
+   ETHER_PORT_STATE_LINK_UP,
+   ETHER_PORT_STATE_LINK_SUSPENDED,
+   ETHER_PORT_STATE_LINK_DISABLED,
+   ETHER_PORT_STATE_LINK_FAULTY,
+   ETHER_PORT_STATE_UNKNOWN
+} EtherPortLinkState_t;
+
+#endif /*PTP_TYPES_HPP*/

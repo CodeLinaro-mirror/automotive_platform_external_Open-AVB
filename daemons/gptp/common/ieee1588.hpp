@@ -109,7 +109,8 @@ typedef enum {
     PDELAY_RESP_RECEIPT_TIMEOUT_EXPIRES,    //!< Pdelay response message timeout
     PDELAY_RESP_PEER_MISBEHAVING_TIMEOUT_EXPIRES,   //!< Timeout for peer misbehaving. This even will re-enable the PDelay Requests
     SYNC_RATE_INTERVAL_TIMEOUT_EXPIRED,  //!< Sync rate signal timeout for the Automotive Profile
-    POWERDOWN                           //!< Power down. closing GPTP daemon, comes when ctrl + c is used
+    POWERDOWN,                           //!< Power down. closing GPTP daemon, comes when ctrl + c is used
+    DEFERRED_SYNC_INTERVAL_RATE_CHANGE   //!< Sync rate interval change after 3 current sync message interval as per AVNU spec
 } Event;
 
 /**

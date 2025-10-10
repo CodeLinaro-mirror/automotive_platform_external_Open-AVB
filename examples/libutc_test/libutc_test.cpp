@@ -97,8 +97,8 @@ void signal_handler(int signum) {
 
 int main(int argc, char *argv[])
 {
-    int sync_status;
-    uint64_t utc_time;
+    int sync_status = 0;
+    uint64_t utc_time = 0;
     bool utc_available = false;
     utc_available = utc_helper_init();
 
@@ -114,8 +114,10 @@ int main(int argc, char *argv[])
 
     sync_status = utcGetSyncStatus();
     utc_time = utcGetUtcTime();
+    struct timespec real = {0};
+    clock_gettime(CLOCK_REALTIME, &real);
 
-    UTC_TEST_LOG_INFO("utc status %d utc time %u\n", sync_status, utc_time);
+    UTC_TEST_LOG_INFO("utc status %d last updated utc time %lu, current utc time %lu.%lu\n", sync_status, utc_time, real.tv_sec, real.tv_nsec);
 
     utc_helper_deinit();
 

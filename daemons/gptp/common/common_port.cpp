@@ -32,9 +32,8 @@
 ******************************************************************************/
 /******************************************************************************
 
-Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
-
-Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
 
 ******************************************************************************/
@@ -44,6 +43,11 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <common_tstamper.hpp>
 #include <gptp_cfg.hpp>
 #include <qgptp_rmgr.h>
+#include <unistd.h>
+
+extern bool waitForInterface();
+extern void gptpDaemonServDeInit(void);
+extern void gptpDaemonServInit(void);
 
 CommonPort::CommonPort( PortInit_t *portInit ) :
     thread_factory( portInit->thread_factory ),
@@ -81,6 +85,8 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     pdelay_count = 0;
     sct_shm_fd = portInit->sct_shm_fd;
     sct_buffer = portInit->sct_buffer;
+    bypass_if_wait = portInit->bypass_if_wait;
+    net_iface = NULL;
     asCapable = false;
     link_speed = INVALID_LINKSPEED;
     qgptp_rmgr_setport(this);
@@ -127,6 +133,13 @@ bool CommonPort::init_port( void )
         return false;
     }
 
+    deferredSyncIntervalTimerLock = lock_factory->createLock(oslock_recursive);
+
+    if (!deferredSyncIntervalTimerLock) {
+        GPTP_LOG_ERROR("create deferredSyncIntervalTimerLock failure");
+        return false;
+    }
+
     announceIntervalTimerLock = lock_factory->createLock(oslock_recursive);
 
     if (!announceIntervalTimerLock) {
@@ -156,6 +169,18 @@ void CommonPort::timestamper_init( void )
             GPTP_LOG_ERROR
             ( "Failed to initialize hardware timestamper, "
               "falling back to software timestamping" );
+            return;
+        }
+    }
+}
+
+void CommonPort::timestamper_deinit(  )
+{
+    if ( _hw_timestamper != NULL ) {
+        if ( !_hw_timestamper->HWTimestamper_deinit
+                ( net_label, &net_iface )) {
+            GPTP_LOG_ERROR
+            ( "Failed to deinitialize hardware timestamper" );
             return;
         }
     }
@@ -427,6 +452,27 @@ void CommonPort::stopSyncIntervalTimer( Event e )
     clock->putTimerQLock();
 }
 
+void CommonPort::startDeferredSyncIntervalTimer(long long unsigned int waitTime, Event e)
+{
+    if (deferredSyncIntervalTimerLock->trylock() == oslock_fail) {
+        return;
+    }
+    clock->deleteEventTimerLocked(this, e);
+    clock->addEventTimerLocked(this, e, waitTime);
+    deferredSyncIntervalTimerLock->unlock();
+}
+
+void CommonPort::stopDeferredSyncIntervalTimer(Event e)
+{
+    clock->getTimerQLock();
+    if (deferredSyncIntervalTimerLock->trylock() == oslock_fail) {
+        return;
+    }
+    clock->deleteEventTimerLocked(this, e);
+    deferredSyncIntervalTimerLock->unlock();
+    clock->putTimerQLock();
+}
+
 void CommonPort::startAnnounceIntervalTimer
 ( long long unsigned int waitTime )
 {
@@ -686,6 +732,24 @@ bool CommonPort::processEvent( Event e )
 
             // Do any media specific initialization
             ret = _processEvent( e );
+            break;
+        case LINKDOWN:
+            gptpDaemonServDeInit();
+            ret = _processEvent( e );
+            break;
+        case LINKUP:
+            GPTP_LOG_DEBUG("Received LINKUP event");
+            if (!bypass_if_wait) {
+                while (waitForInterface()) {
+
+                    GPTP_LOG_DEBUG( "waitForInterface \n");
+                }
+                GPTP_LOG_INFO( "eth interface is up.. \n");
+            } else {
+                GPTP_LOG_INFO( "Bypass Ethernet check.. \n");
+            }
+            ret = _processEvent( e );
+            gptpDaemonServInit();
             break;
 
         case STATE_CHANGE_EVENT:

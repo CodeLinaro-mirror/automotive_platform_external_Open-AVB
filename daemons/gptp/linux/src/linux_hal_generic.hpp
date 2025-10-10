@@ -31,10 +31,11 @@
 
 ******************************************************************************/
 /* ============================================================================
-Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
 
-Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
+
 ============================================================================ */
 #ifndef LINUX_HAL_GENERIC_HPP
 #define LINUX_HAL_GENERIC_HPP
@@ -108,6 +109,9 @@ class LinuxTimestamperGeneric : public LinuxTimestamper
          */
         virtual bool HWTimestamper_init
         ( InterfaceLabel *iface_label, OSNetworkInterface *iface );
+
+        virtual bool HWTimestamper_deinit
+                ( InterfaceLabel *iface_label, OSNetworkInterface **iface );
 
         /**
          * @brief  Reset the Hardware timestamp interface

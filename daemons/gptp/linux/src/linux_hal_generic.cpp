@@ -31,10 +31,11 @@
 
 ******************************************************************************/
 /* ============================================================================
-Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
 
-Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
+
 ============================================================================ */
 
 #include <linux_hal_generic.hpp>
@@ -66,6 +67,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 
 char ptp_dev_index[PTP_CLOCK_DEVICE_LENGTH] = {0};
 char ptp_device[] = PTP_DEVICE;
+extern int port_pipe_fds[2];
 
 
 net_result LinuxNetworkInterface::nrecv
@@ -96,8 +98,16 @@ net_result LinuxNetworkInterface::nrecv
     }
 
     FD_ZERO( &readfds );
-    FD_SET( sd_event, &readfds );
-    err = select( sd_event + 1, &readfds, NULL, NULL, &timeout );
+    if (sd_event >= 0 && sd_event < FD_SETSIZE && fcntl(sd_event, F_GETFD) != -1) {
+        FD_SET(sd_event, &readfds);
+    } else {
+        GPTP_LOG_ERROR("Invalid sd_event fd");
+        ret = net_fatal;
+        goto done;
+    }
+    FD_SET(port_pipe_fds[0], &readfds);
+
+    err = select( (port_pipe_fds[0] > sd_event ? port_pipe_fds[0] : sd_event) + 1, &readfds, NULL, NULL, &timeout );
 
     if ( err == 0 ) {
         ret = net_trfail;
@@ -113,9 +123,19 @@ net_result LinuxNetworkInterface::nrecv
             ret = net_fatal;
             goto done;
         }
-    } else if ( !FD_ISSET( sd_event, &readfds )) {
-        ret = net_trfail;
-        goto done;
+    } else {
+         if ( FD_ISSET(port_pipe_fds[0], &readfds) ) {
+            char pipebuf;
+            read(port_pipe_fds[0], &pipebuf, 1);
+            if (pipebuf == '1') {
+                GPTP_LOG_INFO("cleanup openport thread\n");
+                ret = net_fatal;
+                goto done;
+            }
+        } else if ( !FD_ISSET( sd_event, &readfds )) {
+            ret = net_trfail;
+            goto done;
+        }
     }
 
     memset( &msg, 0, sizeof( msg ));
@@ -311,8 +331,43 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
     }
 
     if ( dynamic_cast<LinuxNetworkInterface *>(iface) != NULL ) {
-        iface_list.push_front
-        ( (dynamic_cast<LinuxNetworkInterface *>(iface)) );
+        // Check if iface is present in the list, if not add to iface_list
+        auto it = std::find(iface_list.begin(), iface_list.end(), iface);
+        if (it == iface_list.end()) {
+            iface_list.push_front
+                        ( (dynamic_cast<LinuxNetworkInterface *>(iface)) );
+        }
+    }
+
+    return true;
+}
+
+bool LinuxTimestamperGeneric::HWTimestamper_deinit
+( InterfaceLabel *iface_label, OSNetworkInterface **iface )
+{
+    if(phc_fd != -1) {
+        if (close(phc_fd) == -1) {
+            GPTP_LOG_DEBUG("%s:%d Error in closing errno = %d(%s)", __func__,__LINE__, errno, strerror(errno));
+        } else {
+            GPTP_LOG_DEBUG("%s:%d close successful", __func__,__LINE__);
+        }
+        phc_fd = -1;
+    }
+
+    if (iface && *iface) {
+        auto it = std::find(iface_list.begin(), iface_list.end(), *iface);
+        if (it != iface_list.end()) {
+            delete *it;
+            *it = nullptr;
+            iface_list.erase(it);
+        }
+        *iface = nullptr;
+    }
+
+    if (_private != NULL) {
+        pthread_mutex_destroy(&_private->cross_stamp_lock);
+        delete _private;
+        _private = nullptr;
     }
 
     return true;
