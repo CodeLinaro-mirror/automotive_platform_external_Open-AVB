@@ -1737,7 +1737,10 @@ bool gptpDeinit(void)
 #endif
 
 #ifdef AVB_FEATURE_GVM_MODE
-    habmm_socket_close(hab_hdl);
+    if (gptp_update_callback != NULL && hab_thread_running) {
+        hab_thread_running = false ;
+        habmm_socket_close(hab_hdl);
+    }
 #endif
 
     return true;
