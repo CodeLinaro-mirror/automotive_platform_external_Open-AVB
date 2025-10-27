@@ -308,9 +308,13 @@ static void getVirtDevice(char* device_path)
 {
     const char *path = "/sys/devices/virtual/ptp/";
     struct dirent *entry;
-    DIR *dp = opendir(path);
 
-    if (dp == NULL || device_path == NULL) {
+    if (device_path == NULL) {
+        GPTP_LOG_ERROR("device path is NULL\n");
+        return;
+    }
+    DIR *dp = opendir(path);
+    if (dp == NULL) {
         GPTP_LOG_ERROR("Failed to open /sys/devices/virtual/ptp/ so use default device\n");
         snprintf(device_path, PTP_DEVICE_PATH_LEN, "%s", PTP_DEFAULT_DEVICE);
         return;
@@ -1818,6 +1822,19 @@ bool gptpGetCurgPtpMonotonicPair(uint64_t *gptp_time_cur,
     return gptpGetCurgPtpMonotonicPair_s(gptp_time_cur, mono_time_cur, NULL);
 }
 
+/* Get proxy mode */
+bool isGptpInProxyMode(void)
+{
+    if (!bInitialized) {
+        return false;
+    }
+
+    if (!gptpScaling(&gPtpTD, &gPtpMmap)) {
+        return false;
+    }
+
+    return gPtpTD.in_proxy_mode;
+}
 
 /* public API to init gptp time scaling */
 bool gptpInit(void)

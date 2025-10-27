@@ -1716,7 +1716,7 @@ void PTPMessagePathDelayRespFollowUp::processMessage
     Timestamp remote_req_rx_timestamp(0, 0, 0);
     Timestamp response_rx_timestamp(0, 0, 0);
 
-    if (port->getPortState() == PTP_DISABLED) {
+    if ((port == NULL) || (port->getPortState() == PTP_DISABLED)) {
         // Do nothing all messages should be ignored when in this state
         return;
     }

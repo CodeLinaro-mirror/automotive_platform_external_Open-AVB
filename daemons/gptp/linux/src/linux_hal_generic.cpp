@@ -67,6 +67,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 
 char ptp_dev_index[PTP_CLOCK_DEVICE_LENGTH] = {0};
 char ptp_device[] = PTP_DEVICE;
+extern int port_pipe_fds[2];
 
 
 net_result LinuxNetworkInterface::nrecv
@@ -97,8 +98,16 @@ net_result LinuxNetworkInterface::nrecv
     }
 
     FD_ZERO( &readfds );
-    FD_SET( sd_event, &readfds );
-    err = select( sd_event + 1, &readfds, NULL, NULL, &timeout );
+    if (sd_event >= 0 && sd_event < FD_SETSIZE && fcntl(sd_event, F_GETFD) != -1) {
+        FD_SET(sd_event, &readfds);
+    } else {
+        GPTP_LOG_ERROR("Invalid sd_event fd");
+        ret = net_fatal;
+        goto done;
+    }
+    FD_SET(port_pipe_fds[0], &readfds);
+
+    err = select( (port_pipe_fds[0] > sd_event ? port_pipe_fds[0] : sd_event) + 1, &readfds, NULL, NULL, &timeout );
 
     if ( err == 0 ) {
         ret = net_trfail;
@@ -114,9 +123,19 @@ net_result LinuxNetworkInterface::nrecv
             ret = net_fatal;
             goto done;
         }
-    } else if ( !FD_ISSET( sd_event, &readfds )) {
-        ret = net_trfail;
-        goto done;
+    } else {
+         if ( FD_ISSET(port_pipe_fds[0], &readfds) ) {
+            char pipebuf;
+            read(port_pipe_fds[0], &pipebuf, 1);
+            if (pipebuf == '1') {
+                GPTP_LOG_INFO("cleanup openport thread\n");
+                ret = net_fatal;
+                goto done;
+            }
+        } else if ( !FD_ISSET( sd_event, &readfds )) {
+            ret = net_trfail;
+            goto done;
+        }
     }
 
     memset( &msg, 0, sizeof( msg ));
@@ -324,7 +343,7 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
 }
 
 bool LinuxTimestamperGeneric::HWTimestamper_deinit
-( InterfaceLabel *iface_label, OSNetworkInterface *iface )
+( InterfaceLabel *iface_label, OSNetworkInterface **iface )
 {
     if(phc_fd != -1) {
         if (close(phc_fd) == -1) {
@@ -335,13 +354,15 @@ bool LinuxTimestamperGeneric::HWTimestamper_deinit
         phc_fd = -1;
     }
 
-    for (auto& iface : iface_list) {
-        if (iface) {
-            delete iface;
-            iface = nullptr;
+    if (iface && *iface) {
+        auto it = std::find(iface_list.begin(), iface_list.end(), *iface);
+        if (it != iface_list.end()) {
+            delete *it;
+            *it = nullptr;
+            iface_list.erase(it);
         }
+        *iface = nullptr;
     }
-    iface_list.clear();
 
     if (_private != NULL) {
         pthread_mutex_destroy(&_private->cross_stamp_lock);

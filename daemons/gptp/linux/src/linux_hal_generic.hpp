@@ -111,7 +111,7 @@ class LinuxTimestamperGeneric : public LinuxTimestamper
         ( InterfaceLabel *iface_label, OSNetworkInterface *iface );
 
         virtual bool HWTimestamper_deinit
-                ( InterfaceLabel *iface_label, OSNetworkInterface *iface );
+                ( InterfaceLabel *iface_label, OSNetworkInterface **iface );
 
         /**
          * @brief  Reset the Hardware timestamp interface

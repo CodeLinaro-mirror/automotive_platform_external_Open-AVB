@@ -271,7 +271,7 @@ void updateTime(utc_timeinfo_t* update)
 
 
     gUtcTimeData utcData = {0};
-    utcData.sync_status = update->state;
+    utcData.sync_status = update->sync_state;
     utcData.utc_time = curr_expected_utc;
     utcData.gptp_time = curr_gptp;
     updateShm(&utcData);
@@ -281,7 +281,7 @@ void updateTime(utc_timeinfo_t* update)
     prev_utc_ref = curr_utc;
     prev_expected_utc_ref = curr_expected_utc;
     UTC_LOG_DEBUG("[%lu]curr_utc %lld curr_expected_utc %lld delta_utc %lld state %d",
-                  cnt, curr_utc, curr_expected_utc, delta_utc, update->state);
+                  cnt, curr_utc, curr_expected_utc, delta_utc, update->sync_state);
     cnt++;
 }
 

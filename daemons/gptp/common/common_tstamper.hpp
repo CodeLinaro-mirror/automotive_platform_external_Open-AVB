@@ -70,7 +70,7 @@ class CommonTimestamper
         }
 
         virtual bool HWTimestamper_deinit
-                ( InterfaceLabel *iface_label, OSNetworkInterface *iface )
+                ( InterfaceLabel *iface_label, OSNetworkInterface **iface )
         {
                     return true;
         }
