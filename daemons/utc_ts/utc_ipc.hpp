@@ -6,6 +6,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #ifndef UTC_IPC_HPP
 #define UTC_IPC_HPP
 
+#define UTC_TIME_INFO "/dev/timeinfo"
 #define UTC_SHM_NAME "/dev/utcshm"
 
 

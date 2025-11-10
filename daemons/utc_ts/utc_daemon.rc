@@ -1,0 +1,16 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+#
+
+# UTC daemon service
+service utc_daemon /vendor/bin/utc_ts
+    class core
+    user system
+    group system inet log vendor_ptp
+    capabilities SYS_TIME
+    disabled
+
+# Start the utc daemon
+on property:dev.bootcomplete=1
+    write /dev/kmsg "INITRC: Starting utc_daemon"
+    start utc_daemon

@@ -412,6 +412,9 @@ typedef struct {
     /* CDS 6.2.1.6 */
     int8_t operLogSyncInterval;
 
+    /* Incoming Sync Arrival Time Difference Tolerance */
+    double syncArrivalTimeDiffTolerance;
+
     /*802.1AS Recovered Clock Quality Testing*/
     int8_t reverseSyncEnabled;
 
@@ -505,6 +508,7 @@ class CommonPort
 
         int8_t log_mean_sync_interval;
         int8_t deferred_log_mean_sync_interval;
+        double syncArrivalTimeDiffTolerance;
         int8_t log_mean_announce_interval;
         int8_t initialLogSyncInterval;
         uint8_t announceReceiptTimeout;
@@ -1706,6 +1710,24 @@ class CommonPort
         uint8_t getannounceReceiptTimeoutMultiplier(void)
         {
             return announceReceiptTimeout;
+        }
+
+        /**
+         * @brief  Gets the incoming successive sync interval time difference tolerance
+         * @return Tolerance value
+         */
+        double getSyncArrivalTimeDiffTolerance(void)
+        {
+            return syncArrivalTimeDiffTolerance;
+        }
+        /**
+         * @brief  Sets the incoming successive sync interval time difference tolerance
+         * @param  val Tolerance value
+         * @return none
+         */
+        void setSyncArrivalTimeDiffTolerance(double val)
+        {
+            syncArrivalTimeDiffTolerance = val;
         }
 
         /**

@@ -281,7 +281,7 @@ void loop_test(int time_us)
                           syncData.sync_ingress_timestamp);
             GPTP_LOG_INFO("loop_test: correction_field %" PRIu64 "\n",
                           syncData.correction_field);
-            GPTP_LOG_INFO("loop_test: sequence_id %" PRIu64 "\n", syncData.sequence_id);
+            GPTP_LOG_INFO("loop_test: sequence_id %u\n", syncData.sequence_id);
             GPTP_LOG_INFO("loop_test: pDelay %" PRIu64 "\n", syncData.pDelay);
             GPTP_LOG_INFO("loop_test: portNumber %d\n", syncData.portNumber);
             GPTP_LOG_INFO("loop_test: clockIdentity " CLK_STR "\n",
@@ -294,7 +294,7 @@ void loop_test(int time_us)
 
         if (getgPTPStatus(&status)) {
             GPTP_LOG_INFO("loop_test: *********************** Status Data ************************\n");
-            GPTP_LOG_INFO("loop_test: gptp_status %d\n", status.gptp_status);
+            GPTP_LOG_INFO("loop_test: gptp_status %" PRIu64 "\n", status.gptp_status);
             GPTP_LOG_INFO("loop_test: rate_deviation %f\n", status.rate_deviation);
             GPTP_LOG_INFO("loop_test: IsMaster %d\n", status.IsMaster);
             GPTP_LOG_INFO("loop_test: offset %" PRId64 "\n", status.offset);
@@ -319,7 +319,7 @@ void loop_test(int time_us)
                           delayData.reference_local_timestamp);
             GPTP_LOG_INFO("loop_test: reference_global_timestamp %" PRIu64 "\n",
                           delayData.reference_global_timestamp);
-            GPTP_LOG_INFO("loop_test: sequence_id %" PRIu64 "\n", delayData.sequence_id);
+            GPTP_LOG_INFO("loop_test: sequence_id %u\n", delayData.sequence_id);
             GPTP_LOG_INFO("loop_test: pDelay %" PRIu64 "\n", delayData.pDelay);
             GPTP_LOG_INFO("loop_test: req_portNumber %d\n", delayData.req_portNumber);
             GPTP_LOG_INFO("loop_test: req_clockIdentity " CLK_STR "\n",
@@ -335,7 +335,7 @@ void loop_test(int time_us)
 
         if ( rcvid == 0) {
             GPTP_LOG_INFO("loop_test: ********************** Reverse sync - Slave clock offset ********************\n");
-            GPTP_LOG_INFO("loop_test: time error %d\n", time_error);
+            GPTP_LOG_INFO("loop_test: time error %" PRIi64 "\n", time_error);
         } else if (rcvid < 0) {
             GPTP_LOG_ERROR("Failed to get time error\n");
         }

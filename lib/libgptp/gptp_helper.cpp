@@ -950,7 +950,23 @@ static int gptpDaemonClientInit(void)
     }
 
 #ifndef AVB_FEATURE_GVM_MODE
-    ret = pthread_create(&thread_id, NULL, gptpDaemonSrvConnect, NULL);
+    pthread_attr_t attr;
+    struct sched_param param;
+
+    // Initialize thread attributes
+    pthread_attr_init(&attr);
+
+    // Set scheduling policy to SCHED_OTHER
+    pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+
+    // Set scheduling parameters (priority is ignored for SCHED_OTHER)
+    param.sched_priority = 0;
+    pthread_attr_setschedparam(&attr, &param);
+
+    // Explicitly specify that the thread should use the attributes
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+
+    ret = pthread_create(&thread_id, &attr, gptpDaemonSrvConnect, NULL);
 
     if (ret != 0) {
         GPTP_LOG_ERROR("gptpDaemonClientInit: failed -->%s\n", strerror(errno));
@@ -966,7 +982,7 @@ static int gptpDaemonClientInit(void)
         return false;
     }
 
-    ret = pthread_setname_np(thread_id, "GPTP-HELPER");
+    ret = pthread_setname_np(thread_id, "gptpDaemonSrv");
 
     if (ret != 0) {
         GPTP_LOG_ERROR("Failed to set thread name \n");

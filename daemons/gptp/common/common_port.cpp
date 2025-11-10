@@ -81,6 +81,7 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     sync_sequence_id = 0;
     initialLogSyncInterval = portInit->initialLogSyncInterval;
     operLogPdelayReqInterval = &(portInit->operLogPdelayReqInterval);
+    syncArrivalTimeDiffTolerance = portInit->syncArrivalTimeDiffTolerance;
     log_mean_announce_interval = 0;
     pdelay_count = 0;
     sct_shm_fd = portInit->sct_shm_fd;

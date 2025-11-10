@@ -93,7 +93,7 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line,
 #else
 
     if (systemlogcat) {
-        syslog(level, "[%d:%s:%d] %s\n", gettid(), path, line, msg);
+        syslog(level, "[%ld:%s:%d] %s\n", gettid(), path, line, msg);
     }
 
 #endif
@@ -106,7 +106,7 @@ void gptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path, int line,
                 std::chrono::system_clock::from_time_t(tNow);
         long int millis = (long int)
                           std::chrono::duration_cast<std::chrono::milliseconds>(roundNow).count();
-        fprintf(stderr, "%s:GPTP:[%2.2d:%2.2d:%2.2d:%3.3ld] [%d:%s:%d] %s\n",
+        fprintf(stderr, "%s:GPTP:[%2.2d:%2.2d:%2.2d:%3.3ld] [%ld:%s:%d] %s\n",
                 tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, gettid(), path, line,
                 msg);
     }
@@ -137,7 +137,7 @@ void gptpLogMs(GPTP_LOG_LEVEL level, const char *tag, const char *path,
                 std::chrono::system_clock::from_time_t(tNow);
         long int millis = (long int)
                           std::chrono::duration_cast<std::chrono::milliseconds>(roundNow).count();
-        syslog(level, "[%2.2d:%2.2d:%2.2d:%3.3ld] [%d:%s:%d] %s\n", tag,
+        syslog(level, "[%2.2d:%2.2d:%2.2d:%3.3ld] [%ld:%s:%d] %s\n", tag,
                tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, gettid(), path, line, msg);
     }
 
@@ -151,7 +151,7 @@ void gptpLogMs(GPTP_LOG_LEVEL level, const char *tag, const char *path,
                 std::chrono::system_clock::from_time_t(tNow);
         long int millis = (long int)
                           std::chrono::duration_cast<std::chrono::milliseconds>(roundNow).count();
-        fprintf(stderr, "%s:GPTP:[%2.2d:%2.2d:%2.2d:%3.3ld] [%d:%s:%d] %s\n",
+        fprintf(stderr, "%s:GPTP:[%2.2d:%2.2d:%2.2d:%3.3ld] [%ld:%s:%d] %s\n",
                 tag, tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec, millis, gettid(), path, line,
                 msg);
     }
