@@ -266,7 +266,7 @@ class GptpIniParser
          * @brief  Reads the incoming successive sync interval time difference tolerance value from the configuration file
          * @return syncArrivalTimeDiffTolerance value from the .ini file
          */
-        int8_t getSyncArrivalTimeDiffTolerance(void)
+        double getSyncArrivalTimeDiffTolerance(void)
         {
             return _config.syncArrivalTimeDiffTolerance;
         }

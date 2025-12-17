@@ -1203,8 +1203,8 @@ int main(int argc, char **argv)
     gptpDaemonServDeInit();
 
     if (pPort) {
-        qgptp_rmgr_deinit();
         pPort->processEvent(POWERDOWN);
+        qgptp_rmgr_deinit();
         delete pPort;
         pPort = NULL;
     }

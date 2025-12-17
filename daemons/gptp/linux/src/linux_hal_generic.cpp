@@ -74,7 +74,7 @@ net_result LinuxNetworkInterface::nrecv
 ( LinkLayerAddress *addr, uint8_t *payload, size_t &length )
 {
     fd_set readfds;
-    int err;
+    int err = -1;
     struct msghdr msg;
     struct cmsghdr *cmsg;
     union {

@@ -950,7 +950,8 @@ static int gptpDaemonClientInit(void)
     }
 
 #ifndef AVB_FEATURE_GVM_MODE
-    pthread_attr_t attr;
+
+    /*pthread_attr_t attr;
     struct sched_param param;
 
     // Initialize thread attributes
@@ -966,7 +967,9 @@ static int gptpDaemonClientInit(void)
     // Explicitly specify that the thread should use the attributes
     pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
 
-    ret = pthread_create(&thread_id, &attr, gptpDaemonSrvConnect, NULL);
+    ret = pthread_create(&thread_id, &attr, gptpDaemonSrvConnect, NULL);*/
+
+    ret = pthread_create(&thread_id, NULL, gptpDaemonSrvConnect, NULL);
 
     if (ret != 0) {
         GPTP_LOG_ERROR("gptpDaemonClientInit: failed -->%s\n", strerror(errno));
@@ -1146,8 +1149,8 @@ bool gptpGetPtpTimeFromBootTime_s(uint64_t *gptp_time_bt, uint64_t time_boot_ns,
         return false;
     }
 
-    GPTP_LOG_DEBUG("gptpGetPtpTimeFromBootTime offset %lld freqoffset %Lf qtimeoffset %lld \n",
-                   gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, gPtpTD.qtime_to_mono_offset);
+    GPTP_LOG_DEBUG("gptpGetPtpTimeFromBootTime offset %" PRId64 " freqoffset %Lf qtimeoffset %" PRId64 "\n",
+                   (int64_t)gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, (int64_t)gPtpTD.qtime_to_mono_offset);
 
     if (gPtpTD.d_status != DAEMON_STATUS_UP) {
         GPTP_LOG_LIMIT_WARNING(WARNING_LOG, "Daemon not up!!");
@@ -1281,8 +1284,8 @@ bool gptpGetBootTimeFromPtpTime_s(uint64_t *boot_time_ns, uint64_t ptp_time_ns,
         return false;
     }
 
-    GPTP_LOG_DEBUG("gptpGetBootTimeFromPtpTime offset %lld freqoffset %Lf qtimeoffset %lld \n",
-                   gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, gPtpTD.qtime_to_mono_offset);
+    GPTP_LOG_DEBUG("gptpGetBootTimeFromPtpTime offset %" PRId64 " freqoffset %Lf qtimeoffset %" PRId64 "\n",
+                   (int64_t)gPtpTD.lb_phoffset, gPtpTD.lb_freqoffset, (int64_t)gPtpTD.qtime_to_mono_offset);
     *boot_time_ns = gPtpTD.local_time + gPtpTD.lb_phoffset; //curr boot time
 
     if (gPtpTD.lb_freqoffset) {
@@ -1747,7 +1750,7 @@ bool gptpGetStatusAndCurPtpTime(gptpTimeInfo_t *ptp_data)
 #else
     uint64_t gptp_time = 0;
     ptp_data->status = gptpGetSyncStatus();
-    ptp_data->port_status = gptpGetPortState();
+    ptp_data->port_state = gptpGetPortState();
 
     if (gptpGetCurPtpTime(&gptp_time)) {
         ptp_data->tv_sec = gptp_time / 1000000000UL;
