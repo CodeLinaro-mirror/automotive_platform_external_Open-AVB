@@ -74,6 +74,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #define SYNC_RECEIPT_TIMEOUT_MULTIPLIER 3           /*!< Sync receipt timeout multiplier*/
 #define ANNOUNCE_RECEIPT_TIMEOUT_MULTIPLIER 3       /*!< Announce receipt timeout multiplier*/
 #define DEFAULT_ALLOWED_LOST_RESPONSES 9            /*!< Default value of allowedLostResponses - IEEE P802.1AS-Rev/D8.0. Section 11.5.3 */
+#define DEFAULT_SYNC_ARRIVAL_TIME_DIFF_TOLERANCE (0.20)/*!< Default value of syncArrivalTimeDiffTolerance */
 
 #define LOG2_INTERVAL_INVALID -127  /* Simple out of range Log base 2 value used for Sync and PDelay msg internvals */
 
@@ -126,6 +127,7 @@ class EtherPort : public CommonPort
         int8_t operLogPdelayReqInterval;
         int8_t operLogSyncInterval;
         int8_t initialLogPdelayReqInterval;
+        double syncArrivalTimeDiffTolerance;
         uint8_t allowedLostResponses;
         uint8_t lostResponses;
         int8_t reverseSyncEnabled;

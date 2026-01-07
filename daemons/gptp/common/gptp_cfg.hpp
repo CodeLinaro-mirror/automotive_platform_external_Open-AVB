@@ -93,6 +93,7 @@ class GptpIniParser
             int8_t initialLogPdelayReqInterval;
             int8_t operLogSyncInterval;
             int8_t operLogPdelayReqInterval;
+            double syncArrivalTimeDiffTolerance;
             int8_t reverseSyncEnabled;
             int8_t reverseSyncDomain;
             double reverseSyncRate;
@@ -260,6 +261,14 @@ class GptpIniParser
         int8_t getOperLogPdelayReqInterval(void)
         {
             return _config.operLogPdelayReqInterval;
+        }
+        /**
+         * @brief  Reads the incoming successive sync interval time difference tolerance value from the configuration file
+         * @return syncArrivalTimeDiffTolerance value from the .ini file
+         */
+        double getSyncArrivalTimeDiffTolerance(void)
+        {
+            return _config.syncArrivalTimeDiffTolerance;
         }
 
         bool getIsRsync(void)

@@ -54,8 +54,6 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <inttypes.h>
 
 #define PROXY_MODE_SYNC_INTERVAL    (5)
-#define MAX_THRESHOLD_MULTIPLIER    (1.05)
-#define MIN_THRESHOLD_MULTIPLIER    (0.95)
 #define FIVE_MSEC_IN_NSEC           (5000000)
 #define FIFTY_MSEC_IN_NSEC          (50000000)
 
@@ -986,8 +984,8 @@ void PTPMessageSync::processMessage( EtherPort *port )
                 min_threshold = operSyncIntervalNS - FIVE_MSEC_IN_NSEC;
                 max_threshold = operSyncIntervalNS + FIVE_MSEC_IN_NSEC;
             } else {
-                min_threshold = (operSyncIntervalNS * MIN_THRESHOLD_MULTIPLIER); //(for a 5% increase)
-                max_threshold = (operSyncIntervalNS * MAX_THRESHOLD_MULTIPLIER); //(for a 5% decrease)
+                min_threshold = (operSyncIntervalNS * (1 - port->getSyncArrivalTimeDiffTolerance())); //(Default tolerance is 20%, so min is 0.80)
+                max_threshold = (operSyncIntervalNS * (1 + port->getSyncArrivalTimeDiffTolerance())); //(Default tolerance is 20%, so max is 1.20)
             }
 
             // Get the current timestamp and sequence ID
@@ -1029,7 +1027,7 @@ void PTPMessageSync::processMessage( EtherPort *port )
                 // Avoid changing to a slower rate until after three Sync messages. We kept 10 in this case
                 if (sendSigMsgCounter % 5 == 0) {
                     // Trigger the signaling message since incoming PTP packets are not in interval of SLAVE operSyncInterval
-                    GPTP_LOG_INFO("currentTimeStamp: %" PRIu64 " previousTimeStamp: %" PRIu64 " Difference: %" PRId64 " operSyncIntervalNS: %" PRIu64 " min_threshold %" PRIu64 " min_threshold %" PRIu64 " ", TIMESTAMP_TO_NS(currentTimeStamp), TIMESTAMP_TO_NS(previousTimeStamp), successiveSyncArrivalDifference, operSyncIntervalNS, min_threshold, max_threshold);
+                    GPTP_LOG_INFO("currentTimeStamp: %" PRIu64 " previousTimeStamp: %" PRIu64 " Difference: %" PRId64 " operSyncIntervalNS: %" PRIu64 " min_threshold %" PRIu64 " max_threshold %" PRIu64 " ", TIMESTAMP_TO_NS(currentTimeStamp), TIMESTAMP_TO_NS(previousTimeStamp), successiveSyncArrivalDifference, operSyncIntervalNS, min_threshold, max_threshold);
 
                     PTPMessageSignalling *sigMsg = new PTPMessageSignalling(port);
                     sigMsg->setMessageType(SIGNALLING_MESSAGE);

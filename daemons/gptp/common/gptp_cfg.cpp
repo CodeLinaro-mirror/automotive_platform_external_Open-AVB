@@ -263,6 +263,14 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
                 valOK = true;
                 parser->_config.operLogPdelayReqInterval = opdelay;
             }
+        } else if ( parseMatch( name, "syncArrivalTimeDiffTolerance") ) {
+            errno = 0;
+            char *pEnd;
+            double sync_diff_tolerance = (double) strtod(value, &pEnd);
+            if( *pEnd == '\0' && errno == 0 ) {
+                valOK = true;
+                parser->_config.syncArrivalTimeDiffTolerance = sync_diff_tolerance;
+            }
         } else if ( parseMatch( name, "portRole") ) {
             if ( parseMatch( value, "Master")) {
                 valOK = true;

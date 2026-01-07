@@ -22,7 +22,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <sys/stat.h>
 #include <grp.h>
 #include <sys/mman.h>
-
+#include <sys/capability.h>
 
 
 #ifdef ANDROID
@@ -33,10 +33,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef ANDROID
 
-#define LOGE(fmt, ...) __android_log_print (ANDROID_LOG_ERROR,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGW(fmt, ...) __android_log_print (ANDROID_LOG_WARN,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGI(fmt, ...) __android_log_print (ANDROID_LOG_INFO,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define LOGD(fmt, ...) __android_log_print (ANDROID_LOG_DEBUG,"utc_ts", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define LOGE(fmt, ...) __android_log_print (ANDROID_LOG_ERROR,"utc_ts", fmt, __VA_ARGS__);
+#define LOGW(fmt, ...) __android_log_print (ANDROID_LOG_WARN,"utc_ts", fmt, __VA_ARGS__);
+#define LOGI(fmt, ...) __android_log_print (ANDROID_LOG_INFO,"utc_ts", fmt, __VA_ARGS__);
+#define LOGD(fmt, ...) __android_log_print (ANDROID_LOG_DEBUG,"utc_ts", fmt, __VA_ARGS__);
 
 enum _LOGGER_SEVERITY {
     QCLOG_ERROR         = ANDROID_LOG_ERROR,
@@ -70,10 +70,10 @@ enum _LOGGER_SEVERITY {
 
 typedef long double FrequencyRatio;
 
-#define UTC_LOG_ERROR(fmt, ...) LOGE("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define UTC_LOG_WARNING(fmt, ...) LOGW("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define UTC_LOG_INFO(fmt, ...) LOGI("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define UTC_LOG_DEBUG(fmt, ...) LOGD("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define UTC_LOG_ERROR(fmt, ...) LOGE("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);
+#define UTC_LOG_WARNING(fmt, ...) LOGW("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);
+#define UTC_LOG_INFO(fmt, ...) LOGI("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);
+#define UTC_LOG_DEBUG(fmt, ...) LOGD("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);
 
 
 bool hab_thread_running = false;
@@ -86,6 +86,7 @@ uint64_t prev_utc_ref = 0;
 uint64_t prev_expected_utc_ref = 0;
 static int shm_fd = 0;
 char *master_offset_buffer;
+static int utc_fd = 0;
 
 
 #define HAB_MMID_CREATE(major, minor) ((major&0xFFFF) | ((minor&0xFF)<<16))
@@ -207,10 +208,16 @@ void updateTime(utc_timeinfo_t* update)
     long double phase_error;
     static float time_ratio = 1.0;
     static uint64_t cnt = 0;
+    utc_timeinfo_t utc_update;
 
-    if (prev_utc_time != 0) {
-        time_ratio = (update->curUtcTimeNanoSec -  prev_utc_time) /
-                     (update->curPtpTimeNanoSec - prev_gptp_time);
+    memset(&utc_update, 0, sizeof(utc_timeinfo_t));
+    memcpy(&utc_update, update, sizeof(utc_timeinfo_t));
+
+    if (prev_utc_time != 0 && utc_update.curPtpTimeNanoSec != prev_gptp_time) {
+        time_ratio = (float)(utc_update.curUtcTimeNanoSec -  prev_utc_time) /
+                (utc_update.curPtpTimeNanoSec - prev_gptp_time);
+    } else {
+        time_ratio = 1.0;
     }
 
     gptpGetCurPtpTime_s(&curr_gptp, NULL);
@@ -219,11 +226,11 @@ void updateTime(utc_timeinfo_t* update)
 
     if (!sync_status) {
         UTC_LOG_INFO("directly use someip utc as gptp is not in sync");
-        curr_expected_utc = update->curUtcTimeNanoSec;
+        curr_expected_utc = utc_update.curUtcTimeNanoSec;
     }
     else {
-        curr_expected_utc = update->curUtcTimeNanoSec + (curr_gptp -
-                            update->curPtpTimeNanoSec) * time_ratio;
+        curr_expected_utc = utc_update.curUtcTimeNanoSec + (uint64_t)((curr_gptp -
+                            utc_update.curPtpTimeNanoSec) * time_ratio);
     }
 
     curr_utc = (real.tv_sec) * 1000000000LL + real.tv_nsec;
@@ -240,18 +247,18 @@ void updateTime(utc_timeinfo_t* update)
 
         // Check for jumps in REAL time or gptp time
         if ((fabs(freq_offset) < MIN_LS_RATIO) || (fabs(freq_offset) > MAX_LS_RATIO)) {
-            UTC_LOG_WARNING("Real to UTC clock ratio (%Lf) exceeding threshold %lld %lld",
+            UTC_LOG_WARNING("Real to UTC clock ratio (%Lf) exceeding threshold %lu %lu",
                             freq_offset, (curr_utc - prev_utc_ref),
                             (curr_expected_utc - prev_utc_ref));
             freq_offset = 1.0;
         } else {
-            UTC_LOG_DEBUG("Real to UTC clock ratio (%Lf) delta %lld %lld",
+            UTC_LOG_DEBUG("Real to UTC clock ratio (%Lf) delta %lu %lu",
                         freq_offset, (curr_utc - prev_utc_ref),
                         (curr_expected_utc - prev_utc_ref));
         }
 
         float syncPerSec = (float)(1.0 / pow((float)2,
-                                            (update->curUtcTimeNanoSec - prev_utc_time)));
+                                            (utc_update.curUtcTimeNanoSec - prev_utc_time)));
         _ppm += (float) ((INTEGRAL * syncPerSec * phase_error) + PROPORTIONAL * ((
                             freq_offset - 1.0) * 1000000));
         UTC_LOG_DEBUG("phase_error = %Lf, ppm = %f", phase_error, _ppm );
@@ -271,17 +278,17 @@ void updateTime(utc_timeinfo_t* update)
 
 
     gUtcTimeData utcData = {0};
-    utcData.sync_status = update->sync_state;
+    utcData.sync_status = utc_update.sync_state;
     utcData.utc_time = curr_expected_utc;
     utcData.gptp_time = curr_gptp;
     updateShm(&utcData);
 
-    prev_utc_time = update->curUtcTimeNanoSec;
-    prev_gptp_time = update->curPtpTimeNanoSec;
+    prev_utc_time = utc_update.curUtcTimeNanoSec;
+    prev_gptp_time = utc_update.curPtpTimeNanoSec;
     prev_utc_ref = curr_utc;
     prev_expected_utc_ref = curr_expected_utc;
-    UTC_LOG_DEBUG("[%lu]curr_utc %lld curr_expected_utc %lld delta_utc %lld state %d",
-                  cnt, curr_utc, curr_expected_utc, delta_utc, update->sync_state);
+    UTC_LOG_DEBUG("[%lu]curr_utc %lu curr_expected_utc %lu delta_utc %ld state %d",
+                  cnt, curr_utc, curr_expected_utc, delta_utc, utc_update.sync_state);
     cnt++;
 }
 
@@ -291,14 +298,14 @@ void* habLoop(void* param)
     int32_t ret;
     struct utc_timeinfo_t update;
     uint32_t len = sizeof(update);
+    int32_t last_sync_state = 0;
 
     while (hab_thread_running) {
         memset(&update, 0, sizeof(update));
 
         do {
-            ret = habmm_socket_recv(hab_hdl, &update, &len, 0,
-                                    HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE);
-        } while (-EINTR == ret);
+            ret = habmm_socket_recv(hab_hdl, &update, &len, 0, 0);
+        } while (-EINTR == ret || -EAGAIN == ret);
 
         if (ret) {
             UTC_LOG_ERROR("habmm_socket_recv failed, ret= 0x%x\n", ret);
@@ -308,12 +315,38 @@ void* habLoop(void* param)
         if (update.state == VALUE_STATE_VALID
                 && update.sync_state == VEHICLE_UTC_TIME_VALIDITY_TYPE_T_VALID ) {
             updateTime(&update);
+            if (update.sync_state != last_sync_state) {
+                UTC_LOG_INFO("sync_state change, prev(%d), curr(%d)", last_sync_state, update.sync_state);
+                last_sync_state = update.sync_state;
+                if (utc_fd) {
+                    char status[32];
+                    snprintf(status, sizeof(status), "sync: %d\n", update.sync_state);
+                    lseek(utc_fd, 0, SEEK_SET);
+                    write(utc_fd, status, strlen(status));
+                }
+            }
         } else {
             UTC_LOG_ERROR("Ignoring UTC update as status or time is not valid\n");
         }
     }
 
     return NULL;
+}
+
+void utc_shm_deinit(void)
+{
+    int err = 0;
+    if (master_offset_buffer != NULL && master_offset_buffer != (char*)-1) {
+        if (munmap(master_offset_buffer, UTC_SHM_SIZE) != 0) {
+            UTC_LOG_ERROR("munmap() failed - %s", strerror(errno));
+        }
+        master_offset_buffer = NULL;
+    }
+
+    if (shm_fd != -1) {
+        close(shm_fd);
+        shm_fd = -1;
+    }
 }
 
 int utc_shm_init(void) 
@@ -372,8 +405,18 @@ int utc_shm_init(void)
         goto exit;
     }
 
-    pthread_mutexattr_setpshared(&shared, 1);
-    pthread_mutexattr_setprotocol(&shared, PTHREAD_PRIO_INHERIT);
+    err = pthread_mutexattr_setpshared(&shared, 1);
+    if (err != 0) {
+        UTC_LOG_ERROR("mutex attr setpshared failed - %s", strerror(errno));
+        goto exit;
+    }
+
+    err = pthread_mutexattr_setprotocol(&shared, PTHREAD_PRIO_INHERIT);
+    if (err != 0) {
+        UTC_LOG_ERROR("mutex attr setprotocol failed - %s", strerror(errno));
+        goto exit;
+    }
+
     /*create a mutex */
     err = pthread_mutex_init((pthread_mutex_t*)master_offset_buffer, &shared);
 
@@ -391,6 +434,58 @@ exit:
     return -1;
 }
 
+int set_cap_sys_time(void) {
+    int ret = 0;
+    cap_t caps = cap_get_proc();
+    if (!caps) {
+        UTC_LOG_ERROR("Failed to get capabilities\n");
+        return -1;
+    }
+    cap_flag_value_t cap_value;
+    cap_value_t cap_list[1] = {CAP_SYS_TIME};
+    cap_set_flag(caps, CAP_EFFECTIVE, 1, cap_list, CAP_SET);
+    if (cap_set_proc(caps) != 0) {
+        UTC_LOG_ERROR("cap set proc failed");
+    }
+    if (cap_get_flag(caps, CAP_SYS_TIME, CAP_PERMITTED, &cap_value) == 0) {
+        if (cap_value == CAP_SET) {
+            UTC_LOG_INFO("Process has CAP_SYS_TIME\n");
+        } else {
+            UTC_LOG_ERROR("Process does NOT have CAP_SYS_TIME\n");
+            ret = -1;
+        }
+    } else {
+        UTC_LOG_ERROR("Failed to get CAP_SYS_TIME flag\n");
+        ret = -1;
+    }
+    cap_free(caps);
+    return ret;
+}
+
+int utc_time_info_init(void) {
+    const char* group_name;
+    struct group* grp;
+
+    group_name = DEFAULT_GROUPNAME;
+    grp = getgrnam(group_name);
+
+    if (grp == NULL) {
+        UTC_LOG_INFO("Group %s not found, will try root (0) instead", group_name);
+    }
+
+    utc_fd = open(UTC_TIME_INFO, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (utc_fd < 0) {
+        UTC_LOG_ERROR("open /tmp/timeinfo failed - %s", strerror(errno));
+        return -1;
+    }
+
+    if (fchown(utc_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
+        UTC_LOG_ERROR("fchown(): Failed to set ownership - %s", strerror(errno));
+    }
+    const char *status = "sync: 0\n";
+    write(utc_fd, status, strlen(status));
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -398,33 +493,54 @@ int main(int argc, char **argv)
     int sig;
     sigset_t set;
     int err = 0;
+    struct timespec timeout;
     sigemptyset(&set);
     sigaddset(&set, SIGINT);
     sigaddset( &set, SIGTERM );
     sigaddset(&set, SIGHUP);
     sigaddset(&set, SIGUSR2);
 
-    while (!gptpInit()) {
-        UTC_LOG_WARNING("waiting for Gptp Init to  succeed\n");
-        usleep(50000);
-    }
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
 
-    ret = habmm_socket_open(&hab_hdl, HAB_MMID_CREATE(HABMM_VNW_1, HAB_UTC_SUB_ID),
-                            0, 0);
+    timeout.tv_sec = 0;
+	timeout.tv_nsec = 50000000;
 
+    UTC_LOG_INFO("UTC Time Service starting");
+
+    ret = set_cap_sys_time();
     if (ret < 0) {
-        UTC_LOG_ERROR("habmm_socket_open: socket create failed\n");
-        return 0;
+        UTC_LOG_ERROR("set CAP_SYS_TIME capability failed\n");
     }
 
-    hab_thread_running = true;
+    ret = utc_time_info_init();
+    if (ret < 0) {
+        UTC_LOG_ERROR("utc time info init failed");
+        goto exit;
+    }
+
+    while (!gptpInit()) {
+        sig = sigtimedwait(&set, NULL, &timeout);
+        if (sig == SIGINT || sig == SIGTERM || sig == SIGHUP ) {
+			perror("sigtimedwait()");
+			goto exit;
+		}
+        UTC_LOG_WARNING("waiting for Gptp Init to  succeed\n");
+    }
 
     ret = utc_shm_init();
-
     if (ret < 0) {
         UTC_LOG_ERROR("utc shared memory init failed");
         goto exit;
     }
+
+    ret = habmm_socket_open(&hab_hdl, HAB_MMID_CREATE(HABMM_VNW_1, HAB_UTC_SUB_ID),
+                            0, 0);
+    if (ret < 0) {
+        UTC_LOG_ERROR("habmm_socket_open: socket create failed\n");
+        goto exit;
+    }
+
+    hab_thread_running = true;
 
     if ((err = pthread_create(&hab_Thread, NULL, habLoop, (void *) NULL))
             < 0) {
@@ -434,6 +550,8 @@ int main(int argc, char **argv)
     } else {
         hab_thread_running = true;
     }
+
+    UTC_LOG_INFO("UTC Time Service started successfully");
 
     do {
         sig = 0;
@@ -446,8 +564,19 @@ int main(int argc, char **argv)
 
 exit:
     hab_thread_running = false;
-    habmm_socket_close(hab_hdl);
+    if (hab_hdl) {
+        habmm_socket_close(hab_hdl);
+    }
+    if (hab_Thread) {
+        pthread_join(hab_Thread, NULL);
+    }
     gptpDeinit();
+    utc_shm_deinit();
+    if (utc_fd) {
+        close(utc_fd);
+        utc_fd = -1;
+    }
+    UTC_LOG_INFO("UTC Time Service exit");
     return 0;
 }
 

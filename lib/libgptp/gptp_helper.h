@@ -145,7 +145,7 @@ struct gptp_update {
 typedef struct __attribute__ ((packed))
 {
     bool status;
-    int32_t port_status;
+    int32_t port_state; // Current port state (e.g., 7 = MASTER, 9 = SLAVE)
     uint32_t tv_sec;
     uint32_t tv_nsec;
 }
