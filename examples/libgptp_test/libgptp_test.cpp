@@ -346,6 +346,10 @@ void loop_test(int p_loop_cnt)
         } else if (rcvid < 0) {
             GPTP_LOG_ERROR("Failed to get time error\n");
         }
+
+        // Suspends the execution of the calling thread for a specified number of microseconds.
+        // 1 second = 1,000,000 microseconds, so usleep(1000000) pauses the program for 1 second.
+        usleep(1000000);
     }
 }
 
