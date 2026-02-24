@@ -552,8 +552,8 @@ bool EtherPort::_processEvent( Event e )
 
         case LINKUP:
             if (!OSNetworkInterfaceFactory::buildInterface
-                    ( &net_iface, factory_name_t("default"), net_label,
-                      _hw_timestamper)) {
+                ( &net_iface, factory_name_t("default"), net_label,
+                 _hw_timestamper, getTSC())) {
                 return false;
             }
             timestamper_init();

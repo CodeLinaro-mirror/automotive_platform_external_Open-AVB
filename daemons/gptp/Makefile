@@ -33,7 +33,7 @@
 
 ALTERNATE_LINUX_INCPATH=$(HOME)/header/include/
 
-CFLAGS_G = -Wall -g -fsigned-char -I. -I../../common -I../src \
+CFLAGS_G = -Wall -g -fsigned-char -I. -I./inc \
 	-I$(ALTERNATE_LINUX_INCPATH) -DUSE_GLIB -DPTP_SW_QTIMER=1 -DPTP_SW_BOOTTIME=1 `pkg-config --cflags glib-2.0`
 
 # Check to see if PTP cross-timestamping is supported in hardware/driver
@@ -55,8 +55,8 @@ endif
 
 CPPFLAGS_G = $(CFLAGS_G) -std=c++0x -Wnon-virtual-dtor
 LDFLAGS_G = -lpthread -lrt `pkg-config --libs glib-2.0`
-COMMON_DIR = ../../common
-SRC_DIR = ../src
+INC_DIR = inc
+SRC_DIR = src
 OBJ_DIR = obj
 
 OBJ_FILES = $(OBJ_DIR)/ptp_message.o\
@@ -75,30 +75,30 @@ OBJ_FILES = $(OBJ_DIR)/ptp_message.o\
 		 $(OBJ_DIR)/linux_hal_generic.o \
 		 $(OBJ_DIR)/linux_hal_generic_adj.o
 
-HEADER_FILES = $(COMMON_DIR)/ether_port.hpp\
-		$(COMMON_DIR)/common_port.hpp\
-		$(COMMON_DIR)/avbts_ostimerq.hpp\
-		$(COMMON_DIR)/avbts_ostimer.hpp\
-		$(COMMON_DIR)/avbts_osthread.hpp\
-		$(COMMON_DIR)/avbts_osnet.hpp\
-		$(COMMON_DIR)/avbts_oslock.hpp\
-		$(COMMON_DIR)/avbts_osipc.hpp\
-		$(COMMON_DIR)/avbts_oscondition.hpp\
-		$(COMMON_DIR)/avbts_message.hpp\
-		$(COMMON_DIR)/avbts_clock.hpp\
-		$(COMMON_DIR)/avbts_persist.hpp\
-		$(COMMON_DIR)/avbap_message.hpp\
-		$(COMMON_DIR)/ieee1588.hpp\
-		$(COMMON_DIR)/ipcdef.hpp\
-		$(COMMON_DIR)/ini.h\
-		$(COMMON_DIR)/gptp_cfg.hpp\
-		$(COMMON_DIR)/gptp_log.hpp\
-		$(SRC_DIR)/linux_ipc.hpp\
-		$(SRC_DIR)/qgptp_rmgr.h\
-		$(SRC_DIR)/linux_hal_common.hpp\
-		$(SRC_DIR)/linux_hal_persist_file.hpp\
-		$(SRC_DIR)/platform.hpp \
-		$(SRC_DIR)/linux_hal_generic.hpp
+HEADER_FILES = $(INC_DIR)/ether_port.hpp\
+		$(INC_DIR)/common_port.hpp\
+		$(INC_DIR)/avbts_ostimerq.hpp\
+		$(INC_DIR)/avbts_ostimer.hpp\
+		$(INC_DIR)/avbts_osthread.hpp\
+		$(INC_DIR)/avbts_osnet.hpp\
+		$(INC_DIR)/avbts_oslock.hpp\
+		$(INC_DIR)/avbts_osipc.hpp\
+		$(INC_DIR)/avbts_oscondition.hpp\
+		$(INC_DIR)/avbts_message.hpp\
+		$(INC_DIR)/avbts_clock.hpp\
+		$(INC_DIR)/avbts_persist.hpp\
+		$(INC_DIR)/avbap_message.hpp\
+		$(INC_DIR)/ieee1588.hpp\
+		$(INC_DIR)/ipcdef.hpp\
+		$(INC_DIR)/ini.h\
+		$(INC_DIR)/gptp_cfg.hpp\
+		$(INC_DIR)/gptp_log.hpp\
+		$(INC_DIR)/linux_ipc.hpp\
+		$(INC_DIR)/qgptp_rmgr.h\
+		$(INC_DIR)/linux_hal_common.hpp\
+		$(INC_DIR)/linux_hal_persist_file.hpp\
+		$(INC_DIR)/platform.hpp \
+		$(INC_DIR)/linux_hal_generic.hpp
 
 
 ifeq ($(RGPTP_ENABLED),1)
@@ -106,7 +106,7 @@ ifeq ($(RGPTP_ENABLED),1)
 	INCPATHS += -I${PKG_CONFIG_SYSROOT_DIR}/usr/include/qmi-framework
 	LDFLAGS_G += -lqrtr
 	OBJ_FILES += $(OBJ_DIR)/rgptp.o
-	HEADER_FILES += $(SRC_DIR)/rgptp.hpp
+	HEADER_FILES += $(INC_DIR)/rgptp.hpp
 	CFLAGS_G += -DGPIO_CHIP
 endif
 
@@ -132,6 +132,8 @@ ifeq ($(GPTP_VFIO),1)
 endif
 
 ifeq ($(GPTP_DSQB_ENABLED),1)
+    CFLAGS_G += -DGPTP_DSQB_ENABLED
+    CPPFLAGS_G += -DGPTP_DSQB_ENABLED
     LDFLAGS_G += -lpm-client
 endif
 
@@ -172,35 +174,35 @@ $(OBJ_DIR)/linux_hal_generic.o: $(SRC_DIR)/linux_hal_generic.cpp $(HEADER_FILES)
 $(OBJ_DIR)/linux_hal_generic_adj.o: $(SRC_DIR)/linux_hal_generic_adj.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/linux_hal_generic_adj.cpp -o $(OBJ_DIR)/linux_hal_generic_adj.o
 
-$(OBJ_DIR)/ether_port.o: $(COMMON_DIR)/ether_port.cpp $(HEADER_FILES)
+$(OBJ_DIR)/ether_port.o: $(SRC_DIR)/ether_port.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/common_port.o: $(COMMON_DIR)/common_port.cpp $(HEADER_FILES)
+$(OBJ_DIR)/common_port.o: $(SRC_DIR)/common_port.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/ieee1588clock.o: $(COMMON_DIR)/ieee1588clock.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/ieee1588clock.cpp -o $(OBJ_DIR)/ieee1588clock.o
+$(OBJ_DIR)/ieee1588clock.o: $(SRC_DIR)/ieee1588clock.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/ieee1588clock.cpp -o $(OBJ_DIR)/ieee1588clock.o
 
-$(OBJ_DIR)/ptp_message.o: $(COMMON_DIR)/ptp_message.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/ptp_message.cpp -o $(OBJ_DIR)/ptp_message.o
+$(OBJ_DIR)/ptp_message.o: $(SRC_DIR)/ptp_message.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/ptp_message.cpp -o $(OBJ_DIR)/ptp_message.o
 
-$(OBJ_DIR)/ap_message.o: $(COMMON_DIR)/ap_message.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/ap_message.cpp -o $(OBJ_DIR)/ap_message.o
+$(OBJ_DIR)/ap_message.o: $(SRC_DIR)/ap_message.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/ap_message.cpp -o $(OBJ_DIR)/ap_message.o
 
-$(OBJ_DIR)/avbts_osnet.o: $(COMMON_DIR)/avbts_osnet.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/avbts_osnet.cpp -o $(OBJ_DIR)/avbts_osnet.o
+$(OBJ_DIR)/avbts_osnet.o: $(SRC_DIR)/avbts_osnet.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/avbts_osnet.cpp -o $(OBJ_DIR)/avbts_osnet.o
 
 $(OBJ_DIR)/linux_hal_persist_file.o: $(SRC_DIR)/linux_hal_persist_file.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/linux_hal_persist_file.cpp -o $(OBJ_DIR)/linux_hal_persist_file.o
 
-$(OBJ_DIR)/gptp_log.o: $(COMMON_DIR)/gptp_log.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/gptp_log.cpp -o $(OBJ_DIR)/gptp_log.o
+$(OBJ_DIR)/gptp_log.o: $(SRC_DIR)/gptp_log.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/gptp_log.cpp -o $(OBJ_DIR)/gptp_log.o
 
-$(OBJ_DIR)/gptp_cfg.o: $(COMMON_DIR)/gptp_cfg.cpp $(HEADER_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(COMMON_DIR)/gptp_cfg.cpp -o $(OBJ_DIR)/gptp_cfg.o
+$(OBJ_DIR)/gptp_cfg.o: $(SRC_DIR)/gptp_cfg.cpp $(HEADER_FILES)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/gptp_cfg.cpp -o $(OBJ_DIR)/gptp_cfg.o
 
-$(OBJ_DIR)/ini.o: $(COMMON_DIR)/ini.c $(HEADER_FILES)
-	$(CC) $(CFLAGS) -c $(COMMON_DIR)/ini.c -o $(OBJ_DIR)/ini.o
+$(OBJ_DIR)/ini.o: $(SRC_DIR)/ini.c $(HEADER_FILES)
+	$(CC) $(CFLAGS) -c $(SRC_DIR)/ini.c -o $(OBJ_DIR)/ini.o
 
 $(OBJ_DIR)/watchdog.o: $(SRC_DIR)/watchdog.cpp $(HEADER_FILES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(SRC_DIR)/watchdog.cpp -o $(OBJ_DIR)/watchdog.o

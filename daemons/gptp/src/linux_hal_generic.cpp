@@ -59,11 +59,17 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <syscall.h>
 #endif
 #include <limits.h>
+#include <dirent.h>
 
 #define TX_PHY_TIME 184
 #define RX_PHY_TIME 382
 
 #define QTIMER_RESAMPLING 5
+
+// if emac driver does not support the HWTSTAMP_TX_EXTERNAL_TIME_SRC we revert to old one HWTSTAMP_TX_ON 
+#ifndef HWTSTAMP_TX_EXTERNAL_TIME_SRC
+#define HWTSTAMP_TX_EXTERNAL_TIME_SRC HWTSTAMP_TX_ON
+#endif
 
 char ptp_dev_index[PTP_CLOCK_DEVICE_LENGTH] = {0};
 char ptp_device[] = PTP_DEVICE;
@@ -198,6 +204,85 @@ done:
     return ret;
 }
 
+
+/* Trim in-place trailing and leading whitespace/newlines */
+static void trim(char *s) {
+    char *end, *start = s;
+    while (*start && isspace((unsigned char)*start)) start++;
+    if (start != s) memmove(s, start, strlen(start) + 1);
+    end = s + strlen(s);
+    while (end > s && isspace((unsigned char)*(end - 1))) end--;
+    *end = '\0';
+}
+
+/* Safe file read: read first line (or whole small file) into buf */
+static int read_file_line(const char *path, char *buf, size_t buflen) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    if (!fgets(buf, (int)buflen, f)) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return 0;
+}
+
+/* Check if name matches "ptp" followed by at least one digit, return index via out_idx */
+static int parse_ptp_index(const char *name, int *out_idx) {
+    if (strncmp(name, "ptp", 3) != 0) return 0; // not a ptp entry
+    const char *p = name + 3;
+    if (!isdigit((unsigned char)*p)) return 0;
+    long val = 0;
+    char *endptr = NULL;
+    val = strtol(p, &endptr, 10);
+    if (endptr == p || val < 0 || val > INT_MAX) return 0;
+    *out_idx = (int)val;
+    return 1;
+}
+
+int findphcTscIndex(void) {
+    const char *ptp_dir = "/sys/class/ptp";
+    DIR *d = opendir(ptp_dir);
+    struct dirent *de;
+    char path[PATH_MAX];
+    char namebuf[128];
+
+    if (!d) {
+        // Could log errno for diagnostics
+        return -1;
+    }
+
+    while ((de = readdir(d)) != NULL) {
+        // Skip "." and ".."
+        if (de->d_name[0] == '.') continue;
+
+        int idx = -1;
+        if (!parse_ptp_index(de->d_name, &idx)) {
+            continue;
+        }
+
+        // Build path to clock_name: /sys/class/ptp/ptp<idx>/clock_name
+        // Use snprintf and guard against truncation
+        int n = snprintf(path, sizeof(path), "%s/%s/clock_name", ptp_dir, de->d_name);
+        if (n <= 0 || (size_t)n >= sizeof(path)) {
+            // Path too long or snprintf error; skip safely
+            continue;
+        }
+
+        if (read_file_line(path, namebuf, sizeof(namebuf)) == 0) {
+            trim(namebuf);
+            if (strcmp(namebuf, "QCOM TSC") == 0) {
+                closedir(d);
+                return idx;
+            }
+        }
+        // If reading clock_name fails, just skip that entry
+    }
+
+    closedir(d);
+    return -1; // Not found
+}
+
 int findPhcIndex( InterfaceLabel *iface_label )
 {
     int sd;
@@ -231,6 +316,18 @@ int findPhcIndex( InterfaceLabel *iface_label )
 
     close(sd);
     return info.phc_index;
+}
+
+int resolve_ptp_index(bool tsc_enabled,  InterfaceLabel *iface_label) {
+    int phc_idx = 0;
+    if ( tsc_enabled ) {
+        phc_idx = findphcTscIndex();
+        return phc_idx;
+    } else {
+        // Fallback / default path: use existing PHC selection
+        phc_idx = findPhcIndex(iface_label);
+        return phc_idx; // propagate phc_idx (>=0 success, negative on error)
+    }
 }
 
 LinuxTimestamperGeneric::~LinuxTimestamperGeneric()
@@ -267,8 +364,8 @@ bool LinuxTimestamperGeneric::Adjust( void *tmx ) const
 
         if ( ptp_fd != -1 && (_private->clockid = FD_TO_CLOCKID(ptp_fd)) != -1 ) {
             GPTP_LOG_INFO("open PTP clock device is success");
+            GPTP_LOG_INFO("opened clock device: %s", ptp_device);
         }
-
         return false;
     }
 
@@ -276,18 +373,21 @@ bool LinuxTimestamperGeneric::Adjust( void *tmx ) const
 }
 
 bool LinuxTimestamperGeneric::HWTimestamper_init
-( InterfaceLabel *iface_label, OSNetworkInterface *iface )
+( InterfaceLabel *iface_label, OSNetworkInterface *iface, bool tsc_enable)
 {
     cross_stamp_good = false;
     int phc_index;
     int count = 0;
+    struct timespec ts;
+
 #ifdef PTP_HW_CROSSTSTAMP
     struct ptp_clock_caps ptp_capability;
 #endif
     _private = new LinuxTimestamperGenericPrivate;
     pthread_mutex_init( &_private->cross_stamp_lock, NULL );
     // Determine the correct PTP clock interface
-    phc_index = findPhcIndex( iface_label );
+    //phc_index = findPhcIndex( iface_label );
+    phc_index = resolve_ptp_index(tsc_enable, iface_label);
 
     if ( phc_index < 0 ) {
         GPTP_LOG_ERROR("Failed to find PTP device index");
@@ -310,10 +410,15 @@ bool LinuxTimestamperGeneric::HWTimestamper_init
         } else {
             GPTP_LOG_INFO("opened clock device: %s", ptp_device);
         }
+
     } while ( ( ( phc_fd == -1 )
                 || ( (_private->clockid = FD_TO_CLOCKID(phc_fd)) == -1 ) )
               && ( count < 1000 ) );
-
+    // only if tsc enable set the clock to current time to start TSC timer
+    if(tsc_enable){
+        clock_gettime( CLOCK_REALTIME, &ts );
+        clock_settime( _private->clockid, &ts );
+    }
 #ifdef PTP_HW_CROSSTSTAMP
 
     // Query PTP stack for availability of HW cross-timestamp
@@ -457,7 +562,7 @@ done:
 }
 
 bool LinuxTimestamperGeneric::post_init( int ifindex, int sd,
-        TicketingLock *lock )
+        TicketingLock *lock , bool tsc_enable)
 {
     int timestamp_flags = 0;
     struct ifreq device;
@@ -477,8 +582,15 @@ bool LinuxTimestamperGeneric::post_init( int ifindex, int sd,
 
     device.ifr_data = (char *) &hwconfig;
     memset( &hwconfig, 0, sizeof( hwconfig ));
+
     hwconfig.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
+    if(tsc_enable){
+    GPTP_LOG_INFO("TSC used:: HWTSTAMP_TX_EXTERNAL_TIME_SRC hw type set");
+    hwconfig.tx_type = HWTSTAMP_TX_EXTERNAL_TIME_SRC;
+   } else {
     hwconfig.tx_type = HWTSTAMP_TX_ON;
+    GPTP_LOG_INFO("HWTSTAMP_TX_ON hw type set");
+   }
     err = ioctl( sd, SIOCSHWTSTAMP, &device );
     GPTP_LOG_INFO("post_init:: SIOCSHWTSTAMP ioctl called");
 

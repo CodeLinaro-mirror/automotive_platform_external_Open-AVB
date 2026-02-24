@@ -9,8 +9,7 @@ LOCAL_SHARED_LIBRARIES := libcutils liblog
 
 LOCAL_C_INCLUDES += \
         $(LOCAL_PATH) \
-		external/open-avb/daemons/gptp/linux/src/ \
-		external/open-avb/daemons/gptp/common
+		external/open-avb/daemons/gptp/inc
 
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_C_INCLUDES)
 

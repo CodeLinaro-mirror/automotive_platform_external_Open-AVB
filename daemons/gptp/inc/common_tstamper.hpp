@@ -64,7 +64,7 @@ class CommonTimestamper
          * @return true
          */
         virtual bool HWTimestamper_init
-        ( InterfaceLabel *iface_label, OSNetworkInterface *iface )
+        ( InterfaceLabel *iface_label, OSNetworkInterface *iface, bool tsc_enable)
         {
             return true;
         }

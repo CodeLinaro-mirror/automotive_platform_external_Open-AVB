@@ -114,6 +114,7 @@ IEEE1588Clock::IEEE1588Clock
     _new_syntonization_set_point = false;
     _ppm = 0;
     _phase_error_violation = 0;
+    _freq_valid = 0;
     _master_local_freq_offset_init = false;
     _local_system_freq_offset_init = false;
     this->ipc = ipc;
@@ -726,7 +727,7 @@ void IEEE1588Clock::setMasterOffset
   int64_t local_boot_offset, Timestamp boot_time,
   FrequencyRatio local_boot_freq_offset, unsigned sync_count,
   unsigned pdelay_count, PortState port_state, bool asCapable,
-  uint32_t process_path )
+  uint32_t process_path)
 {
     uint64_t curr_gptp = 0;
     _master_local_freq_offset = master_local_freq_offset;
@@ -837,8 +838,8 @@ void IEEE1588Clock::setMasterOffset
     }
 
     if ( _syntonize ) {
-        if ( _new_syntonization_set_point
-                || _phase_error_violation > PHASE_ERROR_MAX_COUNT ) {
+       if ( _new_syntonization_set_point
+                || _phase_error_violation > PHASE_ERROR_MAX_COUNT  || _freq_valid<0 ) {
             _new_syntonization_set_point = false;
             _phase_error_violation = 0;
             /* Make sure that there are no transmit operations
@@ -855,28 +856,37 @@ void IEEE1588Clock::setMasterOffset
             restartPDelayAll();
             putTxLockAll();
             master_local_offset = 0;
+            _freq_valid = 0;
         }
 
-        // Adjust for frequency offset
+        //Adjust for frequency offset
         long double phase_error = (long double) - master_local_offset;
 
         if ( fabsl(phase_error) > PHASE_ERROR_THRESHOLD ) {
             ++_phase_error_violation;
         } else {
-            _phase_error_violation = 0;
-            float syncPerSec = (float)(1.0 / pow((float)2, port->getSyncInterval()));
+           float syncPerSec = (float)(1.0 / pow((float)2, port->getSyncInterval()));
             _ppm += (float) ((INTEGRAL * syncPerSec * phase_error) + PROPORTIONAL * ((
                                  master_local_freq_offset - 1.0) * 1000000));
-            GPTP_LOG_DEBUG("phase_error = %Lf, ppm = %f", phase_error, _ppm );
+            GPTP_LOG_DEBUG("old ppm calculation clock rate ppm:%f, phase_error = %Lf, syncPerSec = %f, master_local_freq_offset = %Lf",
+                                                            _ppm,        phase_error,     syncPerSec,    master_local_freq_offset);
+
+            if ( _ppm < LOWER_FREQ_LIMIT ) {
+                _ppm = LOWER_FREQ_LIMIT;
+                _freq_valid--;
+            }
+
+            else if ( _ppm > UPPER_FREQ_LIMIT ) {
+                _ppm = UPPER_FREQ_LIMIT;
+                _freq_valid--;
+            }
+            else if (_ppm != 0 ) {
+                _freq_valid = FREQ_VALID_COUNT;
+            }
+            GPTP_LOG_DEBUG(" Freq valid:%d", _freq_valid);
         }
 
-        if ( _ppm < LOWER_FREQ_LIMIT ) {
-            _ppm = LOWER_FREQ_LIMIT;
-        }
 
-        if ( _ppm > UPPER_FREQ_LIMIT ) {
-            _ppm = UPPER_FREQ_LIMIT;
-        }
 
         if ( port->getTestMode() ) {
             GPTP_LOG_STATUS("Adjust clock rate ppm:%f", _ppm);

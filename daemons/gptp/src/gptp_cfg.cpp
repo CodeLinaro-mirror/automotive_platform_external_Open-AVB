@@ -135,6 +135,15 @@ int GptpIniParser::iniCallBack(void *user, const char *section,
                     valOK = false;
                 }
             }
+        } else if ( parseMatch( name, "tscEnabled") ) {
+            bool isTscEnable = parseMatch( value, "1");
+            valOK = true;
+#ifndef ANDROID
+            parser->_config.tsc_enable = isTscEnable;
+#else
+            parser->_config.tsc_enable = false; // TSC not available on Android
+            GPTP_LOG_ERROR("TSC disabled on Android, not supported\n");
+#endif
         }
     } else if ( parseMatch(section, "port") ) {
         if ( parseMatch(name, "announceReceiptTimeout") ) {

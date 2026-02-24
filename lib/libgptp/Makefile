@@ -1,6 +1,6 @@
 .PHONY : clean
 
-CPPFLAGS+= -fpic -g -I../../daemons/gptp/linux/src -I../../daemons/gptp/common
+CPPFLAGS+= -fpic -g -I../../daemons/gptp/inc
 ifeq ($(GPTP_AUTO_START),1)
 	CPPFLAGS += -DGPTP_AUTO_START
 endif

@@ -788,8 +788,14 @@ int main(int argc, char **argv)
                     GPTP_LOG_INFO("neighborPropDelayThreshold value:% " PRId64 " ",
                                   portInit.neighborPropDelayThreshold);
                 }
+            } else if (strcmp(argv[i] + 1, "TSC_EN") == 0) {
+#ifdef ANDROID
+                portInit.tsc_enable = true;
+#else
+                portInit.tsc_enable = false;
+                GPTP_LOG_ERROR("TSC disabled on Android, not supported\n");
+#endif
             }
-
 #ifdef RGPTP_ENABLED
             else if (strcmp(argv[i] + 1, "Y") == 0) {
                 rgptp = true;
@@ -1084,7 +1090,7 @@ int main(int argc, char **argv)
     }
 #endif
     pPort = new EtherPort(&portInit);
-
+    GPTP_LOG_ERROR("pPort TSC enable flag: %d\n", pPort->getTSC());
     if (!pPort->init_port()) {
         GPTP_LOG_ERROR("failed to initialize port");
         GPTP_LOG_UNREGISTER();

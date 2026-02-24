@@ -71,6 +71,8 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 /* This is the maximum count of phase error, outside of the threshold before
    adjustment is performed */
 #define PHASE_ERROR_MAX_COUNT (6)
+#define FREQ_VALID_COUNT (6)
+
 
 /* Value returned by calcMasterLocalClockRateDifference() to indicate
    detection of negative time jump in follow_up message */
@@ -142,6 +144,7 @@ class IEEE1588Clock
         bool _new_syntonization_set_point;
         float _ppm;
         int _phase_error_violation;
+        int _freq_valid;
 
         CommonPort *port_list[MAX_PORTS];
 
@@ -660,7 +663,7 @@ class IEEE1588Clock
           int64_t local_boot_offset, Timestamp boot_time,
           FrequencyRatio local_boot_freq_offset, unsigned sync_count,
           unsigned pdelay_count, PortState port_state, bool asCapable,
-          uint32_t process_path );
+          uint32_t process_path);
 
         /**
          * @brief  Get the IEEE1588Clock identity value

@@ -163,7 +163,7 @@ class LinuxTimestamper : public EtherTimestamper
          * @param  lock [in] Pointer to ticketing Lock object
          * @return TRUE if success, FALSE in case of error
          */
-        virtual bool post_init( int ifindex, int sd, TicketingLock *lock ) = 0;
+        virtual bool post_init( int ifindex, int sd, TicketingLock *lock, bool tsc_enable) = 0;
 
         virtual void setifacename(const char *ifname)
         {
@@ -643,7 +643,7 @@ class LinuxNetworkInterfaceFactory : public OSNetworkInterfaceFactory
          */
         virtual bool createInterface
         ( OSNetworkInterface **net_iface, InterfaceLabel *label,
-          CommonTimestamper *timestamper );
+          CommonTimestamper *timestamper, bool tsc_enable);
 };
 
 /**

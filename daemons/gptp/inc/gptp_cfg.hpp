@@ -103,6 +103,7 @@ class GptpIniParser
             bool disableSigMsg;
             bool bypassIfWait = false;
             bool waitForSync = false;
+            bool tsc_enable = false;
             PortState port_state;
 
             /*ethernet adapter data set*/
@@ -310,6 +311,11 @@ class GptpIniParser
         bool getwaitForSync()
         {
             return _config.waitForSync;
+        }
+
+        bool getTscEnable()
+        {
+            return _config.tsc_enable;
         }
 
         std::string getIfaceName()

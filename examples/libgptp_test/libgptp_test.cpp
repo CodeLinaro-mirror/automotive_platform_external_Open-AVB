@@ -38,6 +38,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <inttypes.h>
 #include <fcntl.h>
 #include <math.h>
+#include <ctype.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -346,6 +347,10 @@ void loop_test(int p_loop_cnt)
         } else if (rcvid < 0) {
             GPTP_LOG_ERROR("Failed to get time error\n");
         }
+
+        // Suspends the execution of the calling thread for a specified number of microseconds.
+        // 1 second = 1,000,000 microseconds, so usleep(1000000) pauses the program for 1 second.
+        usleep(1000000);
     }
 }
 
@@ -420,7 +425,81 @@ static void getVirtDevice(char* device_path)
     snprintf(device_path, PTP_DEVICE_PATH_LEN, "%s", PTP_DEFAULT_DEVICE);
     closedir(dp);
 }
+
 #endif
+
+#define TSC_DEVICE_PATH_LEN 256
+#define TSC_DEFAULT_DEVICE "/dev/ptp0"
+
+/* Trim in-place trailing and leading whitespace/newlines */
+static void trim(char *s) {
+    char *end, *start = s;
+    while (*start && isspace((unsigned char)*start)) start++;
+    if (start != s) memmove(s, start, strlen(start) + 1);
+    end = s + strlen(s);
+    while (end > s && isspace((unsigned char)*(end - 1))) end--;
+    *end = '\0';
+}
+
+/* Safe file read: read first line (or whole small file) into buf */
+static int read_file_line(const char *path, char *buf, size_t buflen) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    if (!fgets(buf, (int)buflen, f)) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return 0;
+}
+
+static int getTscDevice(char* device_path)
+{
+    const char *path = "/sys/class/ptp/";
+    const char *prefix = "QCOM TSC";
+    int prefix_len = strlen(prefix);
+    struct dirent *entry;
+    char namebuf[128];
+
+    if (device_path == NULL) {
+        GPTP_LOG_ERROR("device path is NULL\n");
+        return -1;
+    }
+    DIR *dp = opendir(path);
+    if (dp == NULL) {
+        GPTP_LOG_ERROR("Failed to open /sys/devices/virtual/ptp/ so use default device\n");
+        snprintf(device_path, TSC_DEVICE_PATH_LEN, "%s", TSC_DEFAULT_DEVICE);
+        return -1;
+    }
+
+    while ((entry = readdir(dp))) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            if (strncmp(entry->d_name, "ptp", 3) != 0) continue; // if not ptp device, skip it
+            char clk_path[TSC_DEVICE_PATH_LEN]  = {0};
+            int n = snprintf(clk_path, strlen(path)+strlen(entry->d_name)+strlen("///clock_name")+1, "%s%s/clock_name", path, entry->d_name);
+            if (n <= 0 || (size_t)n >= sizeof(clk_path)) {
+                // Path too long or snprintf error; skip safely
+                continue;
+            }
+            if (read_file_line(clk_path, namebuf, sizeof(namebuf)) == 0) {
+                trim(namebuf);
+                GPTP_LOG_INFO("clock name in %s and clk path %s, with prefix %s \n", namebuf, clk_path,prefix);
+                if (strncmp(namebuf, prefix,prefix_len) == 0) {
+                    // If reading clock_name fails, just skip that entry
+                    snprintf(device_path, TSC_DEVICE_PATH_LEN, "%s%s", "/dev/", entry->d_name);
+                    GPTP_LOG_INFO("opening clock device: %s\n", device_path);
+                    closedir(dp);
+                    return 0;
+                }
+            }
+        }
+    }
+
+    GPTP_LOG_ERROR("No device found in %s, using default device\n", path);
+    snprintf(device_path, TSC_DEVICE_PATH_LEN, "%s", TSC_DEFAULT_DEVICE);
+    closedir(dp);
+    return -1;
+}
 
 void get_gptp_time(int p_loop_cnt)
 {
@@ -482,6 +561,48 @@ void get_gptp_time(int p_loop_cnt)
 #endif
     return;
 }
+
+void get_gptp_tsc_time(int p_loop_cnt)
+{
+    struct timespec ts;
+    static clockid_t gTscClockid = -1;
+    uint64_t curr_gptp_time;
+
+    char ptp_device[TSC_DEVICE_PATH_LEN] = {0};
+    int ret = getTscDevice(ptp_device);
+    if (ret == -1) {
+        GPTP_LOG_ERROR("Failed to get TSC device path\n");
+        return;
+    }
+    int gptp_phc_fd = open(ptp_device, O_RDWR );
+
+    if ( gptp_phc_fd == -1 ||
+            (gTscClockid = FD_TO_CLOCKID(gptp_phc_fd)) == -1 ) {
+        GPTP_LOG_ERROR("Failed to open TSC clock device error 0x%x(%s)\n", errno,
+                       strerror(errno));
+        return;
+    }
+    for (int i = 0; i < p_loop_cnt; i++) {
+        if (clock_gettime(gTscClockid, &ts)) {
+            GPTP_LOG_ERROR("clock_gettime failed 0x%x (%s)\n", errno, strerror(errno));
+            close(gptp_phc_fd);
+            return;
+        }
+
+        if (ts.tv_sec == 0 && ts.tv_nsec == 0) {
+            GPTP_LOG_WARNING("TSC time read taking longer time\n");
+            close(gptp_phc_fd);
+            return;
+        }
+
+        curr_gptp_time = (ts.tv_sec) * 1000000000LL + ts.tv_nsec;
+        //GPTP_LOG_INFO("current TSC time = %" PRIu64 "\n", curr_gptp_time);
+        GPTP_LOG_INFO("current TSC time = %ld.%ld\n", ts.tv_sec, ts.tv_nsec);
+    }
+    close(gptp_phc_fd);
+    return;
+}
+
 void do_some_tests_gptp_boot(int p_loop_cnt)
 {
     int i = 0;
@@ -749,8 +870,11 @@ int main(int argc, char *argv[])
             GPTP_LOG_INFO("======================gPTP loop test=====================\n");
             loop_test(l_cnt);
         } else if (argv[1][0] == 'g') {
-            GPTP_LOG_INFO("=================clock_gettime based test================\n");
+            GPTP_LOG_INFO("\n\n=======================clock_gettime based test=========================\n\n");
             get_gptp_time(l_cnt);
+        } else if (argv[1][0] == 't') {
+            GPTP_LOG_INFO("\n\n=======================clock_gettime TSC based test=========================\n\n");
+            get_gptp_tsc_time(l_cnt);
         } else if (argv[1][0] == 'b') {
             GPTP_LOG_INFO("\n\n\n====================gPTP time boot time test=====================\n\n\n");
             do_some_tests_gptp_boot(l_cnt);

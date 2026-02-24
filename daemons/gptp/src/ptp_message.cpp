@@ -1362,7 +1362,7 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
           local_boot_offset, boot_time,
           local_boot_freq_offset, port->getSyncCount(),
           port->getPdelayCount(), port->getPortState(), port->getAsCapable(),
-          PROCESS_MESSAGE_PATH );
+          PROCESS_MESSAGE_PATH);
     }
 
     uint16_t lastGmTimeBaseIndicator;

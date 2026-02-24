@@ -1,0 +1,101 @@
+// ============================================================================
+// Android.bp and Prebuilt Configuration for gPTP (Generalized Precision Time Protocol)
+// ----------------------------------------------------------------------------
+
+soong_config_module_type {
+    name: "qgptp_cc_binary",
+    module_type: "cc_binary",
+    config_namespace: "qti",
+    bool_variables: [
+        "IS_GEN5_GVM",
+        "IS_GEN4_GVM",
+        "IS_CDCCOMM",
+        "IS_GEN3_GVM",
+    ],
+    properties: ["required"],
+}
+
+qgptp_cc_binary {
+    name: "qgptp",
+
+    cflags: [
+        "-DWITHOUT_IFADDRS",
+        "-Wno-unused-parameter",
+        "-Wno-unused-private-field",
+        "-DPTP_SW_QTIMER=1",
+        "-DSYSTEMD",
+    ],
+
+    local_include_dirs: ["inc"],
+
+    shared_libs: [
+        "liblog",
+        "libutils",
+        "libcutils",
+    ],
+
+    srcs: [
+        "src/daemon_cl.cpp",
+        "src/ptp_message.cpp",
+        "src/avbts_osnet.cpp",
+        "src/ap_message.cpp",
+        "src/common_port.cpp",
+        "src/ether_port.cpp",
+        "src/ieee1588clock.cpp",
+        "src/gptp_cfg.cpp",
+        "src/gptp_log.cpp",
+        "src/ini.c",
+        "src/linux_hal_common.cpp",
+        "src/linux_hal_persist_file.cpp",
+        "src/platform.cpp",
+        "src/linux_hal_generic.cpp",
+        "src/linux_hal_generic_adj.cpp",
+        "src/qgptp_rmgr.cpp",
+    ],
+
+    init_rc: [
+        "etc/gptp_daemon.rc",
+    ],
+
+    rtti: true,
+    vendor: true,
+
+    soong_config_variables: {
+        IS_GEN5_GVM: {
+            required: ["gptp_cfg_au_nord"],
+        },
+        IS_CDCCOMM: {
+            required: ["gptp_cfg_au"],
+        },
+        IS_GEN4_GVM: {
+            required: ["gptp_cfg_ini"],
+        },
+        IS_GEN3_GVM: {
+            required: ["gptp_cfg_ini"],
+        },
+    },
+}
+
+prebuilt_etc {
+    name: "gptp_cfg_ini",
+    src: "etc/gptp_cfg.ini",
+    filename: "gptp_cfg.ini",
+    vendor: true,
+    installable: true,
+}
+
+prebuilt_etc {
+    name: "gptp_cfg_au",
+    src: "etc/gptp_cfg_au.ini",
+    filename: "gptp_cfg.ini",
+    vendor: true,
+    installable: true,
+}
+
+prebuilt_etc {
+    name: "gptp_cfg_au_nord",
+    src: "etc/gptp_cfg_au_nord.ini",
+    filename: "gptp_cfg.ini",
+    vendor: true,
+    installable: true,
+}

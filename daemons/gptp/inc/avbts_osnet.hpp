@@ -377,15 +377,15 @@ class OSNetworkInterfaceFactory {
 	 */
 	static bool buildInterface
 	(OSNetworkInterface ** iface, factory_name_t id, InterfaceLabel * iflabel,
-	 CommonTimestamper * timestamper) {
+	 CommonTimestamper * timestamper, bool tsc_enable) {
 		return factoryMap[id]->createInterface
-			(iface, iflabel, timestamper);
+			(iface, iflabel, timestamper, tsc_enable);
 	}
 	virtual ~OSNetworkInterfaceFactory() = 0;
 private:
 	virtual bool createInterface
 	(OSNetworkInterface ** iface, InterfaceLabel * iflabel,
-	 CommonTimestamper * timestamper) = 0;
+	 CommonTimestamper * timestamper, bool tsc_enable) = 0;
 	static FactoryMap_t factoryMap;
 };
 

@@ -439,6 +439,8 @@ typedef struct {
 
 	bool disableSigMsg;
 
+    bool tsc_enable;
+
     /* condition_factory OSConditionFactory instance */
     OSConditionFactory * condition_factory;
 
@@ -533,6 +535,7 @@ class CommonPort
         Timestamp _peer_offset_ts_mine;
         bool _peer_offset_init;
         bool asCapable;
+        bool tsc_enable;
         unsigned sync_count;  /* 0 for master, increment for each sync
                    * received as slave */
         unsigned pdelay_count;
@@ -683,6 +686,14 @@ class CommonPort
         bool getTestMode( void )
         {
             return testMode;
+        }
+                /**
+         * @brief  Gets the testMode
+         * @return bool of the test mode value
+         */
+        bool getTSCState( void )
+        {
+            return tsc_enable;
         }
 
         /**
@@ -1565,8 +1576,8 @@ class CommonPort
         virtual void disableRsync() = 0;
 
         /**
-         * @brief  set reverse sync parameter.
-         * @param  RsyncStatus_t reverse sync structure
+         * @brief ï¿½set reverse sync parameter.
+         * @param ï¿½RsyncStatus_t reverse sync structure
          * @return TRUE if success. FALSE otherwise
          */
         bool setRsync(RsyncStatus_t *Rsync);

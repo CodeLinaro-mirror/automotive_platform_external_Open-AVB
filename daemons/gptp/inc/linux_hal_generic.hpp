@@ -105,10 +105,11 @@ class LinuxTimestamperGeneric : public LinuxTimestamper
          * @brief  Initializes the Hardware timestamp interface
          * @param  iface_label [in] Network interface label (used to find the phc index)
          * @param  iface [in] Network interface
+         * @param  tsc_enable [in] TSC block is enabled or not
          * @return FALSE in case of error, TRUE if success.
          */
         virtual bool HWTimestamper_init
-        ( InterfaceLabel *iface_label, OSNetworkInterface *iface );
+        ( InterfaceLabel *iface_label, OSNetworkInterface *iface, bool tsc_enable );
 
         virtual bool HWTimestamper_deinit
                 ( InterfaceLabel *iface_label, OSNetworkInterface **iface );
@@ -136,9 +137,10 @@ class LinuxTimestamperGeneric : public LinuxTimestamper
          * @param  ifindex struct ifreq.ifr_ifindex value
          * @param  sd Socket file descriptor
          * @param  lock [in] Instance of TicketingLock object
+         * @param  tsc_enable [in] TSC block is enabled or not
          * @return TRUE if ok. FALSE if error.
          */
-        bool post_init( int ifindex, int sd, TicketingLock *lock );
+        bool post_init( int ifindex, int sd, TicketingLock *lock, bool tsc_enable);
 
         /**
          * @brief  Gets the ptp clock time information

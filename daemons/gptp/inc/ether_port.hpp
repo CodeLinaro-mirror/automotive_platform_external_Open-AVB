@@ -741,6 +741,15 @@ class EtherPort : public CommonPort
             etherPortLinkState = state;
             setEtherPortLinkState(state);
         }
+        /**
+         * @brief Gets the tsc_enable State
+         * @param state value to be set
+         * @return bool
+         */
+        bool getTSC(void)
+        {
+            return getTSCState();
+        }
 };
 
 #endif/*ETHER_PORT_HPP*/

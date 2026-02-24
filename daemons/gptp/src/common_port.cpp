@@ -89,6 +89,7 @@ CommonPort::CommonPort( PortInit_t *portInit ) :
     bypass_if_wait = portInit->bypass_if_wait;
     net_iface = NULL;
     asCapable = false;
+    tsc_enable = portInit->tsc_enable;
     link_speed = INVALID_LINKSPEED;
     qgptp_rmgr_setport(this);
     memset(&counters, 0x0, sizeof(counters));
@@ -150,7 +151,7 @@ bool CommonPort::init_port( void )
 
     if (!OSNetworkInterfaceFactory::buildInterface
             ( &net_iface, factory_name_t("default"), net_label,
-              _hw_timestamper)) {
+              _hw_timestamper, tsc_enable)) {
         return false;
     }
 
@@ -166,7 +167,7 @@ void CommonPort::timestamper_init( void )
 {
     if ( _hw_timestamper != NULL ) {
         if ( !_hw_timestamper->HWTimestamper_init
-                ( net_label, net_iface )) {
+                ( net_label, net_iface, tsc_enable)) {
             GPTP_LOG_ERROR
             ( "Failed to initialize hardware timestamper, "
               "falling back to software timestamping" );
@@ -872,7 +873,7 @@ bool CommonPort::processEvent( Event e )
                   local_q_freq_offset,
                   local_boot_offset, boot_time,
                   local_boot_freq_offset, getSyncCount(),
-                  pdelay_count, port_state, asCapable, SYNC_INTERVAL_TIMEOUT_PATH );
+                  pdelay_count, port_state, asCapable, SYNC_INTERVAL_TIMEOUT_PATH);
             }
             // Call media specific action for completed sync
             syncDone();
