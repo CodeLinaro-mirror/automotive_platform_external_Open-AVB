@@ -471,7 +471,9 @@ static void gptpMemDeinit(int gptp_shm_fd, char **gptp_mmap)
 /* gptp core function to init gptp scaling */
 static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
 {
+    LOCK();
     if (NULL == gptp_shm_fd) {
+        UNLOCK();
         return false;
     }
 
@@ -488,6 +490,7 @@ static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
 
     if (*gptp_shm_fd == -1) {
         perror("shm_open()");
+        UNLOCK();
         return false;
     }
 
@@ -525,13 +528,17 @@ static int gptpMemInit(int *gptp_shm_fd, char **gptp_mmap)
 #endif
 #endif
         GPTP_LOG_ERROR("gptpMemInit failed %s\n", SHM_NAME);
+        UNLOCK();
         return false;
     }
+    UNLOCK();
 
 #ifndef AVB_FEATURE_GVM_MODE
 
     if (!gptpSCTMemInit()) {
+        LOCK();
         gptpMemDeinit(*gptp_shm_fd, gptp_mmap);
+        UNLOCK();
         return false;
     }
 
@@ -806,12 +813,16 @@ static bool gptpTimeInit(void)
     }
 
     if (!gptpScaling(&gPtpTD, &gPtpMmap)) {
+        LOCK();
         gptpMemDeinit(gPtpShmFd, &gPtpMmap);
+        UNLOCK();
         return false;
     }
 
     if (!gptpClkInit(&gptpPhcFd)) {
+        LOCK();
         gptpMemDeinit(gPtpShmFd, &gPtpMmap);
+        UNLOCK();
         return false;
     }
 

@@ -634,6 +634,7 @@ int main(int argc, char **argv)
     portInit.sct_shm_fd = -1;
     portInit.bypass_if_wait = false;
     portInit.wait_for_sync = false;
+    portInit.tsc_enable = false;
     LinuxNetworkInterfaceFactory *default_factory =
         new LinuxNetworkInterfaceFactory;
     OSNetworkInterfaceFactory::registerFactory
@@ -789,7 +790,7 @@ int main(int argc, char **argv)
                                   portInit.neighborPropDelayThreshold);
                 }
             } else if (strcmp(argv[i] + 1, "TSC_EN") == 0) {
-#ifdef ANDROID
+#ifndef ANDROID
                 portInit.tsc_enable = true;
 #else
                 portInit.tsc_enable = false;
@@ -946,6 +947,7 @@ int main(int argc, char **argv)
             portInit.isGM = iniParser.getIsGM();
             portInit.syncClocks = iniParser.getSyncClocks();
             portInit.asCapable = iniParser.getAsCapable();
+            portInit.tsc_enable = iniParser.getTscEnable();
             GPTP_LOG_INFO("syncClocks: %d", portInit.syncClocks);
             GPTP_LOG_INFO("automotive profile %s isGM %s\n",
                           ((portInit.automotive_profile) ? "True" : "False"),
