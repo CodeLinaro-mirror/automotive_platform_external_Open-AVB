@@ -39,7 +39,9 @@ Before=shutdown.target
 [Service]
 Restart=on-failure
 ExecStart=/usr/bin/qgptp ini -F /etc/gptp_cfg.ini
-ExecStop=/usr/bin/killall -s TERM qgptp
+ExecStop=/usr/bin/kill -s TERM qgptp
+TimeoutStopSec=30s
+KillMode=control-group
 
 [Install]
 WantedBy=multi-user.target
