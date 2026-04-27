@@ -404,6 +404,108 @@ class Timestamp
         }
 };
 
+class ValueAverage_int64
+{
+    public:
+        ValueAverage_int64(int window) :
+            size(window),
+            pos(0),
+            count(0)
+        {
+            valueArray = (int64_t*)calloc(size, sizeof(int64_t));
+        };
+
+        ~ValueAverage_int64()
+        {
+            if (valueArray) {
+                free(valueArray);
+            }
+        }
+
+        void push(int64_t val)
+        {
+            valueArray[pos++] = val;
+
+            if (count < size) {
+                count++;
+            }
+
+            if (pos >= size) {
+                pos = 0;
+            }
+        };
+
+        int64_t get()
+        {
+            int64_t val = 0;
+
+            for (int i = 0; i < count; i++) {
+                val += valueArray[i] /
+                       count; //Need to divide every entry as we go, else we hit int64_max
+            }
+
+            return val;
+        };
+
+    private:
+        int64_t* valueArray;
+        int size;
+        int pos;
+        int count;
+};
+
+class ValueAverage_FR
+{
+    public:
+        ValueAverage_FR(int window) :
+            size(window),
+            pos(0),
+            count(0)
+        {
+            valueArray = (FrequencyRatio*)calloc(size, sizeof(FrequencyRatio));
+        };
+
+        ~ValueAverage_FR()
+        {
+            if (valueArray) {
+                free(valueArray);
+            }
+        }
+
+        void push(FrequencyRatio val)
+        {
+            valueArray[pos++] = val;
+
+            if (count < size) {
+                count++;
+            }
+
+            if (pos >= size) {
+                pos = 0;
+            }
+        };
+
+        FrequencyRatio get()
+        {
+            FrequencyRatio val = 0;
+
+            for (int i = 0; i < count; i++) {
+                val += valueArray[i];
+                //GPTP_LOG_STATUS("val[%d] = %Lf", i, valueArray[i]);
+            }
+
+            return val / (FrequencyRatio)count;
+        };
+
+    private:
+        FrequencyRatio* valueArray;
+        int size;
+        int pos;
+        int count;
+};
+
+#define FREQ_OFFSET_MAX 0.1 // Could be reduced to 0.001. "typical" observed ratio is around 0.999976
+
 #define INVALID_TIMESTAMP (Timestamp( 0xC0000000, 0, 0 ))   /*!< Defines an invalid timestamp using a Timestamp instance and a fixed value*/
 #define PDELAY_PENDING_TIMESTAMP (Timestamp( 0xC0000001, 0, 0 ))    /*!< PDelay is pending timestamp */
 

@@ -57,6 +57,13 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #define FIVE_MSEC_IN_NSEC           (5000000)
 #define FIFTY_MSEC_IN_NSEC          (50000000)
 
+extern ValueAverage_int64 local_system_offset_avg;
+extern ValueAverage_FR local_system_freq_offset_avg;
+extern ValueAverage_int64 local_q_offset_avg;
+extern ValueAverage_FR local_q_freq_offset_avg;
+extern ValueAverage_int64 local_boot_offset_avg;
+extern ValueAverage_FR local_boot_freq_offset_avg;
+
 extern char ifname_eth[IFNAME_SIZE];
 int32_t g_proxy_mode = 0;
 int32_t gm_sync_count = 0;
@@ -1161,6 +1168,7 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
     int64_t correction;
     int32_t scaledLastGmFreqChange = 0;
     scaledNs scaledLastGmPhaseChange;
+    ptp_ratios_t local_ptpRatios;
     GPTP_LOG_DEBUG("Processing a follow-up message");
     // Expire any SYNC_RECEIPT timers that exist
     port->stopSyncReceiptTimer();
@@ -1368,6 +1376,21 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
     uint16_t lastGmTimeBaseIndicator;
     lastGmTimeBaseIndicator = port->getLastGmTimeBaseIndicator();
 
+    local_ptpRatios.captured_ptp_time    = TIMESTAMP_TO_NS(device_time);
+    local_ptpRatios.system_offset       = local_system_offset_avg.get();
+    local_ptpRatios.q_offset            = local_q_offset_avg.get();
+    local_ptpRatios.boot_offset         = local_boot_offset_avg.get();
+    local_ptpRatios.system_freq_offset  = local_system_offset_avg.get();
+    local_ptpRatios.q_freq_offset       = local_q_freq_offset_avg.get();
+    local_ptpRatios.boot_freq_offset    = local_boot_freq_offset_avg.get();
+
+    if (port->getTestMode()) {
+        GPTP_LOG_INFO("capture ptp time: %" PRIu64 " ns", local_ptpRatios.captured_ptp_time);
+        GPTP_LOG_INFO("capture qtime time: %" PRIu64 " ns",  TIMESTAMP_TO_NS(q_time));
+        GPTP_LOG_INFO("q offset: %" PRId64 " ns", local_ptpRatios.q_offset);
+        GPTP_LOG_INFO("q freq offset: %Lf", local_ptpRatios.q_freq_offset);
+    }
+
     if ((lastGmTimeBaseIndicator > 0)
             && (tlv.getGmTimeBaseIndicator() != lastGmTimeBaseIndicator)) {
         GPTP_LOG_EXCEPTION("Sync discontinuity");
@@ -1388,6 +1411,8 @@ void PTPMessageFollowUp::processMessage( EtherPort *port )
         pthread_mutex_lock((pthread_mutex_t *) &port->sct_buffer->lock);
         memcpy(&port->sct_buffer->syncData, &port->syncInfo,
                sizeof(syncMesaurementData_t));
+        memcpy(&port->sct_buffer->ptpRatios, &local_ptpRatios,
+               sizeof(ptp_ratios_t));
         pthread_mutex_unlock((pthread_mutex_t *) &port->sct_buffer->lock);
     }
 

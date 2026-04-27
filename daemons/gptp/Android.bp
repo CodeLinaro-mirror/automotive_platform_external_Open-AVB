@@ -1,22 +1,70 @@
-// ============================================================================
+// ====================================================================================
 // Android.bp and Prebuilt Configuration for gPTP (Generalized Precision Time Protocol)
-// ----------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------
 
 soong_config_module_type {
-    name: "qgptp_cc_binary",
-    module_type: "cc_binary",
-    config_namespace: "qti",
+    name: "gptp_cfg_prebuilt",
+    module_type: "prebuilt_etc",
+    config_namespace: "qtigptp",
     bool_variables: [
-        "IS_GEN5_GVM",
-        "IS_GEN4_GVM",
-        "IS_CDCCOMM",
-        "IS_GEN3_GVM",
+        "gen5gvm",
+        "gen4gvm",
+        "cdccomm",
     ],
-    properties: ["required"],
+    properties: ["src"],
 }
 
-qgptp_cc_binary {
+gptp_cfg_prebuilt {
+    name: "gptp_cfg",
+    filename: "gptp_cfg.ini",
+    vendor: true,
+    installable: true,
+
+    src: "etc/gptp_cfg.ini",
+
+    soong_config_variables: {
+        gen5gvm: {
+            src: "etc/gptp_cfg_au_nord.ini",
+        },
+        gen4gvm: {
+            src: "etc/gptp_cfg.ini",
+        },
+        cdccomm: {
+            src: "etc/gptp_cfg_au.ini",
+        },
+    },
+}
+
+soong_config_module_type {
+    name: "gptp_rc_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "qtigptp",
+    bool_variables: [
+        "gen5gvm",
+        "cdccomm",
+    ],
+    properties: ["init_rc"],
+}
+
+gptp_rc_cc_defaults {
+    name: "gptp_daemon_rc",
+    vendor: true,
+    installable: true,
+
+    soong_config_variables: {
+        gen5gvm: {
+            init_rc: ["etc/gptp_daemon.rc"],
+        },
+        cdccomm: {
+            init_rc: ["etc/gptp_daemon.rc"],
+        },
+    },
+}
+
+cc_binary {
     name: "qgptp",
+
+    defaults: ["gptp_daemon_rc"],
 
     cflags: [
         "-DWITHOUT_IFADDRS",
@@ -24,6 +72,7 @@ qgptp_cc_binary {
         "-Wno-unused-private-field",
         "-DPTP_SW_QTIMER=1",
         "-DSYSTEMD",
+        "-DGPTP_CAR_POWER_POLICY",
     ],
 
     local_include_dirs: ["inc"],
@@ -53,49 +102,10 @@ qgptp_cc_binary {
         "src/qgptp_rmgr.cpp",
     ],
 
-    init_rc: [
-        "etc/gptp_daemon.rc",
-    ],
-
     rtti: true,
     vendor: true,
 
-    soong_config_variables: {
-        IS_GEN5_GVM: {
-            required: ["gptp_cfg_au_nord"],
-        },
-        IS_CDCCOMM: {
-            required: ["gptp_cfg_au"],
-        },
-        IS_GEN4_GVM: {
-            required: ["gptp_cfg_ini"],
-        },
-        IS_GEN3_GVM: {
-            required: ["gptp_cfg_ini"],
-        },
-    },
-}
-
-prebuilt_etc {
-    name: "gptp_cfg_ini",
-    src: "etc/gptp_cfg.ini",
-    filename: "gptp_cfg.ini",
-    vendor: true,
-    installable: true,
-}
-
-prebuilt_etc {
-    name: "gptp_cfg_au",
-    src: "etc/gptp_cfg_au.ini",
-    filename: "gptp_cfg.ini",
-    vendor: true,
-    installable: true,
-}
-
-prebuilt_etc {
-    name: "gptp_cfg_au_nord",
-    src: "etc/gptp_cfg_au_nord.ini",
-    filename: "gptp_cfg.ini",
-    vendor: true,
-    installable: true,
+    required: [
+        "gptp_cfg",
+    ],
 }

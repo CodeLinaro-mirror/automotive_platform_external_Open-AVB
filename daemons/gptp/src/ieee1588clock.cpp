@@ -416,6 +416,7 @@ FrequencyRatio IEEE1588Clock::calcLocalSystemClockRateDifference(
 
     /*GPTP_LOG_WARNING("Local-system clock ratio = %Lf, local-mono clock ratio = %Lf",
             ppt_offset, ppt_offset_mono);*/
+
     _prev_system_time = system_time;
     _prev_q_time = q_time;
     _prev_boot_time = boot_time;
@@ -473,115 +474,13 @@ FrequencyRatio IEEE1588Clock::calcMasterLocalClockRateDifference(
     return ppt_offset;
 }
 
-class ValueAverage_int64
-{
-    public:
-        ValueAverage_int64(int window) :
-            size(window),
-            pos(0),
-            count(0)
-        {
-            valueArray = (int64_t*)calloc(size, sizeof(int64_t));
-        };
-
-        ~ValueAverage_int64()
-        {
-            if (valueArray) {
-                free(valueArray);
-            }
-        }
-
-        void push(int64_t val)
-        {
-            valueArray[pos++] = val;
-
-            if (count < size) {
-                count++;
-            }
-
-            if (pos >= size) {
-                pos = 0;
-            }
-        };
-
-        int64_t get()
-        {
-            int64_t val = 0;
-
-            for (int i = 0; i < count; i++) {
-                val += valueArray[i] /
-                       count; //Need to divide every entry as we go, else we hit int64_max
-            }
-
-            return val;
-        };
-
-    private:
-        int64_t* valueArray;
-        int size;
-        int pos;
-        int count;
-};
-
-class ValueAverage_FR
-{
-    public:
-        ValueAverage_FR(int window) :
-            size(window),
-            pos(0),
-            count(0)
-        {
-            valueArray = (FrequencyRatio*)calloc(size, sizeof(FrequencyRatio));
-        };
-
-        ~ValueAverage_FR()
-        {
-            if (valueArray) {
-                free(valueArray);
-            }
-        }
-
-        void push(FrequencyRatio val)
-        {
-            valueArray[pos++] = val;
-
-            if (count < size) {
-                count++;
-            }
-
-            if (pos >= size) {
-                pos = 0;
-            }
-        };
-
-        FrequencyRatio get()
-        {
-            FrequencyRatio val = 0;
-
-            for (int i = 0; i < count; i++) {
-                val += valueArray[i];
-                //GPTP_LOG_STATUS("val[%d] = %Lf", i, valueArray[i]);
-            }
-
-            return val / (FrequencyRatio)count;
-        };
-
-    private:
-        FrequencyRatio* valueArray;
-        int size;
-        int pos;
-        int count;
-};
-
-#define FREQ_OFFSET_MAX 0.1 // Could be reduced to 0.001. "typical" observed ratio is around 0.999976
-
-#define AVERAGE_WINDOW 2 //TODO: adjust as needed, probably too wide a window
-static ValueAverage_int64 local_system_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_FR local_system_freq_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_int64 local_q_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_FR local_q_freq_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_int64 local_boot_offset_avg(AVERAGE_WINDOW);
-static ValueAverage_FR local_boot_freq_offset_avg(AVERAGE_WINDOW);
+#define AVERAGE_WINDOW 4 //TODO: adjust as needed, probably too wide a window
+ValueAverage_int64 local_system_offset_avg(AVERAGE_WINDOW);
+ValueAverage_FR local_system_freq_offset_avg(AVERAGE_WINDOW);
+ValueAverage_int64 local_q_offset_avg(AVERAGE_WINDOW);
+ValueAverage_FR local_q_freq_offset_avg(AVERAGE_WINDOW);
+ValueAverage_int64 local_boot_offset_avg(AVERAGE_WINDOW);
+ValueAverage_FR local_boot_freq_offset_avg(AVERAGE_WINDOW);
 
 
 int realtime_adjust_offset(long long offset)

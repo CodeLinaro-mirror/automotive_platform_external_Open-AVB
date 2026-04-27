@@ -352,11 +352,22 @@ typedef struct {
 } syncInterval_t;
 
 typedef struct {
+    uint64_t captured_ptp_time;
+    int64_t system_offset;
+    int64_t q_offset;
+    int64_t boot_offset;
+    FrequencyRatio system_freq_offset;
+    FrequencyRatio q_freq_offset;
+    FrequencyRatio boot_freq_offset;
+} ptp_ratios_t;
+
+typedef struct {
     pthread_mutex_t lock;
     syncMesaurementData_t syncData;
     pDelayMeasurementData_t delayData;
     gptpStatsType_t status;
     syncInterval_t syncInterval;
+    ptp_ratios_t ptpRatios;
 } sct_gptp_data;
 
 typedef struct {

@@ -1,0 +1,27 @@
+cc_binary {
+    name: "qgptp_powerservice",
+
+    // Reuse the same defaults as CarPowerUsbService
+    defaults: ["CarPowerDefaults"],
+
+    vendor: true,
+    rtti: false,   // REQUIRED for PowerPolicyClientBase
+
+    srcs: [
+        "qgptp_power_client.cpp",
+    ],
+
+    shared_libs: [
+        "libbinder_ndk",
+        "libpowerpolicyclient",
+        "liblog",
+        "libutils",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+        "-O0",
+    ],
+}

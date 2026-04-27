@@ -116,6 +116,7 @@ static EtherPort *pPort = NULL;
 void gPTPPersistWriteCB(char *bufPtr, uint32_t bufSize);
 
 static int sock = 0;
+static bool using_android_socket = false;
 static pthread_t thread_id = 0;
 static int keep_running = 0;
 struct sockaddr_un sock_addr_un;
@@ -129,11 +130,107 @@ extern gptplogcat_t gptplogcat;
 extern gptplogcat_t systemlogcat;
 LinuxSharedMemoryIPC *ipc;
 
+#define MAX_NSEC 1000000000
+
 #ifdef GPTP_DSQB_ENABLED
 lpm_t lpm_handle;
 #endif
 
-#define MAX_NSEC 1000000000
+#ifdef ANDROID
+#ifdef GPTP_CAR_POWER_POLICY
+static constexpr const char* GPTP_SOCKET_PATH = "/dev/socket/gptp_power_socket";
+
+enum PowerEvent {
+    POWER_SUSPEND = 0,
+    POWER_RESUME  = 1,
+};
+
+static void* powerListenerThread(void* arg) {
+    int fd = (int)(intptr_t)arg;
+
+    PowerEvent ev;
+
+    while (true) {
+        ssize_t n = read(fd, &ev, sizeof(ev));
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            GPTP_LOG_ERROR("Power socket read failed: %s", strerror(errno));
+            break;
+        }
+
+        if (n != sizeof(ev)) {
+            continue;
+        }
+
+        if (!pPort) {
+            continue;
+        }
+
+        if (ev == POWER_SUSPEND) {
+            GPTP_LOG_INFO("Power: SUSPEND");
+            if (pPort->gPTP_lpm == false) {
+                pPort->gPTP_lpm = true;
+                pPort->processEvent(LINKDOWN);
+            }
+        } else if (ev == POWER_RESUME) {
+            if (pPort->gPTP_lpm == true) {
+                GPTP_LOG_INFO("Power: RESUME");
+                pPort->gPTP_lpm = false;
+                pPort->processEvent(LINKUP);
+            }
+        }
+    }
+
+    close(fd);
+    return nullptr;
+}
+
+static void startPowerListener() {
+    int fd = -1;
+
+    // First try to get the socket fd from Android init (via init.rc socket declaration)
+    fd = android_get_control_socket("gptp_power_socket");
+    if (fd > 0) {
+        GPTP_LOG_INFO("Got gptp_power_socket fd from init: %d", fd);
+    } else {
+        // Fallback: create and bind manually
+        GPTP_LOG_WARNING("android_get_control_socket(gptp_power_socket) failed, falling back to manual bind");
+        fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (fd < 0) {
+            GPTP_LOG_ERROR("socket() failed: %s", strerror(errno));
+            return;
+        }
+
+        sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        strlcpy(addr.sun_path, GPTP_SOCKET_PATH, sizeof(addr.sun_path));
+
+        if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+            GPTP_LOG_ERROR("bind() failed: %s", strerror(errno));
+            close(fd);
+            return;
+        }
+    }
+
+    pthread_t tid;
+    int ret = pthread_create(&tid, nullptr, powerListenerThread,
+                             (void*)(intptr_t)fd);
+
+    if (ret != 0) {
+        GPTP_LOG_ERROR("pthread_create failed: %s", strerror(ret));
+        close(fd);
+        return;
+    }
+
+    pthread_detach(tid);
+}
+
+#endif
+#endif
+
 /* Return *a - *b */
 static inline ptp_clock_time pct_diff
 ( struct ptp_clock_time *a, struct ptp_clock_time *b )
@@ -414,14 +511,19 @@ static void *wait_for_epoll_event(void *arg)
 void gptpDaemonServDeInit(void)
 {
     int ret = 0;
-    unlink(ADDRESS);
-    close(sock);
-    sock = 0;
+    if (!using_android_socket) {
+        unlink(ADDRESS);
+        close(sock);
+        sock = 0;
+    }
     // Signal the thread to exit
     keep_running = 0;
 
-    // Wait for the thread to exit
-    pthread_join(thread_id, NULL);
+    // Wait for the epoll thread to exit only if it was started.
+    if (thread_id != 0) {
+        pthread_join(thread_id, NULL);
+        thread_id = 0;
+    }
 
     for (int i = 0 ; i < MAX_CLIENTS_COUNT; i++) {
         if(gptp_client[i] != -1) {
@@ -439,10 +541,14 @@ void gptpDaemonServInit(void)
     int ret = 0;
     umask(S_IRGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH);
 #ifdef ANDROID
-    sock = android_get_control_socket("gptp_socket");
+    if (sock <= 0) {
+        sock = android_get_control_socket("gptp_socket");
 
-    if (sock < 0) {
-        GPTP_LOG_ERROR("Socket creation failed : %s\n", strerror(errno));
+        if (sock > 0) {
+            using_android_socket = true;
+        } else {
+            GPTP_LOG_ERROR("android_get_control_socket(gptp_socket) failed: %s\n", strerror(errno));
+        }
     }
 
 #endif
@@ -1148,6 +1254,11 @@ int main(int argc, char **argv)
 
     gptpDaemonServInit();
 
+#ifdef GPTP_CAR_POWER_POLICY
+    // Start listening for power events
+    startPowerListener();
+#endif
+
 #ifdef GPTP_DSQB_ENABLED
     /*Register gptp System for lpm*/
     rc = gptp_sys_register_lpm();
@@ -1162,6 +1273,7 @@ int main(int argc, char **argv)
 
     GPTP_LOG_INFO("gPTP starting...");
     pPort->processEvent(POWERUP);
+    pPort->gPTP_lpm = false;
 #ifdef RGPTP_ENABLED
 
     if ( rgptp ) {
