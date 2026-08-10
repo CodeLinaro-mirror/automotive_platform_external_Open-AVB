@@ -115,7 +115,7 @@ static void UTCMemDeinit()
         }
         gUTCShmFd = -1;
 
-        UTC_LIB_LOG_INFO("UTCMemDeinit %d\n", UTC_SHM_SIZE);
+        UTC_LIB_LOG_INFO("UTCMemDeinit %zu\n", UTC_SHM_SIZE);
     }
 }
 
