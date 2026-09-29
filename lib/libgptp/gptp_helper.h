@@ -69,7 +69,10 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 extern "C" {
 #endif
 
-#ifdef DLT_AVAILABLE
+#ifdef USE_CLOG
+#include "clog.h"
+#include "clog_ids.h"
+#elif defined(USE_DLT)
 #include <dlt/dlt.h>
 #include <unistd.h>
 #endif

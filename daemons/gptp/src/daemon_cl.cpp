@@ -749,6 +749,8 @@ int main(int argc, char **argv)
     LinuxLockFactory *lock_factory = NULL;
     LinuxTimerFactory *timer_factory = NULL;
     LinuxConditionFactory *condition_factory = NULL;
+    GPTP_LOG_REGISTER();
+
     LinuxThreadFactory *thread_factory = new LinuxThreadFactory();
     if (thread_factory == NULL) {
         GPTP_LOG_ERROR("Failed to allocate thread_factory");
@@ -767,10 +769,10 @@ int main(int argc, char **argv)
                 delete thread_factory;
             }
 
+            GPTP_LOG_UNREGISTER();
             return -1;
         }
     }
-    GPTP_LOG_REGISTER();
 
     if (watchdog_setup(thread_factory) != 0) {
         GPTP_LOG_ERROR("Watchdog handler setup error");
