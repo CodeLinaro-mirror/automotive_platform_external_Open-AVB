@@ -165,6 +165,11 @@ net_result LinuxNetworkInterface::send
 
     if ( err == -1 ) {
         GPTP_LOG_ERROR( "Failed to send: %s(%d)", strerror(errno), errno );
+#ifndef ARCH_INTELCE
+        if ( timestamp ) {
+            net_lock.unlock();
+        }
+#endif
         return net_fatal;
     }
 
@@ -272,7 +277,11 @@ static void x_readEvent
                 if (linkUp != pPort->getLinkUpState()) {
                     pPort->setLinkUpState(linkUp);
 
-                    if (linkUp) {
+                    if (pPort->gPTP_lpm) {
+                        GPTP_LOG_INFO("watchNetLink: LPM active, "
+                                      "suppressing duplicate %s event",
+                                      linkUp ? "LINKUP" : "LINKDOWN");
+                    } else if (linkUp) {
                         pPort->processEvent(LINKUP);
                     } else {
                         pPort->processEvent(LINKDOWN);
@@ -375,6 +384,10 @@ bool LinuxNetworkInterface::getLinkSpeed( int sd, uint32_t *speed )
 
         case SPEED_2500:
             *speed = LINKSPEED_2_5G;
+            break;
+
+        case SPEED_5000:
+            *speed = LINKSPEED_5G;
             break;
 
         case SPEED_10000:
@@ -1180,7 +1193,8 @@ bool LinuxSharedMemoryIPC::init(
     int8_t reverseSyncEnabled,
     int8_t reverseSyncDomain,
     double reverseSyncRate,
-    bool waitForSync )
+    bool waitForSync,
+    bool tsc_enable )
 {
     pthread_mutexattr_t shared;
     LinuxIPCArg* arg;
@@ -1288,6 +1302,7 @@ bool LinuxSharedMemoryIPC::init(
     ptimedata->reverseSyncEnabled = reverseSyncEnabled;
     ptimedata->reverseSyncDomain = reverseSyncDomain;
     ptimedata->reverseSyncRate = reverseSyncRate;
+    ptimedata->tsc_active = tsc_enable;
 
     if (waitForSync == 0) {
         ptimedata->d_status = DEAMON_UP;

@@ -62,24 +62,65 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <syslog.h>
 #endif
 
+#ifdef USE_DLT
+#include <dlt/dlt.h>
+#include <unistd.h>
+#endif
+
+#ifdef USE_CLOG
+#include "clog.h"
+#include "clog_ids.h"
+#endif
+
 #define CLOCKFD 3
 #define FD_TO_CLOCKID(fd)   ((~(clockid_t) (fd) << 3) | CLOCKFD)
 #define MAX_RETRY 10000
 #define LOOP_CNT 1
 
-#ifndef LOG_ERROR
-#define LOG_ERROR    1
-#endif
-#ifndef LOG_WARNING
-#define LOG_WARNING     2
-#endif
-#ifndef LOG_INFO
-#define LOG_INFO     3
-#endif
-#ifndef LOG_DEBUG
-#define LOG_DEBUG    4
-#endif
-#define GPTP_LOG_LEVEL LOG_INFO
+#ifdef USE_DLT
+
+typedef enum {
+    GPTP_LOG_LVL_CRITICAL = DLT_LOG_FATAL,
+    GPTP_LOG_LVL_ERROR = DLT_LOG_ERROR,
+    GPTP_LOG_LVL_EXCEPTION = DLT_LOG_ERROR,
+    GPTP_LOG_LVL_WARNING = DLT_LOG_WARN,
+    GPTP_LOG_LVL_INFO = DLT_LOG_INFO,
+    GPTP_LOG_LVL_STATUS = DLT_LOG_INFO,
+    GPTP_LOG_LVL_DEBUG = DLT_LOG_DEBUG,
+    GPTP_LOG_LVL_VERBOSE = DLT_LOG_VERBOSE,
+} GPTP_LOG_LEVEL;
+
+#elif defined(USE_CLOG)
+
+typedef enum {
+    GPTP_LOG_LVL_CRITICAL = CLOG_LEVEL_FATAL,
+    GPTP_LOG_LVL_ERROR = CLOG_LEVEL_ERROR,
+    GPTP_LOG_LVL_EXCEPTION = CLOG_LEVEL_ERROR,
+    GPTP_LOG_LVL_WARNING = CLOG_LEVEL_WARN,
+    GPTP_LOG_LVL_INFO = CLOG_LEVEL_INFO,
+    GPTP_LOG_LVL_STATUS = CLOG_LEVEL_INFO,
+    GPTP_LOG_LVL_DEBUG = CLOG_LEVEL_DEBUG,
+    GPTP_LOG_LVL_VERBOSE = CLOG_LEVEL_VERBOSE,
+} GPTP_LOG_LEVEL;
+
+#else
+
+typedef enum {
+    GPTP_LOG_LVL_CRITICAL,
+    GPTP_LOG_LVL_ERROR,
+    GPTP_LOG_LVL_EXCEPTION,
+    GPTP_LOG_LVL_WARNING,
+    GPTP_LOG_LVL_INFO,
+    GPTP_LOG_LVL_STATUS,
+    GPTP_LOG_LVL_DEBUG,
+    GPTP_LOG_LVL_VERBOSE,
+} GPTP_LOG_LEVEL;
+
+#endif /* USE_DLT / USE_CLOG */
+
+
+#define LIB_GPTP_LOG_LEVEL GPTP_LOG_LVL_INFO
+
 #ifdef ANDROID
 
 #define LOGE(fmt, ...) __android_log_print (ANDROID_LOG_ERROR,"libgptp", fmt, __VA_ARGS__); printf(fmt,##__VA_ARGS__)
@@ -95,24 +136,106 @@ enum _LOGGER_SEVERITY {
 };
 
 #endif
+
+
+#ifdef USE_DLT
+DLT_DECLARE_CONTEXT(dlt_con_gptp);
+#endif
+
+/* =========================================================================
+ * CLOG (Common Log) support
+ * =========================================================================
+ * When USE_CLOG is defined, logging is routed through CLOG_LOG() using
+ * CLOG_APP_LPTP application ID and CLOG_ACTX_LPTP_GPTP context.
+ * Registration is done explicitly in libgptplogRegister().
+ * ========================================================================= */
+#ifdef USE_CLOG
+static clog_context_t clog_con_libgptp = NULL;
+static bool libgptp_clog_app_registered = false;
+static bool libgptp_clog_context_registered = false;
+#endif /* USE_CLOG */
+
+void libgptplogRegister(void)
+{
+#ifdef USE_DLT
+    DLT_REGISTER_APP("LPTP", "libgptp test application");
+    DLT_REGISTER_CONTEXT(dlt_con_gptp, "GPTP", "libgptp test application");
+#elif defined(USE_CLOG)
+    if (!libgptp_clog_app_registered && !libgptp_clog_context_registered) {
+        clog_return_t clog_ret;
+        clog_ret = CLOG_REGISTER_APP(CLOG_APP_LPTP, "LPTP", "libgptp test application");
+        if (clog_ret != CLOG_RETURN_OK) {
+            syslog(LOG_ERR, "libgptp_test: CLOG_REGISTER_APP failed %d, using syslog\n", clog_ret);
+        } else {
+            libgptp_clog_app_registered = true;
+            clog_con_libgptp = CLOG_REGISTER_CONTEXT(CLOG_ACTX_LPTP_GPTP, "GPTP",
+                    "libgptp test application",
+                    CLOG_DIAG_SSID_NOT_AVAILABLE, "GPTP", "GPTP");
+            if (clog_con_libgptp == NULL) {
+                syslog(LOG_ERR, "libgptp_test: CLOG_REGISTER_CONTEXT failed, using syslog\n");
+                (void)CLOG_UNREGISTER_APP();
+                libgptp_clog_app_registered = false;
+            } else {
+                libgptp_clog_context_registered = true;
+            }
+        }
+    }
+#endif
+}
+
+void libgptplogUnregister(void)
+{
+#ifdef USE_DLT
+    DLT_UNREGISTER_CONTEXT(dlt_con_gptp);
+    DLT_UNREGISTER_APP();
+#elif defined(USE_CLOG)
+    if (libgptp_clog_context_registered) {
+        (void)CLOG_UNREGISTER_CONTEXT(clog_con_libgptp);
+        clog_con_libgptp = NULL;
+        libgptp_clog_context_registered = false;
+    }
+    if (libgptp_clog_app_registered) {
+        (void)CLOG_UNREGISTER_APP();
+        libgptp_clog_app_registered = false;
+    }
+#endif
+}
+
+
 #ifndef ANDROID
 
-#define GPTP_LOG_ERROR(fmt, ...) system_log(LOG_ERROR, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define GPTP_LOG_WARNING(fmt, ...) system_log(LOG_WARNING, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define GPTP_LOG_INFO(fmt, ...) system_log(LOG_INFO, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-#define GPTP_LOG_DEBUG(fmt, ...) system_log(LOG_DEBUG, "[%d:%s:%d] " fmt ,gettid(),  __FUNCTION__, __LINE__,##__VA_ARGS__); printf(fmt,##__VA_ARGS__)
-
-
-void system_log(int loglevel, const char *s, ...)
+void libgptpLog(GPTP_LOG_LEVEL level, const char *tag, const char *path,
+                int line,
+                const char *fmt, ...)
 {
-    va_list arg = {};
-
-    if (loglevel == LOG_ERROR || loglevel <= GPTP_LOG_LEVEL) {
-        va_start(arg, s);
-        vsyslog(loglevel, s, arg);
-        va_end(arg);
+    char msg[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+#ifdef USE_DLT
+    DLT_LOG(dlt_con_gptp, (DltLogLevelType)level, DLT_INT(gettid()),
+            DLT_STRING(path), DLT_INT(line), DLT_STRING(msg));
+#elif defined(USE_CLOG)
+    if (libgptp_clog_context_registered) {
+        (void)CLOG_LOG(clog_con_libgptp, (clog_level_t)level,
+                       "[%d:%s:%d] %s", gettid(), path, line, msg);
+    } else if (level == GPTP_LOG_LVL_ERROR || level <= LIB_GPTP_LOG_LEVEL) {
+        syslog(LOG_ERR, "[%d:%s:%d] %s\n", gettid(), path, line, msg);
     }
+#else
+
+    if (level == GPTP_LOG_LVL_ERROR || level <= LIB_GPTP_LOG_LEVEL) {
+        syslog(level, "[%d:%s:%d] %s\n", gettid(), path, line, msg);
+    }
+
+#endif
 }
+
+#define GPTP_LOG_ERROR(fmt, ...) libgptpLog(GPTP_LOG_LVL_ERROR, "ERROR    ", __func__, __LINE__, fmt, ## __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define GPTP_LOG_WARNING(fmt, ...) libgptpLog(GPTP_LOG_LVL_WARNING, "WARNING  ", __func__, __LINE__, fmt, ## __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define GPTP_LOG_INFO(fmt, ...) libgptpLog(GPTP_LOG_LVL_INFO, "INFO     ", __func__, __LINE__, fmt, ## __VA_ARGS__); printf(fmt,##__VA_ARGS__)
+#define GPTP_LOG_DEBUG(fmt, ...) libgptpLog(GPTP_LOG_LVL_DEBUG, "DEBUG    ", __FILE__, __LINE__, fmt, ## __VA_ARGS__); printf(fmt,##__VA_ARGS__)
 
 
 #else
@@ -564,6 +687,13 @@ void get_gptp_time(int p_loop_cnt)
 
 void get_gptp_tsc_time(int p_loop_cnt)
 {
+    gptpStatsType_t gptp_stat = {0};
+    getgPTPStatus(&gptp_stat);
+    if (!gptp_stat.tsc_active) {
+        GPTP_LOG_INFO("TSC not enabled in gptp daemon config, skipping TSC time test\n");
+        return;
+    }
+
     struct timespec ts;
     static clockid_t gTscClockid = -1;
     uint64_t curr_gptp_time;
@@ -759,7 +889,12 @@ int main(int argc, char *argv[])
     uint64_t test_gptp_time = 0;
     gptpTimeInfo_t ptp_data;
     int retry = 0;
-    RsyncStatus_t Rsync;
+    RsyncStatus_t Rsync = {0};
+
+#if defined(USE_DLT) || defined(USE_CLOG)
+    libgptplogRegister();
+#endif
+
     gptp_scaling_available = gptpInit();
 
     signal(SIGINT, signal_handler);
@@ -943,5 +1078,8 @@ int main(int argc, char *argv[])
         GPTP_LOG_ERROR("GPTP deinit failed\n");
     }
 
+#if defined(USE_DLT) || defined(USE_CLOG)
+    libgptplogUnregister();
+#endif
     return 0;
 }

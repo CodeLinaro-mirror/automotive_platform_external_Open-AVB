@@ -75,6 +75,7 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 #include <poll.h>
 #include <pthread.h>
 #include <errno.h>
+#include <syslog.h>
 
 #ifdef ANDROID
 #include <cutils/sockets.h>
@@ -151,16 +152,28 @@ static void* powerListenerThread(void* arg) {
     PowerEvent ev;
 
     while (true) {
-        ssize_t n = read(fd, &ev, sizeof(ev));
+        sockaddr_un sender;
+        socklen_t sender_len = sizeof(sender);
+        ssize_t n = recvfrom(fd, &ev, sizeof(ev), 0,
+                             reinterpret_cast<sockaddr*>(&sender), &sender_len);
         if (n < 0) {
             if (errno == EINTR) {
+                GPTP_LOG_WARNING("powerListenerThread: recvfrom EINTR, retrying");
                 continue;
             }
-            GPTP_LOG_ERROR("Power socket read failed: %s", strerror(errno));
+            GPTP_LOG_ERROR("powerListenerThread: recvfrom failed fd=%d: %s",
+                           fd, strerror(errno));
             break;
         }
 
-        if (n != sizeof(ev)) {
+        if (n == 0) {
+            GPTP_LOG_ERROR("powerListenerThread: recvfrom returned 0 fd=%d", fd);
+            break;
+        }
+
+        if (n != (ssize_t)sizeof(ev)) {
+            GPTP_LOG_WARNING("powerListenerThread: short recv %zd of %zu bytes, discarding",
+                             n, sizeof(ev));
             continue;
         }
 
@@ -172,13 +185,23 @@ static void* powerListenerThread(void* arg) {
             GPTP_LOG_INFO("Power: SUSPEND");
             if (pPort->gPTP_lpm == false) {
                 pPort->gPTP_lpm = true;
-                pPort->processEvent(LINKDOWN);
+                if (pPort->getLinkUpState()) {
+                    pPort->processEvent(LINKDOWN);
+                } else {
+                    GPTP_LOG_INFO("Power: SUSPEND - link is already down, skipping processEvent; "
+                                  "gPTP_lpm set for proper resume handling");
+                }
             }
         } else if (ev == POWER_RESUME) {
             if (pPort->gPTP_lpm == true) {
                 GPTP_LOG_INFO("Power: RESUME");
+                if (pPort->getLinkUpState()) {
+                    pPort->processEvent(LINKUP);
+                } else {
+                    GPTP_LOG_INFO("Power: RESUME - link is down, skipping processEvent; "
+                                  "will resume automatically when link comes up");
+                }
                 pPort->gPTP_lpm = false;
-                pPort->processEvent(LINKUP);
             }
         }
     }
@@ -254,6 +277,7 @@ static inline int64_t pctns(struct ptp_clock_time t)
 }
 
 #define CLEANUP_RESOURCES() {\
+                GPTP_LOG_UNREGISTER(); \
                 if( thread_factory != NULL ) delete thread_factory; thread_factory = NULL; \
                 if( default_factory != NULL ) delete default_factory; default_factory = NULL; \
                 if( timerq_factory != NULL ) delete timerq_factory; timerq_factory = NULL; \
@@ -321,12 +345,24 @@ int gptp_sys_suspend(void *data, enum PM_MODE mode)
     bool err = false;
     GPTP_LOG_INFO("Handling LPM(mode: %d) enter notification", mode);
     GPTP_LOG_INFO("stoping gptp daemon....");
-    pPort->gPTP_lpm = true;
-    err = pPort->processEvent(LINKDOWN);
 
-    if (err == false) {
-        GPTP_LOG_ERROR("failed to ds_suspend, roll back and NACK");
-        return -1;
+    if (pPort->gPTP_lpm == false) {
+        pPort->gPTP_lpm = true;
+        if (pPort->getLinkUpState()) {
+            err = pPort->processEvent(LINKDOWN);
+        } else {
+            GPTP_LOG_INFO("gptp_sys_suspend: link is already down, skipping processEvent; "
+                          "gPTP_lpm set for proper resume handling");
+            err = true;
+        }
+
+        if (err == false) {
+            GPTP_LOG_ERROR("failed to ds_suspend, roll back and NACK");
+            pPort->gPTP_lpm = false;
+            return -1;
+        }
+    } else {
+        GPTP_LOG_WARNING("gptp_sys_suspend: already in LPM state, ignoring duplicate suspend");
     }
 
     return 0;
@@ -336,8 +372,19 @@ int gptp_sys_resume(void *data, enum PM_MODE mode)
 {
     GPTP_LOG_INFO("Handling LPM(mode: %d) exit notification", mode);
     GPTP_LOG_INFO("starting gptp daemon....");
-    pPort->gPTP_lpm = false;
-    pPort->processEvent(LINKUP);
+
+    if (pPort->gPTP_lpm == true) {
+        if (pPort->getLinkUpState()) {
+            pPort->processEvent(LINKUP);
+        } else {
+            GPTP_LOG_INFO("gptp_sys_resume: link is down, skipping processEvent; "
+                          "will resume automatically when link comes up");
+        }
+        pPort->gPTP_lpm = false;
+    } else {
+        GPTP_LOG_WARNING("gptp_sys_resume: not in LPM state, ignoring duplicate resume");
+    }
+
     return 0;
 }
 
@@ -599,6 +646,34 @@ void gptpDaemonServInit(void)
 }
 
 
+bool isInterfaceValid(const char *ifname)
+{
+    struct ifreq ifr;
+    int inetSock;
+    bool valid = false;
+
+    if (ifname == NULL || ifname[0] == '\0') {
+        return false;
+    }
+
+    inetSock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (inetSock < 0) {
+        GPTP_LOG_ERROR("socket() failed: %s", strerror(errno));
+        return false;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strlcpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+
+    if (ioctl(inetSock, SIOCGIFFLAGS, &ifr) == 0) {
+        valid = true;
+    }
+
+    close(inetSock);
+    return valid;
+}
+
 bool waitForInterface()
 {
 #if 0
@@ -676,11 +751,8 @@ int main(int argc, char **argv)
     LinuxLockFactory *lock_factory = NULL;
     LinuxTimerFactory *timer_factory = NULL;
     LinuxConditionFactory *condition_factory = NULL;
-    LinuxThreadFactory *thread_factory = new LinuxThreadFactory();
-    if (thread_factory == NULL) {
-        GPTP_LOG_ERROR("Failed to allocate thread_factory");
-        return -1;
-    }
+
+    LinuxThreadFactory *thread_factory = NULL;
     // Block SIGUSR1
     {
         sigset_t block;
@@ -688,19 +760,24 @@ int main(int argc, char **argv)
         sigaddset( &block, SIGUSR1 );
 
         if ( pthread_sigmask( SIG_BLOCK, &block, NULL ) != 0 ) {
-            GPTP_LOG_ERROR("Failed to block SIGUSR1");
-
-            if ( thread_factory != NULL ) {
-                delete thread_factory;
-            }
-
+#ifdef ANDROID
+            __android_log_print(ANDROID_LOG_ERROR, "qgptp", "Failed to block SIGUSR1");
+#else
+            syslog(LOG_ERR, "Failed to block SIGUSR1");
+#endif
             return -1;
         }
     }
     GPTP_LOG_REGISTER();
-
+    thread_factory = new LinuxThreadFactory();
+    if (thread_factory == NULL) {
+        GPTP_LOG_ERROR("Failed to allocate thread_factory");
+        CLEANUP_RESOURCES();
+        return -1;
+    }
     if (watchdog_setup(thread_factory) != 0) {
         GPTP_LOG_ERROR("Watchdog handler setup error");
+        CLEANUP_RESOURCES();
         return -1;
     }
 
@@ -838,7 +915,6 @@ int main(int argc, char **argv)
                 pps = true;
             } else if ( strcmp(argv[i] + 1,  "H") == 0 ) {
                 print_usage( argv[0] );
-                GPTP_LOG_UNREGISTER();
                 CLEANUP_RESOURCES();
                 return 0;
             } else if ( strcmp(argv[i] + 1,  "R") == 0 ) {
@@ -867,7 +943,6 @@ int main(int argc, char **argv)
                     if (delay_count > 3) {
                         GPTP_LOG_ERROR("Too many values\n");
                         print_usage( argv[0] );
-                        GPTP_LOG_UNREGISTER();
                         CLEANUP_RESOURCES();
                         return 0;
                     }
@@ -880,7 +955,6 @@ int main(int argc, char **argv)
                 if (delay_count != 4) {
                     GPTP_LOG_ERROR("All four delay values must be specified\n");
                     print_usage( argv[0] );
-                    GPTP_LOG_UNREGISTER();
                     CLEANUP_RESOURCES();
                     return 0;
                 }
@@ -1019,14 +1093,12 @@ int main(int argc, char **argv)
 #endif
     if (timestamper == NULL) {
         GPTP_LOG_ERROR("Failed to allocate EtherTimestamper");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
 
     if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
         perror("pthread_sigmask()");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
@@ -1046,7 +1118,6 @@ int main(int argc, char **argv)
 
         if (iniParser.parserError() < 0) {
             GPTP_LOG_ERROR("Can't parse ini file. Aborting file reading..\nExiting gptp daemon.");
-            GPTP_LOG_UNREGISTER();
             CLEANUP_RESOURCES();
             return -1;
         } else {
@@ -1077,7 +1148,6 @@ int main(int argc, char **argv)
                 ifname = new InterfaceName( ifname_eth, strlen(ifname_eth) );
                 if (ifname == NULL) {
                     GPTP_LOG_ERROR("Failed to allocate InterfaceName from ini config");
-                    GPTP_LOG_UNREGISTER();
                     CLEANUP_RESOURCES();
                     return -1;
                 }
@@ -1108,7 +1178,11 @@ int main(int argc, char **argv)
             portInit.isGM = iniParser.getIsGM();
             portInit.syncClocks = iniParser.getSyncClocks();
             portInit.asCapable = iniParser.getAsCapable();
+#ifndef ANDROID
             portInit.tsc_enable = iniParser.getTscEnable();
+#else
+            portInit.tsc_enable = false;
+#endif
             GPTP_LOG_INFO("syncClocks: %d", portInit.syncClocks);
             GPTP_LOG_INFO("automotive profile %s isGM %s\n",
                           ((portInit.automotive_profile) ? "True" : "False"),
@@ -1148,20 +1222,19 @@ int main(int argc, char **argv)
     portInit.net_label = ifname;
 
     if ( !ipc->init( ipc_arg, portInit.reverseSyncEnabled,
-                     portInit.reverseSyncDomain, portInit.reverseSyncRate, portInit.wait_for_sync) ) {
+                     portInit.reverseSyncDomain, portInit.reverseSyncRate,
+                     portInit.wait_for_sync, portInit.tsc_enable) ) {
         delete ipc;
         ipc = NULL;
         GPTP_LOG_ERROR( "ipc init failed\n" );
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
 
     qgptp_rmgr_init(&portInit.sct_shm_fd, &portInit.sct_buffer);
 
-    if ((strcmp(ifname_eth, "eth0") != 0) && (strcmp(ifname_eth, "eth1") != 0) && (strcmp(ifname_eth, "eth2") != 0)) {
-        GPTP_LOG_INFO( "Valid Interface name required\n" );
-        GPTP_LOG_UNREGISTER();
+    if (!isInterfaceValid(ifname_eth)) {
+        GPTP_LOG_ERROR("Interface '%s' does not exist or is not accessible\n", ifname_eth);
         CLEANUP_RESOURCES();
         return -1;
     }
@@ -1176,7 +1249,6 @@ int main(int argc, char **argv)
 
             if (sig == SIGINT || sig == SIGTERM || sig == SIGHUP || sig == SIGUSR2 ) {
                 perror("sigtimedwait()");
-                GPTP_LOG_UNREGISTER();
                 CLEANUP_RESOURCES();
                 return 0;
             }
@@ -1195,7 +1267,6 @@ int main(int argc, char **argv)
       lock_factory );
     if (pClock == NULL) {
         GPTP_LOG_ERROR("Failed to allocate IEEE1588Clock");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
@@ -1261,14 +1332,12 @@ int main(int argc, char **argv)
     pPort = new EtherPort(&portInit);
     if (pPort == NULL) {
         GPTP_LOG_ERROR("Failed to allocate EtherPort");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
     GPTP_LOG_ERROR("pPort TSC enable flag: %d\n", pPort->getTSC());
     if (!pPort->init_port()) {
         GPTP_LOG_ERROR("failed to initialize port");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
@@ -1332,7 +1401,6 @@ int main(int argc, char **argv)
 
     if (rc) {
         GPTP_LOG_ERROR("gptp_sys_register_lpm failed");
-        GPTP_LOG_UNREGISTER();
         CLEANUP_RESOURCES();
         return -1;
     }
@@ -1354,7 +1422,6 @@ int main(int argc, char **argv)
 
         if (sigwait(&set, &sig) != 0) {
             perror("sigwait()");
-            GPTP_LOG_UNREGISTER();
             CLEANUP_RESOURCES();
             return -1;
         }
@@ -1421,7 +1488,6 @@ int main(int argc, char **argv)
     }
 
 #endif
-    GPTP_LOG_UNREGISTER();
     CLEANUP_RESOURCES();
     return 0;
 }

@@ -137,6 +137,58 @@ ifeq ($(GPTP_DSQB_ENABLED),1)
     LDFLAGS_G += -lpm-client
 endif
 
+ifeq ($(TSC_FEATURE),1)
+    CFLAGS_G += -DTSC_FEATURE
+    CPPFLAGS_G += -DTSC_FEATURE
+endif
+
+# Define variables for CLOG (Common Log) availability
+CLOG_CFLAGS := $(shell pkg-config --cflags libclog 2>/dev/null)
+CLOG_LDFLAGS := $(shell pkg-config --libs libclog 2>/dev/null)
+$(info CLOG_CFLAGS: $(CLOG_CFLAGS))
+$(info CLOG_LDFLAGS: $(CLOG_LDFLAGS))
+
+CLOG_AVAILABLE := 0
+ifneq ($(CLOG_CFLAGS),)
+ifneq ($(CLOG_LDFLAGS),)
+    $(info CLOG_CFLAGS: $(CLOG_CFLAGS))
+    $(info CLOG_LDFLAGS: $(CLOG_LDFLAGS))
+    CLOG_AVAILABLE := 1
+    CFLAGS_G += -DUSE_CLOG
+    CFLAGS_G += $(CLOG_CFLAGS)
+    CPPFLAGS_G += -DUSE_CLOG
+    CPPFLAGS_G += $(CLOG_CFLAGS)
+    LDFLAGS_G += $(CLOG_LDFLAGS)
+    $(info CPPFLAGS_G: $(CPPFLAGS_G))
+    $(info LDFLAGS_G: $(LDFLAGS_G))
+endif
+endif
+
+# Define variables for DLT availability
+# DLT is used when CLOG is not available
+ifeq ($(CLOG_AVAILABLE),0)
+    DLT_CFLAGS := $(shell pkg-config --cflags automotive-dlt)
+    DLT_LDFLAGS := $(shell pkg-config --libs automotive-dlt)
+    $(info DLT_CFLAGS: $(DLT_CFLAGS))
+    $(info DLT_LDFLAGS: $(DLT_LDFLAGS))
+
+    DLT_AVAILABLE := 0
+    ifneq ($(DLT_CFLAGS),)
+    ifneq ($(DLT_LDFLAGS),)
+        $(info DLT_CFLAGS: $(DLT_CFLAGS))
+        $(info DLT_LDFLAGS: $(DLT_LDFLAGS))
+        DLT_AVAILABLE := 1
+        CFLAGS_G += -DUSE_DLT
+        CFLAGS_G += $(DLT_CFLAGS)
+        CPPFLAGS_G += -DUSE_DLT
+        CPPFLAGS_G += $(DLT_CFLAGS)
+        LDFLAGS_G += $(DLT_LDFLAGS)
+        $(info CPPFLAGS_G: $(CPPFLAGS_G))
+        $(info LDFLAGS_G: $(LDFLAGS_G))
+    endif
+    endif
+endif
+
 LDFLAGS_G += -lpthread -lrt
 
 CFLAGS_G += -DLOG_LIMIT

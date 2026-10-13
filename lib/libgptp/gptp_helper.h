@@ -69,6 +69,14 @@ SPDX-License-Identifier: BSD-3-Clause-Clear
 extern "C" {
 #endif
 
+#ifdef USE_CLOG
+#include "clog.h"
+#include "clog_ids.h"
+#elif defined(USE_DLT)
+#include <dlt/dlt.h>
+#include <unistd.h>
+#endif
+
 #define CLK_STR "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 #define CLK_TO_STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5], (a)[6], (a)[7]
 #define PTP_CLOCK_IDENTITY_LENGTH 8 /*!< Size of a clock identifier stored in the ClockIndentity class, described at IEEE 802.1AS-2011 Clause 8.5.2.4*/
@@ -124,6 +132,7 @@ typedef struct {
     int64_t offset;
     uint16_t gmTimeBaseIndicator;
     uint32_t d_status;
+    bool tsc_active;
 } gptpStatsType_t;
 
 typedef struct {
@@ -132,9 +141,9 @@ typedef struct {
 } syncInterval_t;
 
 typedef struct {
-    int8_t reverseSyncEnabled = 0;
-    int8_t reverseSyncDomain = 0;
-    double reverseSyncRate = 0;
+    int8_t reverseSyncEnabled;
+    int8_t reverseSyncDomain;
+    double reverseSyncRate;
 } RsyncStatus_t;
 
 struct gptp_update {
@@ -236,6 +245,14 @@ int getTimeError(int64_t *timeError);
 bool gptpInit(void);
 
 bool gptpDeinit(void);
+
+bool isGptpInProxyMode(void);
+
+/* Get ETU AVTP and QTimer timestamps using the PHC device.
+   etu_index: PTP channel slice to use (0-31).
+   Returns false on ioctl or read failure. */
+bool gptpGetEtuTimestamps(uint8_t etu_index, uint64_t *avtp_time_ns,
+                          uint64_t *qtimer_time_ns);
 
 #ifdef  RGPTP_CLNT_ENABLED
 /* Get current rptp time in nanoseconds */
