@@ -889,7 +889,7 @@ int main(int argc, char *argv[])
     uint64_t test_gptp_time = 0;
     gptpTimeInfo_t ptp_data;
     int retry = 0;
-    RsyncStatus_t Rsync;
+    RsyncStatus_t Rsync = {0};
 
 #if defined(USE_DLT) || defined(USE_CLOG)
     libgptplogRegister();
